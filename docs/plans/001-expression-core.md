@@ -14,11 +14,42 @@
 
 - Module path: `github.com/kartaladev/rlng`. Go **1.25+**.
 - **Pure Go, no cgo:** `CGO_ENABLED=0 go build ./...` must pass.
-- **One direct dependency** this increment: `github.com/expr-lang/expr` — introduced in **Task 3** (the first task that imports it), not Task 1. Do **not** add `lestrrat-go/option` or `mapstructure`.
+- **One direct (runtime) dependency** this increment: `github.com/expr-lang/expr` — introduced in **Task 3** (the first task that imports it), not Task 1. Do **not** add `lestrrat-go/option` or `mapstructure`.
+- **Test-only dependency:** `github.com/stretchr/testify` — required by the mandatory `table-test` convention. It is test-scoped; Go module-graph pruning keeps it out of consumers' builds, so it does **not** count against the minimal-runtime-deps gate.
 - **No global logger:** library code must not log to a global logger. Non-scalar variables that cannot be patched are skipped **silently** (defined behavior) — this refines Spec 001's "logged warning" wording to satisfy the no-global-logger rule.
 - Library code must not call `os.Exit`/`log.Fatal`/`panic` on caller input — return typed errors.
 - Package `expr` imports the dependency aliased as `exprlang "github.com/expr-lang/expr"`.
-- Tests use the `table-test` skill form (`assert` closure, `t.Context()` when a context is present). Add runnable `Example…` tests as godoc.
+- **Test convention (mandatory)** — follow the project `table-test` skill (`.claude/skills/table-test/SKILL.md`): a **per-case `assert` closure** (NOT `want`/`wantErr` struct fields), `testify` `require`/`assert`, and `t.Parallel()` on both the test and each subtest. These evaluators take no `context.Context`, so **no `ctx` modifier / `t.Context()` is needed** here. **The `want`-field test code shown in the task bodies below is superseded by this closure form — keep each task's cases and assertions, but express them in the shape shown next.** Add runnable `Example…` tests as godoc.
+
+  Canonical shape for a component returning `(T, error)`:
+
+  ```go
+  func TestThing(t *testing.T) {
+      t.Parallel()
+      type testCase struct {
+          name   string
+          // inputs…
+          assert func(t *testing.T, got T, err error)
+      }
+      cases := []testCase{
+          {
+              name: "happy path",
+              assert: func(t *testing.T, got T, err error) {
+                  require.NoError(t, err)
+                  assert.Equal(t, want, got)
+              },
+          },
+      }
+      for _, tc := range cases {
+          t.Run(tc.name, func(t *testing.T) {
+              t.Parallel()
+              got, err := ThingUnderTest(/* tc inputs */)
+              tc.assert(t, got, err)
+          })
+      }
+  }
+  ```
+  Use `require.ErrorIs(t, err, ErrX)` for error assertions. `Example…` tests stay plain (they have fixed `// Output:` and take no testify).
 - **Pre-commit gate (CLAUDE.md §Development workflow):** before the *final* commit of this increment, run `/code-review`, then `/security-review`, then `go test ./... -race` — all clean. Per-step commits below at minimum run `go test ./... -race`.
 
 ## File Structure

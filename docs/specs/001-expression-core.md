@@ -195,9 +195,10 @@ TDD, red → green → refactor from the first commit (per `superpowers:test-dri
 
 ## Dependencies
 
-- **Direct (new):** `github.com/expr-lang/expr` — the expression core.
+- **Direct runtime (new):** `github.com/expr-lang/expr` — the expression core.
+- **Test-only:** `github.com/stretchr/testify` — required by the mandatory `table-test` convention. Test-scoped and pruned from consumers by the Go module graph, so it does not count against the minimal-runtime-deps gate.
 - **Dropped vs reference:** `lestrrat-go/option` (D1). `mapstructure` deferred to increment 5.
-- Net: **one** direct dependency for this increment. Target Go 1.25+.
+- Net: **one** consumer-visible dependency for this increment. Target Go 1.25+.
 
 ## Traceability
 

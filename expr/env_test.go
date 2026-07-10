@@ -1,65 +1,144 @@
 package expr
 
 import (
-	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
+type envTestInner struct{ Ratio float64 }
+
+type envTestOuter struct {
+	Name  string
+	Inner envTestInner
+	Tags  []string
+	Ptr   *envTestInner
+}
+
+type envTestWithMap struct {
+	Scores map[int]string
+}
+
+type envTestUnexported struct {
+	Public  string
+	private string
+}
+
 func TestToEnv(t *testing.T) {
-	type Inner struct{ Ratio float64 }
-	type Outer struct {
-		Name  string
-		Inner Inner
-		Tags  []string
-		Ptr   *Inner
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		in     any
+		assert func(t *testing.T, got map[string]any, err error)
 	}
 
-	assert := func(t *testing.T, got, want map[string]any, wantErr bool, err error) {
-		t.Helper()
-		if wantErr {
-			if err == nil {
-				t.Fatalf("expected error, got nil")
-			}
-			return
-		}
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("got %#v, want %#v", got, want)
-		}
-	}
-
-	tests := []struct {
-		name    string
-		in      any
-		want    map[string]any
-		wantErr bool
-	}{
-		{"nil is empty env", nil, map[string]any{}, false},
-		{"map passthrough", map[string]any{"a": 1}, map[string]any{"a": 1}, false},
+	cases := []testCase{
+		{
+			name: "nil is empty env",
+			in:   nil,
+			assert: func(t *testing.T, got map[string]any, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, map[string]any{}, got)
+			},
+		},
+		{
+			name: "map passthrough",
+			in:   map[string]any{"a": 1},
+			assert: func(t *testing.T, got map[string]any, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, map[string]any{"a": 1}, got)
+			},
+		},
 		{
 			name: "struct with nested, slice, nil pointer",
-			in: Outer{
+			in: envTestOuter{
 				Name:  "x",
-				Inner: Inner{Ratio: 0.5},
+				Inner: envTestInner{Ratio: 0.5},
 				Tags:  []string{"a", "b"},
 				Ptr:   nil,
 			},
-			want: map[string]any{
-				"Name":  "x",
-				"Inner": map[string]any{"Ratio": 0.5},
-				"Tags":  []any{"a", "b"},
-				"Ptr":   nil,
+			assert: func(t *testing.T, got map[string]any, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, map[string]any{
+					"Name":  "x",
+					"Inner": map[string]any{"Ratio": 0.5},
+					"Tags":  []any{"a", "b"},
+					"Ptr":   nil,
+				}, got)
 			},
 		},
-		{"unsupported kind errors", 42, nil, true},
+		{
+			name: "pointer to struct converts identically to value struct",
+			in: &envTestOuter{
+				Name:  "x",
+				Inner: envTestInner{Ratio: 0.5},
+				Tags:  []string{"a", "b"},
+				Ptr:   nil,
+			},
+			assert: func(t *testing.T, got map[string]any, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, map[string]any{
+					"Name":  "x",
+					"Inner": map[string]any{"Ratio": 0.5},
+					"Tags":  []any{"a", "b"},
+					"Ptr":   nil,
+				}, got)
+			},
+		},
+		{
+			name: "non-nil pointer field converts to nested map",
+			in: envTestOuter{
+				Name: "x",
+				Ptr:  &envTestInner{Ratio: 0.9},
+			},
+			assert: func(t *testing.T, got map[string]any, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, map[string]any{"Ratio": 0.9}, got["Ptr"])
+			},
+		},
+		{
+			name: "map field converts element-wise with stringified keys",
+			in: envTestWithMap{
+				Scores: map[int]string{1: "a", 2: "b"},
+			},
+			assert: func(t *testing.T, got map[string]any, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, map[string]any{
+					"Scores": map[string]any{"1": "a", "2": "b"},
+				}, got)
+			},
+		},
+		{
+			name: "unexported field is skipped",
+			in: envTestUnexported{
+				Public:  "x",
+				private: "y",
+			},
+			assert: func(t *testing.T, got map[string]any, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, map[string]any{"Public": "x"}, got)
+				_, ok := got["private"]
+				assert.False(t, ok)
+			},
+		},
+		{
+			name: "unsupported kind errors",
+			in:   42,
+			assert: func(t *testing.T, got map[string]any, err error) {
+				require.Error(t, err)
+				assert.Nil(t, got)
+			},
+		},
 	}
 
-	for _, tc := range tests {
+	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			got, err := toEnv(tc.in)
-			assert(t, got, tc.want, tc.wantErr, err)
+			tc.assert(t, got, err)
 		})
 	}
 }
