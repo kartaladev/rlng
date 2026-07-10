@@ -11,32 +11,56 @@ import (
 func TestNewFunction(t *testing.T) {
 	t.Parallel()
 
-	t.Run("empty expression is a compile error", func(t *testing.T) {
-		t.Parallel()
+	type testCase struct {
+		name   string
+		fnName string
+		expr   string
+		opts   []Option
+		assert func(t *testing.T, err error)
+	}
 
-		_, err := NewFunction("x", "   ")
-		require.ErrorIs(t, err, errEmptyExpression)
-	})
+	cases := []testCase{
+		{
+			name:   "empty expression is a compile error",
+			fnName: "x",
+			expr:   "   ",
+			assert: func(t *testing.T, err error) {
+				require.ErrorIs(t, err, errEmptyExpression)
+			},
+		},
+		{
+			name:   "invalid expression is a compile error",
+			fnName: "x",
+			expr:   "1 +",
+			assert: func(t *testing.T, err error) {
+				require.Error(t, err)
 
-	t.Run("invalid expression is a compile error", func(t *testing.T) {
-		t.Parallel()
+				var compileErr *CompileError
+				require.ErrorAs(t, err, &compileErr)
+			},
+		},
+		{
+			name:   "invalid fallback expression surfaces at construction",
+			fnName: "x",
+			expr:   "1 + 1",
+			opts:   []Option{WithFallback("(")},
+			assert: func(t *testing.T, err error) {
+				require.Error(t, err)
 
-		_, err := NewFunction("x", "1 +")
-		require.Error(t, err)
+				var compileErr *CompileError
+				require.ErrorAs(t, err, &compileErr)
+			},
+		},
+	}
 
-		var compileErr *CompileError
-		require.ErrorAs(t, err, &compileErr)
-	})
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("invalid fallback expression surfaces at construction", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := NewFunction("x", "1 + 1", WithFallback("("))
-		require.Error(t, err)
-
-		var compileErr *CompileError
-		require.ErrorAs(t, err, &compileErr)
-	})
+			_, err := NewFunction(tc.fnName, tc.expr, tc.opts...)
+			tc.assert(t, err)
+		})
+	}
 }
 
 func TestFunction_Apply(t *testing.T) {
