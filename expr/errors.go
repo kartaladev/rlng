@@ -1,5 +1,3 @@
-// Package expr provides the atomic expression evaluators — Predicate and
-// Function — that the rest of rlng composes from.
 package expr
 
 import (
