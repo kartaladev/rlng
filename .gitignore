@@ -1,0 +1,5 @@
+# IDE / editor
+.idea/
+
+# SDD scratch (superpowers subagent-driven-development workspace)
+.superpowers/
