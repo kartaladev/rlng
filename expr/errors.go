@@ -22,7 +22,11 @@ type CompileError struct {
 }
 
 func (e *CompileError) Error() string {
-	return "compile " + label(e.Name, e.Expression) + ": " + e.Cause.Error()
+	prefix := "compile " + label(e.Name, e.Expression)
+	if e.Cause == nil {
+		return prefix
+	}
+	return prefix + ": " + e.Cause.Error()
 }
 
 func (e *CompileError) Unwrap() error { return e.Cause }
@@ -36,7 +40,11 @@ type EvalError struct {
 }
 
 func (e *EvalError) Error() string {
-	return "eval " + label(e.Name, e.Expression) + ": " + e.Cause.Error()
+	prefix := "eval " + label(e.Name, e.Expression)
+	if e.Cause == nil {
+		return prefix
+	}
+	return prefix + ": " + e.Cause.Error()
 }
 
 func (e *EvalError) Unwrap() error { return e.Cause }

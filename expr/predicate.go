@@ -94,6 +94,8 @@ func truthy(v any) bool {
 		return rv.Uint() != 0
 	case reflect.Float32, reflect.Float64:
 		return rv.Float() != 0
+	case reflect.Slice, reflect.Array, reflect.Map:
+		return rv.Len() > 0
 	default:
 		return false
 	}

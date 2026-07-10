@@ -1,6 +1,7 @@
 package expr
 
 import (
+	"math"
 	"reflect"
 
 	"github.com/expr-lang/expr/ast"
@@ -22,7 +23,17 @@ func newPatcher(globals, locals map[string]any) *variablePatcher {
 	if len(globals) == 0 && len(locals) == 0 {
 		return nil
 	}
-	return &variablePatcher{globals: globals, locals: locals}
+	return &variablePatcher{globals: copyMap(globals), locals: copyMap(locals)}
+}
+
+// copyMap returns a shallow copy of m so the patcher is insulated from later
+// mutation of the caller's map.
+func copyMap(m map[string]any) map[string]any {
+	cp := make(map[string]any, len(m))
+	for k, v := range m {
+		cp[k] = v
+	}
+	return cp
 }
 
 func (v *variablePatcher) lookup(name string) (any, bool) {
@@ -65,7 +76,10 @@ func (v *variablePatcher) Visit(node *ast.Node) {
 		literal = &ast.FloatNode{Value: rv.Float()}
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		literal = &ast.IntegerNode{Value: int(rv.Int())}
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		if rv.Uint() > math.MaxInt {
+			return // overflows ast.IntegerNode.Value (int): skip silently
+		}
 		literal = &ast.IntegerNode{Value: int(rv.Uint())}
 	default:
 		return // non-scalar: skip silently (no global logging)

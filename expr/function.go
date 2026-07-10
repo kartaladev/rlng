@@ -10,10 +10,11 @@ import (
 // Function is a compiled value-producing expression with an optional
 // fallback. It is safe for concurrent use.
 type Function struct {
-	name       string
-	expression string
-	program    *vm.Program
-	fallback   *vm.Program
+	name        string
+	expression  string
+	program     *vm.Program
+	fallback    *vm.Program
+	fallbackSrc string
 }
 
 // NewFunction compiles expression into a named Function. When WithFallback is
@@ -48,6 +49,7 @@ func NewFunction(name, expression string, opts ...Option) (*Function, error) {
 			return nil, &CompileError{Name: name, Expression: cfg.fallback, Cause: err}
 		}
 		fn.fallback = fbProgram
+		fn.fallbackSrc = cfg.fallback
 	}
 	return fn, nil
 }
@@ -78,7 +80,7 @@ func (f *Function) Apply(env any) (any, error) {
 func (f *Function) runFallback() (any, error) {
 	result, err := exprlang.Run(f.fallback, map[string]any{})
 	if err != nil {
-		return nil, &EvalError{Name: f.name, Expression: f.expression, Cause: err}
+		return nil, &EvalError{Name: f.name, Expression: f.fallbackSrc, Cause: err}
 	}
 	return result, nil
 }
