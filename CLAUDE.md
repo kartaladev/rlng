@@ -154,7 +154,7 @@ The reference wires config → compiled programs → staged evaluation → mappe
 
 - **Engine/Calculator[I, R]** (`calculator.go`): generic over input type `I` and result type `R`. Loads config, validates (`go-playground/validator`), compiles everything up front, then `Calculate(input)` runs stages in order and maps the accumulated context into `R`. Compilation happens once at construction; evaluation is the hot path.
 
-- **Context** (`context.go`): a `map[string]any` accumulator threaded through evaluation. Input struct/map is flattened into it via reflection (`structToMap`); each stage writes its output back under a dot-separated path (`Set("stage.field", v)`). Supports nested paths and an override/strict-mode guard. This map *is* the `expr` evaluation environment.
+- **Context** (`context.go`): a `map[string]any` accumulator threaded through evaluation. Input struct/map is flattened into it via reflection (`structToMap`); each stage writes its output back under a dot-separated path (`Set("stage.field", v)`). Supports nested paths and an override/strict-mode guard. This map *is* the `expr` evaluation environment. (The increment-2 implementation names this accumulator `Scope`, package `stage` — see `stage/scope.go`.)
 
 - **Stages** (`stage.go`): a stage is `Name() / Type() / DependsOn() / Execute(ctx)`. Three types today:
   - `single-expr` — one expression, optional `condition` gate and `fallback_expr`.

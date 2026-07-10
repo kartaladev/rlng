@@ -1,5 +1,3 @@
-// Package stage provides rlng's Scope accumulator and the stage types that
-// compose the expr evaluators into reusable rule/calculation units.
 package stage
 
 import (

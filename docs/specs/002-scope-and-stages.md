@@ -4,7 +4,7 @@
 - **Date:** 2026-07-10
 - **Increment:** 2 of 5 (see [Roadmap](#roadmap-position))
 - **Builds on:** Spec 001 (`docs/specs/001-expression-core.md`) — the `expr` package (`Predicate`, `Function`, `expr.Option`, typed errors).
-- **Realized by plans:** _`docs/plans/002-*` (pending — created next via writing-plans)_
+- **Realized by plans:** `docs/plans/002-scope-and-stages.md`
 - **Related ADRs:** ADR-0002 (stage execution model + `Scope` naming), ADR-0003 (decision-table hit policies) — to be recorded with the first implementation commit of this increment.
 
 ## Context
@@ -204,6 +204,6 @@ TDD, red → green → refactor from the first commit.
 ## Traceability
 
 - **Spec:** 002 (this document). Builds on Spec 001.
-- **Plan:** `docs/plans/002-*` — pending, created next via `superpowers:writing-plans`; will link back here.
+- **Plan:** `docs/plans/002-scope-and-stages.md`.
 - **ADRs:** ADR-0002 (stage execution model + `Scope` naming), ADR-0003 (decision-table hit policies) — recorded with the first implementation commit of this increment.
 - Implementation commits reference this spec via a `Spec: 002` trailer (and `ADR:` trailers where they record a decision).
