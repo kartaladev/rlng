@@ -26,10 +26,7 @@ func NewPredicate(expression string, opts ...Option) (*Predicate, error) {
 	}
 
 	cfg := newConfig(opts)
-	exprOpts := []exprlang.Option{exprlang.AllowUndefinedVariables()}
-	if p := newPatcher(cfg.globals, cfg.locals); p != nil {
-		exprOpts = append(exprOpts, exprlang.Patch(p))
-	}
+	exprOpts := buildExprOpts(cfg)
 
 	program, err := exprlang.Compile(src, exprOpts...)
 	if err != nil {

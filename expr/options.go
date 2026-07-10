@@ -1,6 +1,10 @@
 package expr
 
-import "reflect"
+import (
+	"reflect"
+
+	exprlang "github.com/expr-lang/expr"
+)
 
 // config holds the settings shared by Predicate and Function, assembled from
 // functional Options passed to their constructors.
@@ -44,4 +48,15 @@ func WithFallback(expression string) Option { return func(c *config) { c.fallbac
 // WithReturnKind compiles a Function to coerce its result to the given kind.
 func WithReturnKind(k reflect.Kind) Option {
 	return func(c *config) { c.returnKind = k; c.hasReturnKind = true }
+}
+
+// buildExprOpts assembles the base expr compile options shared by both
+// evaluators: undefined-variables allowed, plus the variable-default patcher
+// when any variables are declared.
+func buildExprOpts(cfg *config) []exprlang.Option {
+	opts := []exprlang.Option{exprlang.AllowUndefinedVariables()}
+	if p := newPatcher(cfg.globals, cfg.locals); p != nil {
+		opts = append(opts, exprlang.Patch(p))
+	}
+	return opts
 }

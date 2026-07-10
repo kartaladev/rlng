@@ -28,10 +28,7 @@ func NewFunction(name, expression string, opts ...Option) (*Function, error) {
 	}
 
 	cfg := newConfig(opts)
-	exprOpts := []exprlang.Option{exprlang.AllowUndefinedVariables()}
-	if p := newPatcher(cfg.globals, cfg.locals); p != nil {
-		exprOpts = append(exprOpts, exprlang.Patch(p))
-	}
+	exprOpts := buildExprOpts(cfg)
 
 	mainOpts := exprOpts
 	if cfg.hasReturnKind {
