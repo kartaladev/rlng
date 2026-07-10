@@ -57,7 +57,7 @@ func TestDecisionTableExecute(t *testing.T) {
 				d, err := NewDecisionTable("tags", []Rule{
 					{Condition: "amount >= 100", Decisions: map[string]string{"tag": `"big"`}},
 					{Condition: "amount >= 1000", Decisions: map[string]string{"tag": `"huge"`}},
-				}, WithMode(ModeCollect))
+				}, WithHitPolicy(HitPolicyCollect))
 				require.NoError(t, err)
 				return d, NewScope(map[string]any{"amount": 5000})
 			},
@@ -122,31 +122,46 @@ func TestNewDecisionTableValidation(t *testing.T) {
 	t.Parallel()
 
 	type testCase struct {
-		name   string
-		rules  []Rule
-		assert func(t *testing.T, err error)
+		name      string
+		stageName string
+		rules     []Rule
+		assert    func(t *testing.T, err error)
 	}
 
 	cases := []testCase{
 		{
-			name:  "empty rule set is rejected",
-			rules: nil,
+			name:      "empty rule set is rejected",
+			stageName: "t",
+			rules:     nil,
 			assert: func(t *testing.T, err error) {
 				var se *StageError
 				require.ErrorAs(t, err, &se)
 			},
 		},
 		{
-			name:  "rule without decisions is rejected",
-			rules: []Rule{{Condition: "true", Decisions: nil}},
+			name:      "empty stage name is rejected",
+			stageName: "",
+			rules:     []Rule{{Condition: "true", Decisions: map[string]string{"y": "1"}}},
+			assert: func(t *testing.T, err error) {
+				var se *StageError
+				require.ErrorAs(t, err, &se)
+				assert.Equal(t, TypeDecisionTable, se.Type)
+				assert.ErrorIs(t, se, errEmptyStageName)
+			},
+		},
+		{
+			name:      "rule without decisions is rejected",
+			stageName: "t",
+			rules:     []Rule{{Condition: "true", Decisions: nil}},
 			assert: func(t *testing.T, err error) {
 				var se *StageError
 				require.ErrorAs(t, err, &se)
 			},
 		},
 		{
-			name:  "bad condition is a compile error",
-			rules: []Rule{{Condition: "x +", Decisions: map[string]string{"y": "1"}}},
+			name:      "bad condition is a compile error",
+			stageName: "t",
+			rules:     []Rule{{Condition: "x +", Decisions: map[string]string{"y": "1"}}},
 			assert: func(t *testing.T, err error) {
 				var se *StageError
 				require.ErrorAs(t, err, &se)
@@ -157,7 +172,7 @@ func TestNewDecisionTableValidation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := NewDecisionTable("t", tc.rules)
+			_, err := NewDecisionTable(tc.stageName, tc.rules)
 			tc.assert(t, err)
 		})
 	}

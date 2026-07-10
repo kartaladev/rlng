@@ -146,3 +146,13 @@ func TestNewSingleExprCompileError(t *testing.T) {
 	require.ErrorAs(t, err, &se)
 	assert.Equal(t, TypeSingleExpr, se.Type)
 }
+
+func TestNewSingleExprEmptyName(t *testing.T) {
+	t.Parallel()
+
+	_, err := NewSingleExpr("", "1")
+	var se *StageError
+	require.ErrorAs(t, err, &se)
+	assert.Equal(t, TypeSingleExpr, se.Type)
+	assert.ErrorIs(t, se, errEmptyStageName)
+}

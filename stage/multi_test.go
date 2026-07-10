@@ -95,30 +95,45 @@ func TestNewMultiExprValidation(t *testing.T) {
 	t.Parallel()
 
 	type testCase struct {
-		name   string
-		exprs  []NamedExpr
-		assert func(t *testing.T, err error)
+		name      string
+		stageName string
+		exprs     []NamedExpr
+		assert    func(t *testing.T, err error)
 	}
 
 	cases := []testCase{
 		{
-			name:  "empty set is rejected",
-			exprs: nil,
+			name:      "empty set is rejected",
+			stageName: "calc",
+			exprs:     nil,
 			assert: func(t *testing.T, err error) {
 				var se *StageError
 				require.ErrorAs(t, err, &se)
 			},
 		},
 		{
-			name:  "empty name is rejected",
-			exprs: []NamedExpr{{Name: "", Expression: "1"}},
+			name:      "empty stage name is rejected",
+			stageName: "",
+			exprs:     []NamedExpr{{Name: "a", Expression: "1"}},
+			assert: func(t *testing.T, err error) {
+				var se *StageError
+				require.ErrorAs(t, err, &se)
+				assert.Equal(t, TypeMultiExpr, se.Type)
+				assert.ErrorIs(t, se, errEmptyStageName)
+			},
+		},
+		{
+			name:      "empty name is rejected",
+			stageName: "calc",
+			exprs:     []NamedExpr{{Name: "", Expression: "1"}},
 			assert: func(t *testing.T, err error) {
 				var se *StageError
 				require.ErrorAs(t, err, &se)
 			},
 		},
 		{
-			name: "duplicate name is rejected",
+			name:      "duplicate name is rejected",
+			stageName: "calc",
 			exprs: []NamedExpr{
 				{Name: "a", Expression: "1"},
 				{Name: "a", Expression: "2"},
@@ -133,7 +148,7 @@ func TestNewMultiExprValidation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := NewMultiExpr("calc", tc.exprs)
+			_, err := NewMultiExpr(tc.stageName, tc.exprs)
 			tc.assert(t, err)
 		})
 	}

@@ -13,7 +13,7 @@ typed errors). Increment 1 (`expr/`) shipped and is merged to `main`. Increment 
 evaluators into reusable rule/calculation units — `Scope` (`stage/scope.go`), `SingleExpr`
 (`stage/single.go`), `MultiExpr` (`stage/multi.go`), `DecisionTable` (`stage/table.go`), plus
 `ADR-0002` (stage execution model + the `Context`→`Scope` naming decision) and `ADR-0003`
-(decision-table hit policies, `ModeSingle`/`ModeCollect`).
+(decision-table hit policies, `HitPolicySingle`/`HitPolicyCollect`).
 
 **Not yet done:** the whole-branch pre-merge review gate (`/code-review` + `/security-review`
 over `main..HEAD`) and user merge approval. Per CLAUDE.md, do not merge/push until both are

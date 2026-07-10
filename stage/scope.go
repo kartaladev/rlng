@@ -114,6 +114,11 @@ func (s *Scope) Get(path string) (any, bool) {
 
 // Snapshot returns a shallow top-level copy of the accumulated data, suitable as
 // an expr evaluation environment.
+//
+// The copy is only shallow: nested map or slice values in the returned
+// snapshot are live references into the Scope's internal state; callers must
+// not mutate them, nor read them concurrently with Set without external
+// synchronization.
 func (s *Scope) Snapshot() map[string]any {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

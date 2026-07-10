@@ -2,6 +2,7 @@ package stage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
 
@@ -37,3 +38,7 @@ func (e *StageError) Error() string {
 }
 
 func (e *StageError) Unwrap() error { return e.Cause }
+
+// errEmptyStageName is the Cause of a StageError returned by New* constructors
+// when given an empty stage name, before any compilation is attempted.
+var errEmptyStageName = errors.New("stage name must not be empty")

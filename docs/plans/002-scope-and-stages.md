@@ -544,8 +544,8 @@ git commit -m "feat(stage): Stage interface and typed StageError" \
 **Interfaces:**
 - Consumes: `Scope`, `Stage`, `StageError`, `TypeSingleExpr`, and `expr.NewFunction`/`expr.NewPredicate`/`expr.Option`.
 - Produces:
-  - `type SingleExpr` implementing `Stage`; `NewSingleExpr(name, expression string, opts ...SingleExprOption) (*SingleExpr, error)`.
-  - `type SingleExprOption`; `WithOutput(path string)`, `WithCondition(condition string, opts ...expr.Option)`, `WithExprOptions(opts ...expr.Option)`, `WithDependsOn(deps ...string)`.
+  - `type SingleExpr` implementing `Stage`; `NewSingleExpr(name, expression string, opts ...Option) (*SingleExpr, error)`.
+  - `type Option`; `WithOutput(path string)`, `WithCondition(condition string, opts ...expr.Option)`, `WithExprOptions(opts ...expr.Option)`, `WithDependsOn(deps ...string)`.
 
 - [ ] **Step 1: Write the failing test** — `stage/single_test.go`
 
@@ -734,35 +734,35 @@ type singleExprConfig struct {
 	exprOpts  []expr.Option
 }
 
-// SingleExprOption configures a SingleExpr.
-type SingleExprOption func(*singleExprConfig)
+// Option configures a SingleExpr.
+type Option func(*singleExprConfig)
 
 // WithOutput sets the Scope path the result is written to (default: stage name).
-func WithOutput(path string) SingleExprOption {
+func WithOutput(path string) Option {
 	return func(c *singleExprConfig) { c.output = path }
 }
 
 // WithCondition gates the stage on a boolean predicate; when it tests false the
 // stage writes nothing.
-func WithCondition(condition string, opts ...expr.Option) SingleExprOption {
+func WithCondition(condition string, opts ...expr.Option) Option {
 	return func(c *singleExprConfig) { c.condition = condition; c.condOpts = opts }
 }
 
 // WithExprOptions passes options to the main value expression (e.g.
 // expr.WithFallback, expr.WithGlobals).
-func WithExprOptions(opts ...expr.Option) SingleExprOption {
+func WithExprOptions(opts ...expr.Option) Option {
 	return func(c *singleExprConfig) { c.exprOpts = opts }
 }
 
 // WithDependsOn declares the stages this stage depends on (consumed by the DAG
 // in increment 3).
-func WithDependsOn(deps ...string) SingleExprOption {
+func WithDependsOn(deps ...string) Option {
 	return func(c *singleExprConfig) { c.deps = deps }
 }
 
 // NewSingleExpr compiles a SingleExpr stage. Compilation of the value
 // expression and any condition happens now; Execute only evaluates.
-func NewSingleExpr(name, expression string, opts ...SingleExprOption) (*SingleExpr, error) {
+func NewSingleExpr(name, expression string, opts ...Option) (*SingleExpr, error) {
 	cfg := &singleExprConfig{output: name}
 	for _, opt := range opts {
 		opt(cfg)
@@ -883,8 +883,8 @@ git commit -m "feat(stage): SingleExpr stage with condition gate" \
 - Consumes: `Scope`, `Stage`, `StageError`, `TypeMultiExpr`, `expr.NewFunction`/`expr.Option`.
 - Produces:
   - `type NamedExpr struct { Name, Expression string; Priority int; Options []expr.Option }`.
-  - `type MultiExpr` implementing `Stage`; `NewMultiExpr(name string, exprs []NamedExpr, opts ...MultiExprOption) (*MultiExpr, error)`.
-  - `type MultiExprOption`; `WithMultiDependsOn(deps ...string)`.
+  - `type MultiExpr` implementing `Stage`; `NewMultiExpr(name string, exprs []NamedExpr, opts ...Option) (*MultiExpr, error)`.
+  - `type Option`; `WithDependsOn(deps ...string)`.
 
 - [ ] **Step 1: Write the failing test** — `stage/multi_test.go`
 
@@ -1076,19 +1076,19 @@ type multiExprConfig struct {
 	deps []string
 }
 
-// MultiExprOption configures a MultiExpr.
-type MultiExprOption func(*multiExprConfig)
+// Option configures a MultiExpr.
+type Option func(*multiExprConfig)
 
-// WithMultiDependsOn declares the stages this stage depends on (consumed by the
+// WithDependsOn declares the stages this stage depends on (consumed by the
 // DAG in increment 3).
-func WithMultiDependsOn(deps ...string) MultiExprOption {
+func WithDependsOn(deps ...string) Option {
 	return func(c *multiExprConfig) { c.deps = deps }
 }
 
 // NewMultiExpr compiles a MultiExpr stage. Expression names must be non-empty
 // and unique within the stage; entries are ordered by ascending Priority
 // (stable for ties).
-func NewMultiExpr(name string, exprs []NamedExpr, opts ...MultiExprOption) (*MultiExpr, error) {
+func NewMultiExpr(name string, exprs []NamedExpr, opts ...Option) (*MultiExpr, error) {
 	if len(exprs) == 0 {
 		return nil, &StageError{Stage: name, Type: TypeMultiExpr, Cause: errors.New("multi-expr requires at least one expression")}
 	}
@@ -1212,10 +1212,10 @@ git commit -m "feat(stage): MultiExpr stage with priority ordering" \
 **Interfaces:**
 - Consumes: `Scope`, `Stage`, `StageError`, `TypeDecisionTable`, `expr.NewPredicate`/`expr.NewFunction`/`expr.Option`.
 - Produces:
-  - `type HitPolicy int`; constants `ModeSingle` (iota 0, default), `ModeCollect`.
+  - `type HitPolicy int`; constants `HitPolicySingle` (iota 0, default), `HitPolicyCollect`.
   - `type Rule struct { Condition string; Decisions map[string]string; ConditionOptions, DecisionOptions []expr.Option }`.
-  - `type DecisionTable` implementing `Stage`; `NewDecisionTable(name string, rules []Rule, opts ...DecisionTableOption) (*DecisionTable, error)`.
-  - `type DecisionTableOption`; `WithMode(m HitPolicy)`, `WithTableDependsOn(deps ...string)`.
+  - `type DecisionTable` implementing `Stage`; `NewDecisionTable(name string, rules []Rule, opts ...Option) (*DecisionTable, error)`.
+  - `type Option`; `WithHitPolicy(m HitPolicy)`, `WithDependsOn(deps ...string)`.
 
 - [ ] **Step 1: Write the failing test** — `stage/table_test.go`
 
@@ -1279,7 +1279,7 @@ func TestDecisionTableExecute(t *testing.T) {
 				d, err := NewDecisionTable("tags", []Rule{
 					{Condition: "amount >= 100", Decisions: map[string]string{"tag": `"big"`}},
 					{Condition: "amount >= 1000", Decisions: map[string]string{"tag": `"huge"`}},
-				}, WithMode(ModeCollect))
+				}, WithHitPolicy(HitPolicyCollect))
 				require.NoError(t, err)
 				return d, NewScope(map[string]any{"amount": 5000})
 			},
@@ -1409,11 +1409,11 @@ import (
 type HitPolicy int
 
 const (
-	// ModeSingle applies the first matching rule's decisions and stops.
-	ModeSingle HitPolicy = iota
-	// ModeCollect applies every matching rule; each output key accumulates a
+	// HitPolicySingle applies the first matching rule's decisions and stops.
+	HitPolicySingle HitPolicy = iota
+	// HitPolicyCollect applies every matching rule; each output key accumulates a
 	// []any with one entry per matched rule, in rule order.
-	ModeCollect
+	HitPolicyCollect
 )
 
 // Rule is one row of a DecisionTable: a boolean condition and a set of
@@ -1449,17 +1449,17 @@ type decisionTableConfig struct {
 	deps []string
 }
 
-// DecisionTableOption configures a DecisionTable.
-type DecisionTableOption func(*decisionTableConfig)
+// Option configures a DecisionTable.
+type Option func(*decisionTableConfig)
 
-// WithMode sets the hit policy (default ModeSingle).
-func WithMode(m HitPolicy) DecisionTableOption {
+// WithHitPolicy sets the hit policy (default HitPolicySingle).
+func WithHitPolicy(m HitPolicy) Option {
 	return func(c *decisionTableConfig) { c.mode = m }
 }
 
-// WithTableDependsOn declares the stages this stage depends on (consumed by the
+// WithDependsOn declares the stages this stage depends on (consumed by the
 // DAG in increment 3).
-func WithTableDependsOn(deps ...string) DecisionTableOption {
+func WithDependsOn(deps ...string) Option {
 	return func(c *decisionTableConfig) { c.deps = deps }
 }
 
@@ -1467,11 +1467,11 @@ func WithTableDependsOn(deps ...string) DecisionTableOption {
 // is compiled up front. Within a rule, decisions are independent (evaluated
 // against the same pre-rule snapshot), so their order is not significant; they
 // are compiled in sorted-key order for deterministic collect output.
-func NewDecisionTable(name string, rules []Rule, opts ...DecisionTableOption) (*DecisionTable, error) {
+func NewDecisionTable(name string, rules []Rule, opts ...Option) (*DecisionTable, error) {
 	if len(rules) == 0 {
 		return nil, &StageError{Stage: name, Type: TypeDecisionTable, Cause: errors.New("decision-table requires at least one rule")}
 	}
-	cfg := &decisionTableConfig{mode: ModeSingle}
+	cfg := &decisionTableConfig{mode: HitPolicySingle}
 	for _, opt := range opts {
 		opt(cfg)
 	}
@@ -1513,7 +1513,7 @@ func (d *DecisionTable) Execute(ctx context.Context, sc *Scope) error {
 	}
 
 	env := sc.Snapshot()
-	if d.mode == ModeCollect {
+	if d.mode == HitPolicyCollect {
 		return d.executeCollect(env, sc)
 	}
 	return d.executeSingle(env, sc)
@@ -1644,11 +1644,11 @@ single rule may depend on one another.
 
 ## Decision
 
-- **Hit policy** is selected by `WithMode`, defaulting to `ModeSingle`:
-  - `ModeSingle` — first-match-wins: the first rule whose condition tests true
+- **Hit policy** is selected by `WithHitPolicy`, defaulting to `HitPolicySingle`:
+  - `HitPolicySingle` — first-match-wins: the first rule whose condition tests true
     has its decisions applied under `name.<outputKey>`, and evaluation stops. No
     match writes nothing.
-  - `ModeCollect` — every matching rule contributes; each output key accumulates
+  - `HitPolicyCollect` — every matching rule contributes; each output key accumulates
     a `[]any` with one entry per matched rule, in rule order (DMN COLLECT
     semantics). No match writes nothing.
 - **Decisions within a rule are independent**: all are evaluated against the same
@@ -1675,7 +1675,7 @@ Expected: PASS, no data races.
 ```bash
 git add stage/table.go stage/table_test.go stage/table_example_test.go docs/adrs/0003-decision-table-hit-policies.md
 git commit -m "feat(stage): DecisionTable stage with single/collect hit policies" \
-  -m "Ordered condition+decisions rules; ModeSingle first-match-wins and ModeCollect ([]any per output key, rule order). Decisions within a rule are independent. Records ADR-0003." \
+  -m "Ordered condition+decisions rules; HitPolicySingle first-match-wins and HitPolicyCollect ([]any per output key, rule order). Decisions within a rule are independent. Records ADR-0003." \
   -m "Spec: 002" -m "ADR: 0003" \
   -m "Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
@@ -1705,8 +1705,8 @@ git commit -m "feat(stage): DecisionTable stage with single/collect hit policies
 // A Stage is Name/Type/DependsOn/Execute. Three implementations are provided:
 // SingleExpr (one value expression with an optional condition gate), MultiExpr
 // (several named expressions in priority order, each visible to later ones), and
-// DecisionTable (ordered condition+decisions rules with ModeSingle first-match
-// or ModeCollect accumulation). Stages compile at construction and only evaluate
+// DecisionTable (ordered condition+decisions rules with HitPolicySingle first-match
+// or HitPolicyCollect accumulation). Stages compile at construction and only evaluate
 // in Execute; failures are a *StageError that unwraps to the underlying expr
 // error. Stages declare DependsOn but do not order themselves — dependency-DAG
 // orchestration is a later increment.
@@ -1758,7 +1758,7 @@ git commit -m "docs(stage): package doc and increment-2 cross-links" \
 - `Stage` interface + `Type*` constants + `StageError` (Unwrap to expr) → Task 2. ✓
 - `SingleExpr` (condition gate, fallback via expr options, custom output) → Task 3. ✓
 - `MultiExpr` (priority order, intra-stage visibility, name validation) → Task 4. ✓
-- `DecisionTable` (ModeSingle/ModeCollect, independent decisions, validation) → Task 5. ✓
+- `DecisionTable` (HitPolicySingle/HitPolicyCollect, independent decisions, validation) → Task 5. ✓
 - `context.Context` threading + cancellation cases → Tasks 3–5 (`ctx` modifier). ✓
 - No new dependency; `go mod tidy` no-op → Tasks 1 & 6 hygiene steps. ✓
 - ADR-0002 (model + Scope name) → Task 2; ADR-0003 (hit policies) → Task 5. ✓
@@ -1767,7 +1767,7 @@ git commit -m "docs(stage): package doc and increment-2 cross-links" \
 
 **2. Placeholder scan:** No TBD/TODO. Every code step contains complete code. The one flagged uncertainty (the `ExampleMultiExpr` float `// Output:` line) has an explicit fallback instruction, not a placeholder.
 
-**3. Type consistency:** `Scope`/`NewScope`/`Set`/`Get`/`Snapshot`/`WithStrict`, `Stage`/`StageError`/`Type*`, `SingleExpr`/`NewSingleExpr`/`WithOutput`/`WithCondition`/`WithExprOptions`/`WithDependsOn`, `NamedExpr`/`MultiExpr`/`NewMultiExpr`/`WithMultiDependsOn`, `Rule`/`HitPolicy`/`ModeSingle`/`ModeCollect`/`DecisionTable`/`NewDecisionTable`/`WithMode`/`WithTableDependsOn` are defined once and used consistently across tasks. The internal `sortedKeys`, `compiledRule`, `compiledDecision`, `compiledNamed`, and `*Config` types are used only within their defining task.
+**3. Type consistency:** `Scope`/`NewScope`/`Set`/`Get`/`Snapshot`/`WithStrict`, `Stage`/`StageError`/`Type*`, `SingleExpr`/`NewSingleExpr`/`WithOutput`/`WithCondition`/`WithExprOptions`/`WithDependsOn`, `NamedExpr`/`MultiExpr`/`NewMultiExpr`/`WithDependsOn`, `Rule`/`HitPolicy`/`HitPolicySingle`/`HitPolicyCollect`/`DecisionTable`/`NewDecisionTable`/`WithHitPolicy`/`WithDependsOn` are defined once and used consistently across tasks. The internal `sortedKeys`, `compiledRule`, `compiledDecision`, `compiledNamed`, and `*Config` types are used only within their defining task.
 
 ## Notes / deviations
 

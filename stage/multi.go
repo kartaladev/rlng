@@ -31,30 +31,17 @@ type compiledNamed struct {
 	fn   *expr.Function
 }
 
-type multiExprConfig struct {
-	deps []string
-}
-
-// MultiExprOption configures a MultiExpr.
-type MultiExprOption func(*multiExprConfig)
-
-// WithMultiDependsOn declares the stages this stage depends on (consumed by the
-// DAG in increment 3).
-func WithMultiDependsOn(deps ...string) MultiExprOption {
-	return func(c *multiExprConfig) { c.deps = deps }
-}
-
 // NewMultiExpr compiles a MultiExpr stage. Expression names must be non-empty
 // and unique within the stage; entries are ordered by ascending Priority
 // (stable for ties).
-func NewMultiExpr(name string, exprs []NamedExpr, opts ...MultiExprOption) (*MultiExpr, error) {
+func NewMultiExpr(name string, exprs []NamedExpr, opts ...Option) (*MultiExpr, error) {
+	if name == "" {
+		return nil, &StageError{Stage: name, Type: TypeMultiExpr, Cause: errEmptyStageName}
+	}
 	if len(exprs) == 0 {
 		return nil, &StageError{Stage: name, Type: TypeMultiExpr, Cause: errors.New("multi-expr requires at least one expression")}
 	}
-	cfg := &multiExprConfig{}
-	for _, opt := range opts {
-		opt(cfg)
-	}
+	cfg := newStageConfig(opts)
 
 	ordered := make([]NamedExpr, len(exprs))
 	copy(ordered, exprs)

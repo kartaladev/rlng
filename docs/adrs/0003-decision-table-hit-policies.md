@@ -3,6 +3,9 @@
 - **Status:** Accepted
 - **Date:** 2026-07-10
 - **Prompted by:** Spec 002 (docs/specs/002-scope-and-stages.md)
+- **Naming note:** the option/constant names below were realigned to the
+  `HitPolicy*`/`WithHitPolicy` form by ADR-0004 (from an earlier, more
+  generic "mode" naming); the semantics recorded here are unchanged.
 
 ## Context
 
@@ -13,13 +16,14 @@ single rule may depend on one another.
 
 ## Decision
 
-- **Hit policy** is selected by `WithMode`, defaulting to `ModeSingle`:
-  - `ModeSingle` — first-match-wins: the first rule whose condition tests true
-    has its decisions applied under `name.<outputKey>`, and evaluation stops. No
-    match writes nothing.
-  - `ModeCollect` — every matching rule contributes; each output key accumulates
-    a `[]any` with one entry per matched rule, in rule order (DMN COLLECT
-    semantics). No match writes nothing.
+- **Hit policy** is selected by `WithHitPolicy`, defaulting to
+  `HitPolicySingle`:
+  - `HitPolicySingle` — first-match-wins: the first rule whose condition
+    tests true has its decisions applied under `name.<outputKey>`, and
+    evaluation stops. No match writes nothing.
+  - `HitPolicyCollect` — every matching rule contributes; each output key
+    accumulates a `[]any` with one entry per matched rule, in rule order
+    (DMN COLLECT semantics). No match writes nothing.
 - **Decisions within a rule are independent**: all are evaluated against the same
   pre-rule Scope snapshot, so decision order is not significant. This is why
   `Rule.Decisions` is a plain `map[string]string`. Decisions are compiled and

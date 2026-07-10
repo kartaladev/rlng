@@ -13,11 +13,11 @@ import (
 type HitPolicy int
 
 const (
-	// ModeSingle applies the first matching rule's decisions and stops.
-	ModeSingle HitPolicy = iota
-	// ModeCollect applies every matching rule; each output key accumulates a
-	// []any with one entry per matched rule, in rule order.
-	ModeCollect
+	// HitPolicySingle applies the first matching rule's decisions and stops.
+	HitPolicySingle HitPolicy = iota
+	// HitPolicyCollect applies every matching rule; each output key accumulates
+	// a []any with one entry per matched rule, in rule order.
+	HitPolicyCollect
 )
 
 // Rule is one row of a DecisionTable: a boolean condition and a set of
@@ -32,10 +32,10 @@ type Rule struct {
 // DecisionTable evaluates ordered rules against a Scope snapshot, writing
 // decision outputs under name.<outputKey>.
 type DecisionTable struct {
-	name  string
-	deps  []string
-	mode  HitPolicy
-	rules []compiledRule
+	name      string
+	deps      []string
+	hitPolicy HitPolicy
+	rules     []compiledRule
 }
 
 type compiledRule struct {
@@ -48,37 +48,18 @@ type compiledDecision struct {
 	fn  *expr.Function
 }
 
-type decisionTableConfig struct {
-	mode HitPolicy
-	deps []string
-}
-
-// DecisionTableOption configures a DecisionTable.
-type DecisionTableOption func(*decisionTableConfig)
-
-// WithMode sets the hit policy (default ModeSingle).
-func WithMode(m HitPolicy) DecisionTableOption {
-	return func(c *decisionTableConfig) { c.mode = m }
-}
-
-// WithTableDependsOn declares the stages this stage depends on (consumed by the
-// DAG in increment 3).
-func WithTableDependsOn(deps ...string) DecisionTableOption {
-	return func(c *decisionTableConfig) { c.deps = deps }
-}
-
 // NewDecisionTable compiles a DecisionTable stage. Every condition and decision
 // is compiled up front. Within a rule, decisions are independent (evaluated
 // against the same pre-rule snapshot), so their order is not significant; they
 // are compiled in sorted-key order for deterministic collect output.
-func NewDecisionTable(name string, rules []Rule, opts ...DecisionTableOption) (*DecisionTable, error) {
+func NewDecisionTable(name string, rules []Rule, opts ...Option) (*DecisionTable, error) {
+	if name == "" {
+		return nil, &StageError{Stage: name, Type: TypeDecisionTable, Cause: errEmptyStageName}
+	}
 	if len(rules) == 0 {
 		return nil, &StageError{Stage: name, Type: TypeDecisionTable, Cause: errors.New("decision-table requires at least one rule")}
 	}
-	cfg := &decisionTableConfig{mode: ModeSingle}
-	for _, opt := range opts {
-		opt(cfg)
-	}
+	cfg := newStageConfig(opts)
 
 	compiled := make([]compiledRule, 0, len(rules))
 	for i, r := range rules {
@@ -103,7 +84,7 @@ func NewDecisionTable(name string, rules []Rule, opts ...DecisionTableOption) (*
 		}
 		compiled = append(compiled, compiledRule{cond: cond, decisions: decisions})
 	}
-	return &DecisionTable{name: name, deps: cfg.deps, mode: cfg.mode, rules: compiled}, nil
+	return &DecisionTable{name: name, deps: cfg.deps, hitPolicy: cfg.hitPolicy, rules: compiled}, nil
 }
 
 func (d *DecisionTable) Name() string        { return d.name }
@@ -117,7 +98,7 @@ func (d *DecisionTable) Execute(ctx context.Context, sc *Scope) error {
 	}
 
 	env := sc.Snapshot()
-	if d.mode == ModeCollect {
+	if d.hitPolicy == HitPolicyCollect {
 		return d.executeCollect(env, sc)
 	}
 	return d.executeSingle(env, sc)

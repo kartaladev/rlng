@@ -16,46 +16,17 @@ type SingleExpr struct {
 	fn     *expr.Function
 }
 
-type singleExprConfig struct {
-	output    string
-	deps      []string
-	condition string
-	condOpts  []expr.Option
-	exprOpts  []expr.Option
-}
-
-// SingleExprOption configures a SingleExpr.
-type SingleExprOption func(*singleExprConfig)
-
-// WithOutput sets the Scope path the result is written to (default: stage name).
-func WithOutput(path string) SingleExprOption {
-	return func(c *singleExprConfig) { c.output = path }
-}
-
-// WithCondition gates the stage on a boolean predicate; when it tests false the
-// stage writes nothing.
-func WithCondition(condition string, opts ...expr.Option) SingleExprOption {
-	return func(c *singleExprConfig) { c.condition = condition; c.condOpts = opts }
-}
-
-// WithExprOptions passes options to the main value expression (e.g.
-// expr.WithFallback, expr.WithGlobals).
-func WithExprOptions(opts ...expr.Option) SingleExprOption {
-	return func(c *singleExprConfig) { c.exprOpts = opts }
-}
-
-// WithDependsOn declares the stages this stage depends on (consumed by the DAG
-// in increment 3).
-func WithDependsOn(deps ...string) SingleExprOption {
-	return func(c *singleExprConfig) { c.deps = deps }
-}
-
 // NewSingleExpr compiles a SingleExpr stage. Compilation of the value
 // expression and any condition happens now; Execute only evaluates.
-func NewSingleExpr(name, expression string, opts ...SingleExprOption) (*SingleExpr, error) {
-	cfg := &singleExprConfig{output: name}
-	for _, opt := range opts {
-		opt(cfg)
+func NewSingleExpr(name, expression string, opts ...Option) (*SingleExpr, error) {
+	if name == "" {
+		return nil, &StageError{Stage: name, Type: TypeSingleExpr, Cause: errEmptyStageName}
+	}
+
+	cfg := newStageConfig(opts)
+	output := name
+	if cfg.hasOutput {
+		output = cfg.output
 	}
 
 	fn, err := expr.NewFunction(name, expression, cfg.exprOpts...)
@@ -63,7 +34,7 @@ func NewSingleExpr(name, expression string, opts ...SingleExprOption) (*SingleEx
 		return nil, &StageError{Stage: name, Type: TypeSingleExpr, Cause: err}
 	}
 
-	s := &SingleExpr{name: name, output: cfg.output, deps: cfg.deps, fn: fn}
+	s := &SingleExpr{name: name, output: output, deps: cfg.deps, fn: fn}
 
 	if cfg.condition != "" {
 		cond, err := expr.NewPredicate(cfg.condition, cfg.condOpts...)

@@ -5,7 +5,7 @@
 - **Increment:** 2 of 5 (see [Roadmap](#roadmap-position))
 - **Builds on:** Spec 001 (`docs/specs/001-expression-core.md`) — the `expr` package (`Predicate`, `Function`, `expr.Option`, typed errors).
 - **Realized by plans:** `docs/plans/002-scope-and-stages.md`
-- **Related ADRs:** ADR-0002 (stage execution model + `Scope` naming), ADR-0003 (decision-table hit policies) — to be recorded with the first implementation commit of this increment.
+- **Related ADRs:** ADR-0002 (stage execution model + `Scope` naming), ADR-0003 (decision-table hit policies), ADR-0004 (shared stage `Option` convention + hit-policy naming + empty-name validation) — recorded with the implementation commits of this increment.
 
 ## Context
 
@@ -114,16 +114,30 @@ const (
 
 `Execute` honors `ctx` cancellation at the natural boundary (checked before evaluating; the underlying `expr` VM calls are fast and synchronous). All three stages are safe for concurrent `Execute` on the *same* stage value against *different* `Scope`s (they hold no mutable state post-construction).
 
+### Stage options (`options.go`)
+
+A single shared `Option` type configures all three stage constructors —
+mirroring `expr.Option`'s pattern from Spec 001: names are unprefixed, and an
+option that does not apply to a given stage type is silently ignored
+(documented per option). See ADR-0004.
+
+```go
+type Option func(*stageConfig)
+
+func WithDependsOn(deps ...string) Option                        // all stage types
+func WithOutput(path string) Option                              // SingleExpr only; default output path = the stage name
+func WithCondition(condition string, opts ...expr.Option) Option // SingleExpr only
+func WithExprOptions(opts ...expr.Option) Option                 // SingleExpr only; applied to the main Function (WithFallback, WithGlobals, …)
+func WithHitPolicy(h HitPolicy) Option                            // DecisionTable only; default HitPolicySingle
+```
+
 ### `SingleExpr` (`single.go`)
 
 ```go
-func NewSingleExpr(name, expression string, opts ...SingleExprOption) (*SingleExpr, error)
-
-func WithOutput(path string) SingleExprOption                    // default output path = the stage name
-func WithCondition(condition string, opts ...expr.Option) SingleExprOption
-func WithExprOptions(opts ...expr.Option) SingleExprOption       // applied to the main Function (WithFallback, WithGlobals, …)
-func WithDependsOn(deps ...string) SingleExprOption
+func NewSingleExpr(name, expression string, opts ...Option) (*SingleExpr, error)
 ```
+
+`NewSingleExpr` returns a `*StageError` wrapping `errEmptyStageName` if `name == ""`, before compiling anything.
 
 `Execute`: take `sc.Snapshot()`; if a condition predicate is configured and tests **false**, the stage is a **no-op** (writes nothing) and returns nil; otherwise `Apply` the main `expr.Function` and `Set` the result at the output path (default: the stage name). A `nil` result (with an `expr.WithFallback` configured) is handled by `Function.Apply` per spec 001. Compilation of both the condition and the main function happens in `NewSingleExpr`.
 
@@ -137,11 +151,10 @@ type NamedExpr struct {
 	Options    []expr.Option  // per-expression (WithFallback, WithGlobals, …)
 }
 
-func NewMultiExpr(name string, exprs []NamedExpr, opts ...MultiExprOption) (*MultiExpr, error)
-func WithMultiDependsOn(deps ...string) MultiExprOption
+func NewMultiExpr(name string, exprs []NamedExpr, opts ...Option) (*MultiExpr, error)
 ```
 
-Constructor validates non-empty `Name`s and unique names within the stage, compiles each expression, and orders them by ascending `Priority` (stable for ties). `Execute` evaluates them in that order against a **working env** seeded from `sc.Snapshot()`: each result is written back into the working env under its `Name` **and** persisted to the scope at `name.<exprName>`, so a later expression can read an earlier one's output within the same stage.
+Constructor validates a non-empty stage `name` (a `*StageError` wrapping `errEmptyStageName` otherwise), non-empty `Name`s and unique names within the stage, compiles each expression, and orders them by ascending `Priority` (stable for ties). `Execute` evaluates them in that order against a **working env** seeded from `sc.Snapshot()`: each result is written back into the working env under its `Name` **and** persisted to the scope at `name.<exprName>`, so a later expression can read an earlier one's output within the same stage.
 
 ### `DecisionTable` (`table.go`)
 
@@ -154,19 +167,17 @@ type Rule struct {
 }
 
 type HitPolicy int
-const ( ModeSingle HitPolicy = iota; ModeCollect )   // ModeSingle is the default
+const ( HitPolicySingle HitPolicy = iota; HitPolicyCollect )   // HitPolicySingle is the default
 
-func NewDecisionTable(name string, rules []Rule, opts ...DecisionTableOption) (*DecisionTable, error)
-func WithMode(m HitPolicy) DecisionTableOption
-func WithTableDependsOn(deps ...string) DecisionTableOption
+func NewDecisionTable(name string, rules []Rule, opts ...Option) (*DecisionTable, error)
 ```
 
 Rules are evaluated **in declaration order** against a single `sc.Snapshot()`. Within a rule, the decisions are **independent** — each is evaluated against the same pre-rule env, so decision order does not matter (this is why `Decisions` may be an unordered map). Outputs are written under `name.<outputKey>`.
 
-- **`ModeSingle`** (default, first-match-wins): the first rule whose condition tests true has each of its decisions applied and written; evaluation stops. No matching rule ⇒ no writes.
-- **`ModeCollect`**: every rule whose condition tests true contributes; each output key accumulates a **`[]any`** with one entry per matched rule, **in rule order** (DMN COLLECT semantics). Keys are written once after all rules are evaluated. No matches ⇒ no writes.
+- **`HitPolicySingle`** (default, first-match-wins): the first rule whose condition tests true has each of its decisions applied and written; evaluation stops. No matching rule ⇒ no writes.
+- **`HitPolicyCollect`**: every rule whose condition tests true contributes; each output key accumulates a **`[]any`** with one entry per matched rule, **in rule order** (DMN COLLECT semantics). Keys are written once after all rules are evaluated. No matches ⇒ no writes.
 
-The constructor validates a non-empty rule set, non-empty output keys, and compiles every condition (as an `expr.Predicate`) and every decision (as an `expr.Function`) up front.
+The constructor validates a non-empty stage `name` (a `*StageError` wrapping `errEmptyStageName` otherwise), a non-empty rule set, non-empty output keys, and compiles every condition (as an `expr.Predicate`) and every decision (as an `expr.Function`) up front.
 
 ### Error model (`errors.go`)
 
@@ -182,9 +193,12 @@ func (e *StageError) Unwrap() error
 // scope sentinels
 var ErrPathConflict = errors.New("scope: path already set")     // strict-mode overwrite
 var ErrPathNotMap   = errors.New("scope: intermediate path is not a map")
+
+// stage sentinel (unexported; surfaced via StageError.Cause)
+var errEmptyStageName = errors.New("stage name must not be empty")
 ```
 
-Construction errors from `New*` wrap `expr.CompileError` in a `StageError` (naming the stage). Evaluation errors from `Execute` wrap `expr.EvalError` (or a scope error) likewise. Because the wrapped `expr` errors already name the offending expression and field, `errors.As` reaches the exact failure — preserving the debuggability chain end to end.
+Construction errors from `New*` wrap `expr.CompileError` in a `StageError` (naming the stage). Evaluation errors from `Execute` wrap `expr.EvalError` (or a scope error) likewise. An empty `name` given to any `New*` constructor is rejected up front — before any compilation — as a `StageError` wrapping `errEmptyStageName` (ADR-0004), so callers never get a silent `""`-namespace write. Because the wrapped `expr` errors already name the offending expression and field, `errors.As` reaches the exact failure — preserving the debuggability chain end to end.
 
 ## Testing strategy
 
@@ -192,7 +206,7 @@ TDD, red → green → refactor from the first commit.
 
 - **Table-driven** tests via the project `table-test` skill: the `assert` closure form, testify `require`/`assert`, and — because `Execute` takes a `context.Context` — the **`ctx` modifier with `t.Context()`** (not `context.Background()`). `NewScope`/`New*` constructor tables that take no context stay context-free.
 - **Runnable `Example…` tests** doubling as godoc for `Scope` dot-paths and each stage (including a decision-table `single` and a `collect` example).
-- Coverage of: dot-path `Set`/`Get` (nested create, single-segment, empty-path error, `ErrPathNotMap`, lenient vs `WithStrict` overwrite); `SingleExpr` condition-skip / fallback / custom output; `MultiExpr` priority ordering and intra-stage visibility; `DecisionTable` single first-match vs collect accumulation and no-match; `StageError` wrapping/`Unwrap` to the underlying `expr` error; `ctx` cancellation short-circuit.
+- Coverage of: dot-path `Set`/`Get` (nested create, single-segment, empty-path error, `ErrPathNotMap`, lenient vs `WithStrict` overwrite); `SingleExpr` condition-skip / fallback / custom output; `MultiExpr` priority ordering and intra-stage visibility; `DecisionTable` single first-match vs collect accumulation and no-match; empty stage `name` rejection (`errEmptyStageName`) across all three `New*` constructors; `StageError` wrapping/`Unwrap` to the underlying `expr` error; `ctx` cancellation short-circuit.
 - **Library quality gates:** `go test ./... -race`, `go vet ./...`, `gofmt`/`gofumpt`, `golangci-lint run ./...`, and `govulncheck ./...` (if installed) all clean; `go mod tidy` a no-op.
 
 ## Dependencies
@@ -205,5 +219,5 @@ TDD, red → green → refactor from the first commit.
 
 - **Spec:** 002 (this document). Builds on Spec 001.
 - **Plan:** `docs/plans/002-scope-and-stages.md`.
-- **ADRs:** ADR-0002 (stage execution model + `Scope` naming), ADR-0003 (decision-table hit policies) — recorded with the first implementation commit of this increment.
+- **ADRs:** ADR-0002 (stage execution model + `Scope` naming), ADR-0003 (decision-table hit policies), ADR-0004 (shared stage `Option` convention + hit-policy naming + empty-name validation).
 - Implementation commits reference this spec via a `Spec: 002` trailer (and `ADR:` trailers where they record a decision).
