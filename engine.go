@@ -41,6 +41,11 @@ func New[I any, R any](pipeline *stage.Pipeline, mapper *Mapper[R], opts ...Opti
 // Evaluate seeds a Scope from input, runs the pipeline, and maps the final Scope
 // into R. Pipeline/stage errors pass through unwrapped; mapping errors are a
 // *MappingError; an input that cannot be flattened is a wrapped error.
+//
+// When input is a map[string]any it seeds the Scope directly: the top level is
+// copied, but nested maps are referenced, not deep-copied (as in
+// stage.NewScope). A struct input is flattened into fresh maps and never shares
+// structure with the caller.
 func (e *Engine[I, R]) Evaluate(ctx context.Context, input I) (R, error) {
 	var zero R
 
