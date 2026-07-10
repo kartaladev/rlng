@@ -15,21 +15,22 @@ typed wrapping errors that name field+expression). Delivered as a **5-increment 
 |---|-----------|--------|
 | 1 | Expression core (`expr/`) | ✅ merged |
 | 2 | Scope + stages (`stage/`) | ✅ merged + pushed |
-| 3 | Stage DAG orchestration (`Pipeline`: depends_on topo-sort + cycle detection) | ✅ **merged + pushed** (this session) |
-| 4 | **Declarative config (YAML/JSON loaders)** | ⏭️ **NEXT — start here** |
-| 5 | Result mapper + `Engine[I, R]` facade | pending |
+| 3 | Stage DAG orchestration (`Pipeline`: depends_on topo-sort + cycle detection) | ✅ merged + pushed |
+| 4 | Declarative config (`config/`: YAML/JSON loaders) | ✅ **merged + pushed** (this session) |
+| 5 | **Result mapper + `Engine[I, R]` facade** | ⏭️ **NEXT — start here** |
 
-Specs 004–005 do not exist yet. Each increment is a full cycle: **brainstorm/design → spec →
+Spec 005 does not exist yet. Each increment is a full cycle: **brainstorm/design → spec →
 plan → implement → whole-branch review → push**. The wrkflw `map`→`map` adapter is intentionally
 **out of rlng** (lives in the wrkflw repo) — not a future increment here.
 
 ## Exact state (safepoint)
 
-- **Branch:** `main`. **HEAD:** the Increment-3 handover commit (this file), whose parent is `699750c` (`test(stage): drop dead execErr scaffolding from recordStage`). Pushed to `origin/main`.
-- `git status --short`: **clean**. Increment 3's branch `feat/dag-orchestration` was merged (fast-forward) and **deleted**.
-- **Build/tests green:** `go test ./... -race` passes (`expr`, `stage`); `go build`/`vet`/`gofmt`/`golangci-lint run ./...` clean; `go mod tidy` a no-op. `govulncheck` **not installed** in this environment — run it when available.
-- Deps (consumer-visible): only `expr-lang/expr v1.17.8`. `testify` is test-only. Go 1.25+ (toolchain 1.26.x).
-- **Delivered this session (Increment 3):** the `stage.Pipeline` orchestrator (`stage/pipeline.go`) — `NewPipeline(stages ...Stage)` validates duplicate names / unknown deps / cycles and computes a deterministic **input-order-preserving topological order** once; `Run(ctx, *Scope)` walks it sequentially, honoring ctx cancellation and stopping at the first stage error. Typed construction errors `DuplicateStageError` / `UnknownDependencyError` / `CycleError` (concrete `a -> b -> a` loop path). Sequential deterministic execution (concurrency deferred). `stage` package coverage 91.4%, `pipeline.go` 100%/func. Spec 003, plan 003, ADR-0005/0006. Also this session: **test-coverage gate** added to CLAUDE.md (≥85% target; hard requirement = every hot-path + typed-error branch has a covering test).
+- **Branch:** `main`. **HEAD:** the Increment-4 handover commit (this file), whose parent is `b6fe25c` (`docs(config): note YAML/JSON scalar-shorthand asymmetry on ExprDef`). Pushed to `origin/main`.
+- `git status --short`: **clean**. Increment 4's branch `feat/config-loaders` was merged (fast-forward) and **deleted**.
+- **Build/tests green:** `go test ./... -race` passes (`expr`, `stage`, `config`); `go build`/`vet`/`gofmt`/`golangci-lint run ./...` clean; `go mod tidy`/`go mod verify` clean. `govulncheck` **not installed** in this environment — run it when available.
+- Deps (consumer-visible): `expr-lang/expr v1.17.8` **and `gopkg.in/yaml.v3 v3.0.1`** (added this increment for config, ADR-0008). `testify` is test-only. Go 1.25+ (toolchain 1.26.x).
+- **Delivered previously (Increment 3):** the `stage.Pipeline` orchestrator (`stage/pipeline.go`) — `NewPipeline` validates duplicate names / unknown deps / cycles and computes a deterministic **input-order-preserving topological order**; `Run(ctx, *Scope)` walks it sequentially. Typed `DuplicateStageError`/`UnknownDependencyError`/`CycleError`. Spec 003, plan 003, ADR-0005/0006. Also added the **test-coverage gate** to CLAUDE.md (≥85% target; hard requirement = every hot-path + typed-error branch covered).
+- **Delivered this session (Increment 4):** the `config` package — parse declarative YAML/JSON pipeline definitions and build a `*stage.Pipeline`. `ParseYAML`/`ParseJSON`/`LoadFile` (extension dispatch) → `*PipelineDef`; `(*PipelineDef).Build()` maps each `StageDef` (flat union, `type` discriminator, list-ordered) to the matching `stage.New*` constructor + `NewPipeline`. Reusable `ExprDef` with **scalar shorthand** (bare string = expression) decoding in both YAML and JSON, mapping its object form to `expr.Option`. Typed `ConfigError{Stage,Field,Cause}` unwrapping to the underlying stage/expr/pipeline error. **One new consumer dep: `gopkg.in/yaml.v3`** (no mimetype/validator — ADR-0008). `config` coverage **100%**. Spec 004, plan 004, ADR-0007/0008. **Known limitation:** per-decision options in a decision-table are rejected (rule-level only); a bare-string decision is the common case.
 
 ## Autonomy grant (USER DIRECTIVE this session — applies to increments 3→5)
 
@@ -54,24 +55,26 @@ The user directed: **execute increments 3→5 autonomously**, then handed off to
 
 **Known gotcha for the plan's test code:** `expr-lang` does **float** division, so `1/0 → +Inf` (no error). To trigger a genuine eval error in a test, use modulo (`a % b`, `b=0` → runtime "integer divide by zero"). Increment 2's decision-table/single-expr error tests use this.
 
-## What Increment 3 shipped (done — for context, not to redo)
+## What Increments 3–4 shipped (done — for context, not to redo)
 
-- `stage.Pipeline` in `stage/pipeline.go`: `NewPipeline(stages ...Stage) (*Pipeline, error)` (variadic; empty set valid), `Run(ctx, *Scope) error`. Validation order: duplicate names → unknown deps → cycle. **Input-order-preserving O(n²) topological sort** (`topoSort`); on stall, `findCycle` walks non-emitted deps until a node repeats and returns the concrete loop `["a","b","a"]`. Typed errors `DuplicateStageError`/`UnknownDependencyError`/`CycleError` (ASCII `->` in messages). `Run` checks `ctx.Err()` before each stage (returns it unwrapped), stops at first stage error without re-wrapping (built-in stages self-name via `*StageError`). Sequential deterministic (ADR-0006); concurrency is an additive future change.
-- **Decisions:** ADR-0005 (placement in `stage`, name `Pipeline`, variadic ctor, distinct typed errors, input-order Kahn), ADR-0006 (sequential execution; supersede when concurrency is added).
+- **Increment 3 — `stage.Pipeline`** (`stage/pipeline.go`): `NewPipeline(stages ...Stage) (*Pipeline, error)` (variadic; empty set valid), `Run(ctx, *Scope) error`. Validation order: duplicate names → unknown deps → cycle. Input-order-preserving O(n²) topological sort; `findCycle` returns a concrete loop `["a","b","a"]`. Typed `DuplicateStageError`/`UnknownDependencyError`/`CycleError` (ASCII `->` messages). Sequential deterministic (ADR-0006). ADR-0005/0006.
+- **Increment 4 — `config` package** (`config/{errors,expr_def,def,parse,build,doc}.go`): `ParseYAML`/`ParseJSON`/`LoadFile` → `*PipelineDef`; `(*PipelineDef).Build() → *stage.Pipeline`. `ExprDef` scalar shorthand (YAML+JSON) → `expr.Option`. `ConfigError{Stage,Field,Cause}`. Dep: `gopkg.in/yaml.v3` only (ADR-0008). ADR-0007/0008. Per-decision decision-table options are **rejected** (rule-level only) — backlog item to extend `stage.Rule` if ever needed.
 
-## Provisional design leads for Increment 4 — Declarative config (refine during brainstorming — not binding)
+## Provisional design leads for Increment 5 — Result mapper + `Engine[I, R]` facade (refine during brainstorming — not binding)
 
-Goal: load stage/pipeline **definitions from YAML/JSON** and build `Stage` values (and a `Pipeline`) from them. Mirror the `pkg/calc` blueprint (CLAUDE.md §Architecture blueprint), adapted to rules:
-- **`ConfigLoader[T]`** abstraction with `StaticConfigLoader`, `ParseYamlConfigLoader`, `ParseJsonConfigLoader`, `FilesystemConfigLoader` (content-type sniffed via `gabriel-vasile/mimetype`). Definitions are declarative YAML/JSON with custom `UnmarshalYAML`/`UnmarshalJSON` supporting a **scalar shorthand** (bare string = the expression) or full object form.
-- **Package:** likely a new `config` package (keep `stage` free of yaml/json deps) — decide + ADR. Definitions map onto the existing `stage` constructors (`NewSingleExpr`/`NewMultiExpr`/`NewDecisionTable`) + `NewPipeline`.
-- **Validation** via `go-playground/validator` on decoded structs; keep typed, field-naming errors (debuggability). Reuse the increment-1/2 `expr.Option`/`stage.Option` plumbing.
-- **New consumer-visible deps** (justify each; keep set minimal): `gopkg.in/yaml.v3`, `gabriel-vasile/mimetype`, `go-playground/validator/v10`, possibly `go-viper/mapstructure/v2`. This is the increment that grows the dependency set — weigh each against the "minimal deps" gate.
-- **VariablePatcher** (config-declared defaults injected at compile time via `x ?? <literal>`) may land here or in inc 5 — decide during brainstorming.
+Goal: the top-level, generic **`Engine[I, R]`** facade that ties everything together — flatten a typed input `I` into a `*stage.Scope`, `Run` the `*stage.Pipeline`, then **map** the accumulated `Scope` into a typed result `R`. This is the product's public front door (root `rlng` package, kept empty until now).
+- **Package:** likely the root `rlng` package (the facade the README/consumers import). Decide + ADR.
+- **`Engine[I, R]`** (`calculator.go` blueprint): generic over input `I` and result `R`. Construct from a `*config.PipelineDef` (or built `*stage.Pipeline`) + a mapping template; compile once; `Evaluate(ctx, I) (R, error)` (or `Calculate`) on the hot path. **Naming decision (ADR):** `Engine`/`Evaluate` vs `Calculator`/`Calculate` — ADR-0001 already leaned rule-oriented; ratify here.
+- **Input seeding:** flatten a struct/map `I` into `Scope` via reflection (`structToMap` in the blueprint) — reuse `expr`'s env logic; a `map[string]any` input path too. This is the deferred "struct→map seeding" from spec 002.
+- **Result `Mapper[R]`** (`mapper.go`/`mapping.go` blueprint): a `MappingTemplate` (hierarchical `fields`, each a leaf expression, flattenable to dot-paths) projecting the final `Scope` into `R` — struct (mapstructure tags), `map[string]any`, or slice. Compile each field expression once. **New dep?** `go-viper/mapstructure/v2` may be justified here for struct mapping — weigh vs. hand-rolled reflection; record in ADR.
+- **VariablePatcher** (config-declared defaults injected as `x ?? <literal>` at compile time) — decide whether it lands here; it was deferred out of Increment 4.
+- This is the **last increment** — after merge, the library is feature-complete for a `v0.0.x` tag (then work the release backlog below).
 
 ## Carried backlog (triage before the first `v0.0.x` release tag; not merge-blockers)
 
-From increment-2 and increment-3 reviews (also in the SDD ledger):
-- **Release-gate:** `SingleExpr/MultiExpr/DecisionTable` `Name()/Type()/DependsOn()` and the new `DuplicateStageError/UnknownDependencyError/CycleError` `.Error()` methods lack godoc — the "every exported symbol documented" gate is release-bound. Add before tagging. (Consistent with existing `StageError.Error()`; golangci-lint is clean.)
+From increment 2–4 reviews (also in the SDD ledger):
+- **Release-gate:** exported `.Error()`/`Unwrap()` methods and interface methods lack godoc across `stage` (`SingleExpr/MultiExpr/DecisionTable` `Name/Type/DependsOn`; `DuplicateStageError/UnknownDependencyError/CycleError`) and `config` (`ConfigError`) — the "every exported symbol documented" gate is release-bound. Add before tagging. (Consistent across the codebase; golangci-lint is clean.)
+- **config:** per-decision decision-table options are rejected — extend `stage.Rule` to per-decision `DecisionOptions` if a real need appears.
 - `Scope.Set` doesn't validate empty path **segments** (`"a.."`, `".a"` create a `""` key) — inert but worth a guard/doc.
 - `StageError.Error()` (and `expr.CompileError/EvalError`) deref `Cause` unconditionally → panic on a hand-built nil-`Cause` literal. One-line nil guard across all three restores parity.
 - Missing tests: `MultiExpr` stable-tie ordering; `DecisionTable` empty-output-key rejection (a live untested branch).
@@ -89,6 +92,6 @@ From increment-2 and increment-3 reviews (also in the SDD ledger):
 
 ## Next action
 
-Start **Increment 4 (Declarative config — YAML/JSON loaders)** from a fresh branch off `main` (e.g. `feat/config-loaders`), following the per-increment recipe above. Begin with `superpowers:brainstorming` (self-driven) to settle the loader design (see "Provisional design leads for Increment 4"), write ADR(s) + `docs/specs/004-*`, commit the spec standalone, then plan (`docs/plans/004-*`), then implement (TDD + coverage gate), then whole-branch `/code-review` + `/security-review`, then merge → push → delete branch.
+Start **Increment 5 (Result mapper + `Engine[I, R]` facade)** from a fresh branch off `main` (e.g. `feat/engine-facade`), following the per-increment recipe above. Begin with `superpowers:brainstorming` (self-driven) to settle the facade design (see "Provisional design leads for Increment 5"), write ADR(s) + `docs/specs/005-*`, commit the spec standalone, then plan (`docs/plans/005-*`), then implement (TDD + coverage gate), then whole-branch `/code-review` + `/security-review`, then merge → push → delete branch. This is the **final increment**; after it, the library is ready for a first `v0.0.x` tag (work the release backlog first).
 
-The autonomy grant (commit + push for increments 3–5) is **still in force for Increments 4 and 5**.
+The autonomy grant (commit + push for increments 3–5) is **still in force for Increment 5** (the last one).
