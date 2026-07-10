@@ -60,21 +60,17 @@ import (
 
 // recordStage is a minimal Stage that appends its name to *order when executed
 // and writes a marker into the Scope, so tests can observe execution order and
-// dependency satisfaction. If execErr is non-nil, Execute returns it.
+// dependency satisfaction.
 type recordStage struct {
-	name    string
-	deps    []string
-	order   *[]string
-	execErr error
+	name  string
+	deps  []string
+	order *[]string
 }
 
 func (s *recordStage) Name() string        { return s.name }
 func (s *recordStage) Type() string        { return "record" }
 func (s *recordStage) DependsOn() []string { return s.deps }
 func (s *recordStage) Execute(ctx context.Context, sc *Scope) error {
-	if s.execErr != nil {
-		return s.execErr
-	}
 	*s.order = append(*s.order, s.name)
 	return sc.Set(s.name, true)
 }
