@@ -14,22 +14,22 @@ typed wrapping errors that name field+expression). Delivered as a **5-increment 
 | # | Increment | Status |
 |---|-----------|--------|
 | 1 | Expression core (`expr/`) | ✅ merged |
-| 2 | Scope + stages (`stage/`) | ✅ **merged + pushed** (this session) |
-| 3 | **Stage DAG orchestration** (depends_on topo-sort + cycle detection) | ⏭️ **NEXT — start here** |
-| 4 | Declarative config (YAML/JSON loaders) | pending |
+| 2 | Scope + stages (`stage/`) | ✅ merged + pushed |
+| 3 | Stage DAG orchestration (`Pipeline`: depends_on topo-sort + cycle detection) | ✅ **merged + pushed** (this session) |
+| 4 | **Declarative config (YAML/JSON loaders)** | ⏭️ **NEXT — start here** |
 | 5 | Result mapper + `Engine[I, R]` facade | pending |
 
-None of specs 003–005 exist yet. Each increment is a full cycle: **brainstorm/design → spec →
+Specs 004–005 do not exist yet. Each increment is a full cycle: **brainstorm/design → spec →
 plan → implement → whole-branch review → push**. The wrkflw `map`→`map` adapter is intentionally
 **out of rlng** (lives in the wrkflw repo) — not a future increment here.
 
 ## Exact state (safepoint)
 
-- **Branch:** `main`. **HEAD:** `cbd9049` (`refactor(stage): unify stage options and align HitPolicy naming`). Pushed to `origin/main`.
-- `git status --short`: **clean**. Increment 2's branch `feat/scope-and-stages` was merged (fast-forward) and **deleted**.
-- **Build/tests green:** `go test ./... -race` passes (`expr`, `stage`); `go build`/`vet`/`gofmt`/`golangci-lint` clean; `go mod tidy` a no-op. `govulncheck` **not installed** in this environment — run it when available.
+- **Branch:** `main`. **HEAD:** the Increment-3 handover commit (this file), whose parent is `699750c` (`test(stage): drop dead execErr scaffolding from recordStage`). Pushed to `origin/main`.
+- `git status --short`: **clean**. Increment 3's branch `feat/dag-orchestration` was merged (fast-forward) and **deleted**.
+- **Build/tests green:** `go test ./... -race` passes (`expr`, `stage`); `go build`/`vet`/`gofmt`/`golangci-lint run ./...` clean; `go mod tidy` a no-op. `govulncheck` **not installed** in this environment — run it when available.
 - Deps (consumer-visible): only `expr-lang/expr v1.17.8`. `testify` is test-only. Go 1.25+ (toolchain 1.26.x).
-- **Delivered this session (Increment 2):** the `stage` package — `Scope` (dot-path Set/Get/Snapshot, mutex-guarded, `WithStrict`), the `Stage` interface (`Name/Type/DependsOn/Execute(ctx, *Scope)`), and `SingleExpr` / `MultiExpr` / `DecisionTable` (single/collect hit policies), a single shared `Option` type, typed `StageError`. ADR-0002/0003/0004.
+- **Delivered this session (Increment 3):** the `stage.Pipeline` orchestrator (`stage/pipeline.go`) — `NewPipeline(stages ...Stage)` validates duplicate names / unknown deps / cycles and computes a deterministic **input-order-preserving topological order** once; `Run(ctx, *Scope)` walks it sequentially, honoring ctx cancellation and stopping at the first stage error. Typed construction errors `DuplicateStageError` / `UnknownDependencyError` / `CycleError` (concrete `a -> b -> a` loop path). Sequential deterministic execution (concurrency deferred). `stage` package coverage 91.4%, `pipeline.go` 100%/func. Spec 003, plan 003, ADR-0005/0006. Also this session: **test-coverage gate** added to CLAUDE.md (≥85% target; hard requirement = every hot-path + typed-error branch has a covering test).
 
 ## Autonomy grant (USER DIRECTIVE this session — applies to increments 3→5)
 
@@ -42,29 +42,36 @@ The user directed: **execute increments 3→5 autonomously**, then handed off to
 
 > ⚠️ This standing authorization is **scoped to increments 3–5 of this roadmap**. If you are resuming much later or the roadmap has changed, re-confirm with the user before relying on it.
 
-## Per-increment recipe (follow for 3, then 4, then 5)
+## Per-increment recipe (follow for 4, then 5)
 
-1. **Fresh branch** off `main` (e.g. `feat/dag-orchestration` for inc 3).
+1. **Fresh branch** off `main` (e.g. `feat/config-loaders` for inc 4).
 2. **Brainstorm/design** (`superpowers:brainstorming`, self-driven — no user questions). Settle the open decisions, record them as **ADRs**.
 3. **Write the spec** → `docs/specs/00N-<slug>.md`. Commit it **standalone** (`spec:` type, `Spec: 00N` trailer). Specs precede code.
 4. **Write the plan** (`superpowers:writing-plans`) → `docs/plans/00N-<slug>.md`. The plan file rides with the **first `feat` commit** (never a standalone plan commit). Follow the `table-test` skill for all test code (assert-closure form, `ctx` modifier + `t.Context()` for context-sensitive components, canceled-context case).
-5. **Implement** with `superpowers:subagent-driven-development`: fresh implementer per task (**haiku** for plans whose task text contains complete code = transcription; **sonnet** for judgment/multi-file), **sonnet** task reviewer per task, fix-loop on Critical/Important, per-task commit (pre-authorized), `-race` green per task. Record progress in the SDD ledger (below).
+5. **Implement.** For a **transcription-complete** plan with few, dependency-chained tasks, **inline TDD execution** (write failing test → run red → implement → run green → per-task commit) is acceptable and was used for Increment 3. For larger/independent-task plans use `superpowers:subagent-driven-development` (fresh implementer per task — **haiku** for pure transcription, **sonnet** for judgment/multi-file — **sonnet** task reviewer per task, fix-loop on Critical/Important). Either way: per-task commit (pre-authorized), `-race` green per task, and **the test-coverage gate** (≥85% + every hot-path/typed-error branch tested; enumerate branches in the plan). Record progress in the SDD ledger (below).
 6. **Whole-branch gate:** `scripts/review-package $(git merge-base main HEAD) HEAD` → dispatch a final reviewer on **opus**; then run `/security-review`. Resolve/triage **every** finding; re-run `-race`.
 7. **Merge → push → delete branch.** Update THIS handover at the increment boundary.
 
 **Known gotcha for the plan's test code:** `expr-lang` does **float** division, so `1/0 → +Inf` (no error). To trigger a genuine eval error in a test, use modulo (`a % b`, `b=0` → runtime "integer divide by zero"). Increment 2's decision-table/single-expr error tests use this.
 
-## Provisional design leads for Increment 3 (refine during brainstorming — not binding)
+## What Increment 3 shipped (done — for context, not to redo)
 
-- A `Pipeline` (name TBD — `Pipeline`/`Graph`/`Flow`) that holds `[]Stage`, validates at construction (unique names, every `DependsOn` target exists, **no cycles via Kahn's algorithm**), computes execution order once, and `Run(ctx, *Scope) error` executes stages in dependency order.
-- **Package:** likely in `stage` (it operates on `Stage`+`Scope`) — decide + ADR. Root stays clean for the Increment-5 `Engine` facade.
-- **Execution model decision (ADR-worthy):** sequential topo-order (deterministic, debuggable — the project's core criterion) **vs** concurrent execution of independent stages. Spec 002's documented concurrency invariant (stages write disjoint name-namespaces; `Snapshot` shares nested maps safely) was written to *enable* parallelism. Recommendation: ship **sequential ordered execution** as the default for debuggability; consider a `WithConcurrency` opt-in or defer parallelism — record the choice in an ADR.
-- **Typed errors** at construction: cycle, unknown-dependency, duplicate-stage (keep the debuggability discipline). Thread `context.Context`; stop on first stage error, naming the failing stage.
+- `stage.Pipeline` in `stage/pipeline.go`: `NewPipeline(stages ...Stage) (*Pipeline, error)` (variadic; empty set valid), `Run(ctx, *Scope) error`. Validation order: duplicate names → unknown deps → cycle. **Input-order-preserving O(n²) topological sort** (`topoSort`); on stall, `findCycle` walks non-emitted deps until a node repeats and returns the concrete loop `["a","b","a"]`. Typed errors `DuplicateStageError`/`UnknownDependencyError`/`CycleError` (ASCII `->` in messages). `Run` checks `ctx.Err()` before each stage (returns it unwrapped), stops at first stage error without re-wrapping (built-in stages self-name via `*StageError`). Sequential deterministic (ADR-0006); concurrency is an additive future change.
+- **Decisions:** ADR-0005 (placement in `stage`, name `Pipeline`, variadic ctor, distinct typed errors, input-order Kahn), ADR-0006 (sequential execution; supersede when concurrency is added).
+
+## Provisional design leads for Increment 4 — Declarative config (refine during brainstorming — not binding)
+
+Goal: load stage/pipeline **definitions from YAML/JSON** and build `Stage` values (and a `Pipeline`) from them. Mirror the `pkg/calc` blueprint (CLAUDE.md §Architecture blueprint), adapted to rules:
+- **`ConfigLoader[T]`** abstraction with `StaticConfigLoader`, `ParseYamlConfigLoader`, `ParseJsonConfigLoader`, `FilesystemConfigLoader` (content-type sniffed via `gabriel-vasile/mimetype`). Definitions are declarative YAML/JSON with custom `UnmarshalYAML`/`UnmarshalJSON` supporting a **scalar shorthand** (bare string = the expression) or full object form.
+- **Package:** likely a new `config` package (keep `stage` free of yaml/json deps) — decide + ADR. Definitions map onto the existing `stage` constructors (`NewSingleExpr`/`NewMultiExpr`/`NewDecisionTable`) + `NewPipeline`.
+- **Validation** via `go-playground/validator` on decoded structs; keep typed, field-naming errors (debuggability). Reuse the increment-1/2 `expr.Option`/`stage.Option` plumbing.
+- **New consumer-visible deps** (justify each; keep set minimal): `gopkg.in/yaml.v3`, `gabriel-vasile/mimetype`, `go-playground/validator/v10`, possibly `go-viper/mapstructure/v2`. This is the increment that grows the dependency set — weigh each against the "minimal deps" gate.
+- **VariablePatcher** (config-declared defaults injected at compile time via `x ?? <literal>`) may land here or in inc 5 — decide during brainstorming.
 
 ## Carried backlog (triage before the first `v0.0.x` release tag; not merge-blockers)
 
-From increment-2 reviews (also in the SDD ledger):
-- **Release-gate:** `SingleExpr/MultiExpr/DecisionTable` `Name()/Type()/DependsOn()` lack godoc — the "every exported symbol documented" gate is release-bound. Add before tagging.
+From increment-2 and increment-3 reviews (also in the SDD ledger):
+- **Release-gate:** `SingleExpr/MultiExpr/DecisionTable` `Name()/Type()/DependsOn()` and the new `DuplicateStageError/UnknownDependencyError/CycleError` `.Error()` methods lack godoc — the "every exported symbol documented" gate is release-bound. Add before tagging. (Consistent with existing `StageError.Error()`; golangci-lint is clean.)
 - `Scope.Set` doesn't validate empty path **segments** (`"a.."`, `".a"` create a `""` key) — inert but worth a guard/doc.
 - `StageError.Error()` (and `expr.CompileError/EvalError`) deref `Cause` unconditionally → panic on a hand-built nil-`Cause` literal. One-line nil guard across all three restores parity.
 - Missing tests: `MultiExpr` stable-tie ordering; `DecisionTable` empty-output-key rejection (a live untested branch).
@@ -82,4 +89,6 @@ From increment-2 reviews (also in the SDD ledger):
 
 ## Next action
 
-Start **Increment 3** from a fresh branch off `main`, following the per-increment recipe above. Begin with `superpowers:brainstorming` (self-driven) to settle the `Pipeline` design, write ADR(s) + `docs/specs/003-*`, then plan, then implement.
+Start **Increment 4 (Declarative config — YAML/JSON loaders)** from a fresh branch off `main` (e.g. `feat/config-loaders`), following the per-increment recipe above. Begin with `superpowers:brainstorming` (self-driven) to settle the loader design (see "Provisional design leads for Increment 4"), write ADR(s) + `docs/specs/004-*`, commit the spec standalone, then plan (`docs/plans/004-*`), then implement (TDD + coverage gate), then whole-branch `/code-review` + `/security-review`, then merge → push → delete branch.
+
+The autonomy grant (commit + push for increments 3–5) is **still in force for Increments 4 and 5**.
