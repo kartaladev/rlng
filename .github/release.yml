@@ -1,0 +1,20 @@
+# Configures GitHub's automatically generated release notes (used by
+# `gh release create --generate-notes`). Categories are keyed to PR labels;
+# label PRs to match the Conventional Commit type of the change.
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+    authors:
+      - dependabot
+  categories:
+    - title: Features
+      labels: [feat, feature]
+    - title: Bug Fixes
+      labels: [fix, bug]
+    - title: Refactoring
+      labels: [refactor]
+    - title: Documentation & ADRs
+      labels: [docs, spec, adr]
+    - title: Other Changes
+      labels: ["*"]

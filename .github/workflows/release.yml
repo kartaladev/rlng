@@ -1,0 +1,38 @@
+name: release
+
+# Cut a GitHub Release whenever a SemVer tag is pushed (e.g. v0.0.1).
+# rlng is a library — the tag itself is the distribution (`go get module@vX.Y.Z`).
+# This job only publishes a GitHub Release with auto-generated notes; there is
+# nothing to build or upload.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write   # required to create the GitHub Release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # full history + tags so release notes can be generated
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # Tags containing a pre-release suffix (e.g. v0.0.1-rc.1) are marked as pre-releases.
+          prerelease=""
+          if [[ "$TAG" == *-* ]]; then
+            prerelease="--prerelease"
+          fi
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --verify-tag \
+            --generate-notes \
+            $prerelease
