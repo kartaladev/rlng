@@ -11,7 +11,10 @@ import (
 
 // ExprDef is an expression with optional compile options. It decodes from
 // either a scalar string (shorthand: the string is Expr) or a mapping with
-// explicit fields.
+// explicit fields. In the shorthand form the expression must be a string:
+// YAML accepts an unquoted scalar (e.g. expr: price * 2), but JSON requires a
+// quoted string (e.g. "expr": "price * 2") — a bare JSON number or boolean is
+// rejected.
 type ExprDef struct {
 	Expr     string         `yaml:"expr" json:"expr"`
 	Fallback string         `yaml:"fallback" json:"fallback"`
