@@ -20,6 +20,8 @@ Follow this loop for every feature or bugfix, not just large ones. The skills na
 4. **On big or complex features, refactor with `/simplify`** once green, to clean up reuse/simplification/efficiency/altitude before review.
 5. **Gate before delivering (committing):** in order — run **`/code-review`** on the diff and address findings, run **`/security-review`** on the pending changes and resolve anything it flags, then **re-run the project-wide test suite** (`go test ./... -race`) and confirm it passes. Use `superpowers:verification-before-completion` — evidence before claiming done. Only commit after all three pass. For release-bound changes, the full **Library quality gates** (see below) also apply.
 
+**Fix review findings before delivering — mandatory.** The gate's `/code-review` and `/security-review` are not advisory: every finding they surface must be **fixed**, or **explicitly triaged to a backlog with a written rationale**, before the work is delivered. Re-run the affected review and the `-race` suite after fixing. **When completing a feature branch, run `/code-review` and `/security-review` over the whole-branch diff** (`main..HEAD`, not just the last commit) as the final pre-merge gate, resolve/triage every finding, and confirm the suite is green — this is the same path used per-increment, applied once more before any merge/push. Never merge or push a branch that still has unaddressed review findings.
+
 **Never `git commit` or `git push` without explicit user approval — this is a hard rule, no exceptions.** Ask first every time, even for trivial or "obvious" changes, and even when the user previously approved a similar action; approval is per-action, never standing. When work is ready, stage it, show what would be committed/pushed, and wait for the go-ahead. When the user does approve, the **pre-commit gate** (Development workflow §5: `/code-review` → `/security-review` → full `-race` suite) is an additional hard precondition before committing.
 
 **Proactively recommend alternatives.** Whenever a decision has to be made — design, library, API shape, trade-off — don't silently pick one. Surface the viable options with their pros/cons and state a recommended default, so the user can steer before you proceed.
@@ -38,6 +40,28 @@ Persist the workflow's written outputs under `docs/`, each **prefixed with an in
 - An **ADR** must cite the spec/plan that prompted it; the plan (and any relevant spec) must link back to the ADRs it depends on.
 - **Code and commits** must reference the driving artifact (e.g. `Implements spec 003 / plan 003; see ADR-0007`) so reviewers can follow the chain.
 - Do not merge or commit work whose governing spec/plan/ADR link is missing. A new artifact with no traceable parent (or a decision with no ADR) is incomplete.
+
+## Session handover
+
+To survive context limits without hallucinating, hand off through a written document rather than relying on a cluttered context.
+
+**When to hand over:**
+- **On request** — whenever the user asks to "hand over"/"handover"/"hand off".
+- **Proactively at ~60% context usage** — stop starting new work, write the handover, and then **ask the user to continue in a fresh session**. Do not silently push past 60%.
+
+**Hand over only from a safepoint — this is mandatory.** The next session must start well-grounded, so never write a handover mid-edit, with a broken build, or with failing tests. A safepoint means: the tree builds, the relevant tests are green, and you are at a clean task/step boundary. To reach one, either finish the in-flight step to green, or revert the incomplete edits back to the last green state — then capture that state in the handover. If you cannot reach a safepoint, say so explicitly and record the exact partial state (files touched, what's half-done, how to revert) so the next session can recover deterministically rather than guess.
+
+**Where:** a single living file **`docs/HANDOVER.md`**, overwritten each time so it always reflects the latest state. It is a `docs:` artifact — offer to commit it (subject to the never-commit-without-approval rule); a committed handover survives a fresh clone.
+
+**What it MUST contain** (enough for a brand-new session to resume with zero prior context — reference the governing artifacts, don't restate them, to avoid drift):
+1. **Objective & roadmap position** — what we're building and which spec/plan/increment/**task+step** is active (e.g. "Plan 001, Task 4, Step 3").
+2. **Exact state** — done (with commit SHAs), in progress, and the verbatim `git status --short` + last commit line; call out anything uncommitted in the working tree.
+3. **Traceability pointers** — the active `docs/specs/*`, `docs/plans/*`, and `docs/adrs/*` files, plus CLAUDE.md, that the fresh session must read *first*.
+4. **Decisions & deviations** this session, and any **pending approvals** or open questions blocking progress.
+5. **Next actions** — the precise next steps and commands to run to resume.
+6. **Gotchas/environment** — anything non-obvious needed to continue (tools, paths, credentials-by-reference).
+
+Begin the document with an explicit instruction to the next session: *read CLAUDE.md and the referenced spec/plan/ADR before acting, and trust those files over any memory.*
 
 ## Commit discipline
 
