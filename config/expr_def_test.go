@@ -46,6 +46,13 @@ func TestExprDefUnmarshalYAML(t *testing.T) {
 				require.ErrorAs(t, err, &ce)
 			},
 		},
+		{
+			name: "mapping with bad field type errors",
+			yaml: "expr: base\ncoerce: notabool",
+			assert: func(t *testing.T, e ExprDef, err error) {
+				require.Error(t, err)
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -87,8 +94,15 @@ func TestExprDefUnmarshalJSON(t *testing.T) {
 			},
 		},
 		{
-			name: "malformed json errors",
+			name: "malformed json object errors",
 			json: `{bad`,
+			assert: func(t *testing.T, e ExprDef, err error) {
+				require.Error(t, err)
+			},
+		},
+		{
+			name: "well-formed non-object non-string errors",
+			json: `[1, 2, 3]`,
 			assert: func(t *testing.T, e ExprDef, err error) {
 				require.Error(t, err)
 			},

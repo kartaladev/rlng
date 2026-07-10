@@ -287,15 +287,12 @@ func (e *ExprDef) UnmarshalYAML(value *yaml.Node) error {
 	}
 }
 
-// UnmarshalJSON accepts a JSON string (the expression) or an object.
+// UnmarshalJSON accepts a JSON string (the expression) or an object. Callers
+// reach this only with well-formed JSON (encoding/json validates syntax before
+// invoking an Unmarshaler), so a string form is decoded straight into Expr.
 func (e *ExprDef) UnmarshalJSON(data []byte) error {
 	if t := bytes.TrimSpace(data); len(t) > 0 && t[0] == '"' {
-		var s string
-		if err := json.Unmarshal(data, &s); err != nil {
-			return err
-		}
-		e.Expr = s
-		return nil
+		return json.Unmarshal(data, &e.Expr)
 	}
 	type raw ExprDef // alias breaks the UnmarshalJSON recursion
 	var r raw
