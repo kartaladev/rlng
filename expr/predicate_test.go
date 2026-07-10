@@ -109,3 +109,50 @@ func TestPredicate_Test(t *testing.T) {
 		})
 	}
 }
+
+// TestPredicate_Test_CoerceMatrix exercises the full WithCoerce truthiness
+// coercion surface. Each case evaluates the identifier `v`, whose value is
+// supplied directly through the env so a native (non-`any`-typed) Go value
+// reaches truthy() unchanged.
+func TestPredicate_Test_CoerceMatrix(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name string
+		val  any
+		want bool
+	}
+
+	cases := []testCase{
+		{name: "nil is false", val: nil, want: false},
+		{name: "non-zero int is true", val: 3, want: true},
+		{name: "zero int is false", val: 0, want: false},
+		{name: "non-zero uint is true", val: uint(3), want: true},
+		{name: "zero uint is false", val: uint(0), want: false},
+		{name: "non-zero float is true", val: 1.5, want: true},
+		{name: "zero float is false", val: 0.0, want: false},
+		{name: "bool true is true", val: true, want: true},
+		{name: "bool false is false", val: false, want: false},
+		{name: `string "true" parses true`, val: "true", want: true},
+		{name: `string "false" parses false`, val: "false", want: false},
+		{name: "non-empty non-bool string is true", val: "hello", want: true},
+		{name: "empty string is false", val: "", want: false},
+		{name: "native non-empty []string is true", val: []string{"a"}, want: true},
+		{name: "native empty []string is false", val: []string{}, want: false},
+		{name: "native non-empty map[string]int is true", val: map[string]int{"a": 1}, want: true},
+		{name: "native empty map[string]int is false", val: map[string]int{}, want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			p, err := NewPredicate("v", WithCoerce())
+			require.NoError(t, err)
+
+			got, err := p.Test(map[string]any{"v": tc.val})
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}

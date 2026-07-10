@@ -120,6 +120,23 @@ func TestFunction_Apply(t *testing.T) {
 			},
 		},
 		{
+			name:   "fallback error is keyed to the fallback source, not the main expression",
+			fnName: "ratio",
+			expr:   "a % b", // main errors: modulo by zero
+			// fallback runs over an EMPTY env, so `z` is nil and `1 % z`
+			// errors at runtime (it is not constant-folded at compile time).
+			opts: []Option{WithFallback("1 % z")},
+			env:  map[string]any{"a": 1, "b": 0},
+			assert: func(t *testing.T, got any, err error) {
+				require.Error(t, err)
+
+				var evalErr *EvalError
+				require.ErrorAs(t, err, &evalErr)
+				assert.Equal(t, "1 % z", evalErr.Expression)
+				assert.NotEqual(t, "a % b", evalErr.Expression)
+			},
+		},
+		{
 			name:   "fallback used on nil result",
 			fnName: "x",
 			expr:   "nil",

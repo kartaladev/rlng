@@ -1,6 +1,7 @@
 package expr
 
 import (
+	"math"
 	"testing"
 
 	exprlang "github.com/expr-lang/expr"
@@ -87,6 +88,36 @@ func TestVariablePatcher(t *testing.T) {
 			assert: func(t *testing.T, got any, err error) {
 				require.NoError(t, err)
 				require.Equal(t, 7, got)
+			},
+		},
+		{
+			name:    "huge uint global overflowing int is skipped, left unpatched",
+			src:     "big",
+			globals: map[string]any{"big": uint64(math.MaxUint64)},
+			env:     map[string]any{},
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				require.Nil(t, got)
+			},
+		},
+		{
+			name:    "huge uint global skipped, runtime env value is read",
+			src:     "big",
+			globals: map[string]any{"big": uint64(math.MaxUint64)},
+			env:     map[string]any{"big": 7},
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				require.Equal(t, 7, got)
+			},
+		},
+		{
+			name:    "uintptr global is not a value scalar, skipped and left unpatched",
+			src:     "ptr",
+			globals: map[string]any{"ptr": uintptr(42)},
+			env:     map[string]any{},
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				require.Nil(t, got)
 			},
 		},
 	}

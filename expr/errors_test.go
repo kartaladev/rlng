@@ -44,6 +44,26 @@ func TestErrors(t *testing.T) {
 				require.ErrorIs(t, err, ErrNotBool)
 			},
 		},
+		{
+			name: "compile error with nil Cause does not panic and omits the cause",
+			err:  &CompileError{Name: "discount", Expression: "x >"},
+			assert: func(t *testing.T, err error) {
+				var got string
+				assert.NotPanics(t, func() { got = err.Error() })
+				assert.Equal(t, `compile "discount" (x >)`, got)
+				assert.Nil(t, errors.Unwrap(err))
+			},
+		},
+		{
+			name: "eval error with nil Cause does not panic and omits the cause",
+			err:  &EvalError{Expression: "x + 1"},
+			assert: func(t *testing.T, err error) {
+				var got string
+				assert.NotPanics(t, func() { got = err.Error() })
+				assert.Equal(t, `eval (x + 1)`, got)
+				assert.Nil(t, errors.Unwrap(err))
+			},
+		},
 	}
 
 	for _, tc := range cases {
