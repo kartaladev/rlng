@@ -45,7 +45,7 @@ func (v *variablePatcher) Visit(node *ast.Node) {
 	}
 
 	rv := reflect.ValueOf(value)
-	for rv.Kind() == reflect.Ptr {
+	for rv.Kind() == reflect.Pointer {
 		if rv.IsNil() {
 			return
 		}

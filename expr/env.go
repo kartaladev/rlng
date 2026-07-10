@@ -17,7 +17,7 @@ func toEnv(env any) (map[string]any, error) {
 	}
 
 	rv := reflect.ValueOf(env)
-	for rv.Kind() == reflect.Ptr {
+	for rv.Kind() == reflect.Pointer {
 		if rv.IsNil() {
 			return map[string]any{}, nil
 		}
@@ -42,7 +42,7 @@ func structToMap(v reflect.Value) map[string]any {
 }
 
 func convertValue(v reflect.Value) any {
-	if v.Kind() == reflect.Ptr {
+	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			return nil
 		}
