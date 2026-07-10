@@ -34,7 +34,7 @@ This is the DAG the architecture blueprint describes ("Stages declare `depends_o
    - a **dependency cycle** (including a self-dependency) → `*CycleError` carrying a concrete cycle path.
 3. **Deterministic topological ordering** computed once at construction: among stages that are ready (all dependencies already ordered), emit in **constructor input order** — so the execution order is stable and intuitive, not hash-map dependent.
 4. **`Run(ctx context.Context, sc *Scope) error`** — execute the stages in the computed order against `sc`, stopping at the first stage that errors and returning its (already stage-named) error. Honor `ctx` cancellation between stages.
-5. Preserve the increment's debuggability discipline: readable, typed errors (a cycle error prints the actual loop `a → b → a`).
+5. Preserve the increment's debuggability discipline: readable, typed errors (a cycle error prints the actual loop, e.g. `a -> b -> a`, in ASCII for greppable, encoding-safe messages).
 
 ## Non-goals (deferred)
 
@@ -113,14 +113,14 @@ type UnknownDependencyError struct{ Stage, Dependency string }
 type CycleError struct{ Cycle []string }
 ```
 
-Each implements `error` with a readable message (`pipeline: duplicate stage "x"`; `pipeline: stage "a" depends on unknown stage "b"`; `pipeline: dependency cycle: a → b → a`). They are distinct types (not one struct with a kind enum) because each carries different identifying data and `errors.As` reaches the exact failure — the same typed-error discipline `expr` and `stage` already follow. These are construction errors only; `Run` surfaces stage `*StageError`s (unchanged) and bare `context` errors.
+Each implements `error` with a readable message (`pipeline: duplicate stage "x"`; `pipeline: stage "a" depends on unknown stage "b"`; `pipeline: dependency cycle: a -> b -> a`). They are distinct types (not one struct with a kind enum) because each carries different identifying data and `errors.As` reaches the exact failure — the same typed-error discipline `expr` and `stage` already follow. These are construction errors only; `Run` surfaces stage `*StageError`s (unchanged) and bare `context` errors.
 
 ## Testing strategy
 
 TDD, red → green → refactor from the first commit.
 
 - **Table-driven** tests via the project `table-test` skill: the `assert` closure form; the **`ctx` modifier with `t.Context()`** (not `context.Background()`) for `Run`, including a **canceled-context** case; constructor tables that take no context stay context-free.
-- **Runnable `Example…` tests** doubling as godoc: a small linear pipeline, a diamond (`a → {b, c} → d`) showing dependency ordering, and a cycle-error example.
+- **Runnable `Example…` tests** doubling as godoc: a small linear pipeline (dependency-ordered) and a cycle-error example. Diamond (`a → {b, c} → d`) dependency ordering is covered by the unit tests rather than a separate example.
 - Coverage of:
   - **Ordering** — linear chain; diamond; independent stages preserve **input order**; a dependency declared before its dependent still runs after it (order is by dependency, not declaration).
   - **Validation** — duplicate name (`*DuplicateStageError`); unknown dependency (`*UnknownDependencyError`); direct cycle `a → a`, two-node cycle `a ↔ b`, longer cycle, each yielding a `*CycleError` with the concrete loop path; empty pipeline is valid and `Run` no-ops.
