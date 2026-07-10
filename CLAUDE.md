@@ -24,7 +24,13 @@ Follow this loop for every feature or bugfix, not just large ones. The skills na
 
 **Delete the feature branch after it merges to `main`.** Once the branch is merged, remove it — `git branch -d <branch>` locally, and delete the remote branch too if it was pushed (`git push origin --delete <branch>`). Don't leave merged branches lingering; each increment starts from a fresh branch off `main`.
 
-**Never `git commit` or `git push` without explicit user approval — this is a hard rule, no exceptions.** Ask first every time, even for trivial or "obvious" changes, and even when the user previously approved a similar action; approval is per-action, never standing. When work is ready, stage it, show what would be committed/pushed, and wait for the go-ahead. When the user does approve, the **pre-commit gate** (Development workflow §5: `/code-review` → `/security-review` → full `-race` suite) is an additional hard precondition before committing.
+**Never `git commit` or `git push` without explicit user approval — this is a hard rule, with one scoped exception (below).** Ask first every time, even for trivial or "obvious" changes, and even when the user previously approved a similar action; approval is per-action, never standing. When work is ready, stage it, show what would be committed/pushed, and wait for the go-ahead. When the user does approve, the **pre-commit gate** (Development workflow §5: `/code-review` → `/security-review` → full `-race` suite) is an additional hard precondition before committing.
+
+**Exception — per-task commits during plan execution.** Once the user has approved a written plan (`docs/plans/*`) *and* chosen a task-by-task execution mode (`superpowers:subagent-driven-development` or `superpowers:executing-plans`), the per-task commits enumerated in that plan are **pre-authorized**: commit each completed, green task without pausing for per-commit approval. This standing authorization is narrowly scoped and does **not** relax anything else:
+- It covers `git commit` **only** — `git push`, merges, tags, and any branch deletion still require explicit per-action approval.
+- Each task must be a **green unit** — its `go test ./... -race` passes — before its commit; no WIP/broken-build commits.
+- The **whole-branch delivery gate** (`/code-review` + `/security-review` over `main..HEAD`, findings resolved/triaged, `-race` green) still runs before the final increment commit, exactly as §5 requires.
+- It applies only to commits the approved plan spells out. Any commit *not* in the plan (or made outside an active plan-execution workflow) falls back to the default: ask first.
 
 **Proactively recommend alternatives.** Whenever a decision has to be made — design, library, API shape, trade-off — don't silently pick one. Surface the viable options with their pros/cons and state a recommended default, so the user can steer before you proceed.
 
