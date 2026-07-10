@@ -3,6 +3,7 @@ package expr
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -177,6 +178,16 @@ func TestFunction_Apply(t *testing.T) {
 			assert: func(t *testing.T, got any, err error) {
 				require.NoError(t, err)
 				assert.Equal(t, 20, got)
+			},
+		},
+		{
+			name:   "value struct with no exported fields (time.Time) survives conversion, so its methods are callable",
+			fnName: "year",
+			expr:   "T.Year()",
+			env:    envTestWithTime{T: time.Date(2024, time.March, 15, 10, 30, 0, 0, time.UTC)},
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, 2024, got)
 			},
 		},
 	}

@@ -2,6 +2,7 @@ package expr
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,6 +24,22 @@ type envTestWithMap struct {
 type envTestUnexported struct {
 	Public  string
 	private string
+}
+
+type envTestWithTime struct {
+	T time.Time
+}
+
+type envTestNoExportedFields struct {
+	hidden string
+}
+
+type envTestWithNoExportedFields struct {
+	V envTestNoExportedFields
+}
+
+type envTestDoublePointer struct {
+	N **int
 }
 
 func TestToEnv(t *testing.T) {
@@ -129,6 +146,36 @@ func TestToEnv(t *testing.T) {
 			assert: func(t *testing.T, got map[string]any, err error) {
 				require.Error(t, err)
 				assert.Nil(t, got)
+			},
+		},
+		{
+			name: "value struct with no exported fields (time.Time) survives instead of flattening to an empty map",
+			in:   envTestWithTime{T: time.Date(2024, time.March, 15, 10, 30, 0, 0, time.UTC)},
+			assert: func(t *testing.T, got map[string]any, err error) {
+				require.NoError(t, err)
+				gotTime, ok := got["T"].(time.Time)
+				require.True(t, ok, "expected T to be a time.Time, got %T", got["T"])
+				assert.True(t, time.Date(2024, time.March, 15, 10, 30, 0, 0, time.UTC).Equal(gotTime))
+			},
+		},
+		{
+			name: "custom struct with no exported fields passes through as its value",
+			in:   envTestWithNoExportedFields{V: envTestNoExportedFields{hidden: "secret"}},
+			assert: func(t *testing.T, got map[string]any, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, envTestNoExportedFields{hidden: "secret"}, got["V"])
+			},
+		},
+		{
+			name: "nested pointer field is fully unwrapped to the underlying value",
+			in: func() any {
+				i := 7
+				p := &i
+				return envTestDoublePointer{N: &p}
+			}(),
+			assert: func(t *testing.T, got map[string]any, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, 7, got["N"])
 			},
 		},
 	}
