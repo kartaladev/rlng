@@ -1,5 +1,3 @@
-// Package config parses declarative YAML/JSON pipeline definitions and builds
-// stage.Pipeline values from them.
 package config
 
 import "fmt"
