@@ -42,7 +42,7 @@ func structToMap(v reflect.Value) map[string]any {
 }
 
 func convertValue(v reflect.Value) any {
-	if v.Kind() == reflect.Pointer {
+	for v.Kind() == reflect.Pointer {
 		if v.IsNil() {
 			return nil
 		}
@@ -51,6 +51,13 @@ func convertValue(v reflect.Value) any {
 
 	switch v.Kind() {
 	case reflect.Struct:
+		// A struct with no exported fields (e.g. time.Time) can never become a
+		// useful map, so pass the real value through instead of flattening it
+		// to map[string]any{} and silently losing it. This lets expr call its
+		// methods (e.g. CreatedAt.Year(), CreatedAt.Before(x)).
+		if !hasExportedFields(v.Type()) {
+			return v.Interface()
+		}
 		return structToMap(v)
 	case reflect.Slice, reflect.Array:
 		out := make([]any, v.Len())
@@ -68,4 +75,15 @@ func convertValue(v reflect.Value) any {
 	default:
 		return v.Interface()
 	}
+}
+
+// hasExportedFields reports whether t (which must be a struct type) declares
+// at least one exported field.
+func hasExportedFields(t reflect.Type) bool {
+	for i := 0; i < t.NumField(); i++ {
+		if t.Field(i).IsExported() {
+			return true
+		}
+	}
+	return false
 }

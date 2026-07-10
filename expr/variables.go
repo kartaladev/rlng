@@ -75,7 +75,13 @@ func (v *variablePatcher) Visit(node *ast.Node) {
 	case reflect.Float32, reflect.Float64:
 		literal = &ast.FloatNode{Value: rv.Float()}
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		literal = &ast.IntegerNode{Value: int(rv.Int())}
+		// Guard against truncation on 32-bit builds, where int is narrower
+		// than int64; on 64-bit this range check is always satisfied.
+		if i := rv.Int(); i >= math.MinInt && i <= math.MaxInt {
+			literal = &ast.IntegerNode{Value: int(i)}
+		} else {
+			return // overflows ast.IntegerNode.Value (int): skip silently
+		}
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		if rv.Uint() > math.MaxInt {
 			return // overflows ast.IntegerNode.Value (int): skip silently

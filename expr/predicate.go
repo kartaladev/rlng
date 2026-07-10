@@ -80,10 +80,6 @@ func truthy(v any) bool {
 			return b
 		}
 		return s != ""
-	case []any:
-		return len(x) > 0
-	case map[string]any:
-		return len(x) > 0
 	}
 
 	rv := reflect.ValueOf(v)
