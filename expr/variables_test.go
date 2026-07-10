@@ -59,6 +59,36 @@ func TestVariablePatcher(t *testing.T) {
 				require.Equal(t, 2, got)
 			},
 		},
+		{
+			name:    "non-scalar global is skipped, left as unpatched identifier",
+			src:     "items",
+			globals: map[string]any{"items": []int{1, 2, 3}},
+			env:     map[string]any{},
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				require.Nil(t, got)
+			},
+		},
+		{
+			name:    "nil-pointer global is skipped, left as unpatched identifier",
+			src:     "p",
+			globals: map[string]any{"p": (*int)(nil)},
+			env:     map[string]any{},
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				require.Nil(t, got)
+			},
+		},
+		{
+			name:    "non-scalar global skipped, runtime env value is read",
+			src:     "items",
+			globals: map[string]any{"items": []int{1, 2, 3}},
+			env:     map[string]any{"items": 7},
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				require.Equal(t, 7, got)
+			},
+		},
 	}
 
 	for _, tc := range cases {
