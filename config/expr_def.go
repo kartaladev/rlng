@@ -1,0 +1,73 @@
+package config
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+
+	"github.com/kartaladev/rlng/expr"
+	"gopkg.in/yaml.v3"
+)
+
+// ExprDef is an expression with optional compile options. It decodes from
+// either a scalar string (shorthand: the string is Expr) or a mapping with
+// explicit fields.
+type ExprDef struct {
+	Expr     string         `yaml:"expr" json:"expr"`
+	Fallback string         `yaml:"fallback" json:"fallback"`
+	Globals  map[string]any `yaml:"globals" json:"globals"`
+	Coerce   bool           `yaml:"coerce" json:"coerce"`
+}
+
+// UnmarshalYAML accepts a scalar (the expression) or a mapping (explicit fields).
+func (e *ExprDef) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Kind {
+	case yaml.ScalarNode:
+		e.Expr = value.Value
+		return nil
+	case yaml.MappingNode:
+		type raw ExprDef // alias breaks the UnmarshalYAML recursion
+		var r raw
+		if err := value.Decode(&r); err != nil {
+			return err
+		}
+		*e = ExprDef(r)
+		return nil
+	default:
+		return &ConfigError{Field: "expr", Cause: fmt.Errorf("expected a scalar or mapping, got yaml kind %d", value.Kind)}
+	}
+}
+
+// UnmarshalJSON accepts a JSON string (the expression) or an object.
+func (e *ExprDef) UnmarshalJSON(data []byte) error {
+	if t := bytes.TrimSpace(data); len(t) > 0 && t[0] == '"' {
+		var s string
+		if err := json.Unmarshal(data, &s); err != nil {
+			return err
+		}
+		e.Expr = s
+		return nil
+	}
+	type raw ExprDef // alias breaks the UnmarshalJSON recursion
+	var r raw
+	if err := json.Unmarshal(data, &r); err != nil {
+		return err
+	}
+	*e = ExprDef(r)
+	return nil
+}
+
+// options maps the object form to expr.Option values.
+func (e ExprDef) options() []expr.Option {
+	var opts []expr.Option
+	if e.Fallback != "" {
+		opts = append(opts, expr.WithFallback(e.Fallback))
+	}
+	if len(e.Globals) > 0 {
+		opts = append(opts, expr.WithGlobals(e.Globals))
+	}
+	if e.Coerce {
+		opts = append(opts, expr.WithCoerce())
+	}
+	return opts
+}
