@@ -15,6 +15,7 @@ type Predicate struct {
 	expression string
 	program    *vm.Program
 	coerce     bool
+	refs       []string
 }
 
 // NewPredicate compiles expression into a Predicate. By default the expression
@@ -32,8 +33,15 @@ func NewPredicate(expression string, opts ...Option) (*Predicate, error) {
 	if err != nil {
 		return nil, &CompileError{Expression: expression, Cause: err}
 	}
-	return &Predicate{expression: expression, program: program, coerce: cfg.coerce}, nil
+	return &Predicate{expression: expression, program: program, coerce: cfg.coerce, refs: references(src)}, nil
 }
+
+// References returns the sorted top-level identifiers this Predicate reads,
+// computed once at compile. The returned slice must not be mutated.
+func (p *Predicate) References() []string { return p.refs }
+
+// Source returns the Predicate's original (untrimmed) expression string.
+func (p *Predicate) Source() string { return p.expression }
 
 // Test evaluates the predicate against env (a map[string]any or a struct).
 func (p *Predicate) Test(env any) (bool, error) {

@@ -15,6 +15,7 @@ type Function struct {
 	program     *vm.Program
 	fallback    *vm.Program
 	fallbackSrc string
+	refs        []string
 }
 
 // NewFunction compiles expression into a named Function. When WithFallback is
@@ -41,7 +42,7 @@ func NewFunction(name, expression string, opts ...Option) (*Function, error) {
 		return nil, &CompileError{Name: name, Expression: expression, Cause: err}
 	}
 
-	fn := &Function{name: name, expression: expression, program: program}
+	fn := &Function{name: name, expression: expression, program: program, refs: references(src)}
 
 	if fb := strings.TrimSpace(cfg.fallback); fb != "" {
 		fbProgram, err := exprlang.Compile(fb, exprOpts...)
@@ -76,6 +77,13 @@ func (f *Function) Apply(env any) (any, error) {
 	}
 	return result, nil
 }
+
+// References returns the sorted top-level identifiers this Function reads,
+// computed once at compile. The returned slice must not be mutated.
+func (f *Function) References() []string { return f.refs }
+
+// Source returns the Function's original (untrimmed) expression string.
+func (f *Function) Source() string { return f.expression }
 
 func (f *Function) runFallback() (any, error) {
 	result, err := exprlang.Run(f.fallback, map[string]any{})
