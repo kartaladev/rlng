@@ -299,11 +299,20 @@ ADR: 0013"
 
 ### Task 2: Derivation JSON tags + Scope JSON codec
 
+> **AMENDED (value preservation, per user):** JSON serde must preserve all
+> values exactly to avoid money-calculation disputes. `UnmarshalJSON` decodes
+> `data`/`derivations` with a `json.Decoder` + `UseNumber()` so numbers restore
+> as `json.Number` (exact digits — no float64 rounding of integers above 2^53).
+> The numeric getters `GetInt`/`GetInt64`/`GetFloat64` (in `stage/get.go`) are
+> extended to read `json.Number` losslessly. See the updated spec §"Value
+> preservation" and ADR-0013.
+
 **Files:**
 - Modify: `stage/provenance.go` (add `json:` tags to `Derivation`)
-- Create: `stage/json.go` (`MarshalJSON`/`UnmarshalJSON` + envelope types)
-- Modify: `docs/adrs/0013-scope-json-and-timing.md` (JSON section)
-- Test: `stage/json_test.go`
+- Create: `stage/json.go` (`MarshalJSON`/`UnmarshalJSON` + envelope types; `UseNumber` decode)
+- Modify: `stage/get.go` (`GetInt`/`GetInt64`/`GetFloat64` accept `json.Number`)
+- Modify: `docs/adrs/0013-scope-json-and-timing.md` (JSON section + value-preservation)
+- Test: `stage/json_test.go`, `stage/get_test.go` (json.Number cases)
 
 **Interfaces:**
 - Consumes: `Scope` (data/startedAt/duration/provenance/derivations fields), `Derivation`.

@@ -136,9 +136,23 @@ The wire envelope (read-locked on marshal, fields conditional):
    field must be non-nil).
 
 It initializes the mutex-guarded maps so the restored Scope is immediately usable by the
-getters and provenance accessors. Numbers decode as `float64` per `encoding/json` — this
-is the documented behavior of round-tripped `data`, unchanged from any JSON boundary; the
-strict typed getters (`GetInt` vs `GetFloat64`) reflect that faithfully.
+getters and provenance accessors.
+
+**Value preservation (no precision loss).** `UnmarshalJSON` decodes with a `json.Decoder`
+whose `UseNumber()` is set, so every number in `data` (and in `derivations`) is restored as
+a `json.Number` — the exact decimal text — rather than routed through `float64`. This
+matters for money: a default `encoding/json` decode turns any integer above 2^53 into a
+rounded `float64` (e.g. a large amount-in-cents), silently corrupting the value;
+`json.Number` carries the exact digits, so the round-trip is lossless for integers of any
+magnitude (up to `int64`) and for decimals. The strict numeric getters
+(`GetInt`/`GetInt64`/`GetFloat64`) are extended to read a `json.Number` losslessly
+(`Int64()`/`Float64()`), returning a `*ScopeTypeError` on overflow or non-integer. Because
+JSON has one number type, the int/float *type* distinction is not preserved across a reload
+— a reloaded number is a `json.Number` that both `GetInt` (when integral and in range) and
+`GetFloat64` can read; the *value* is always exact. `GetAs[T]` stays a strict assertion —
+use the typed numeric getters on a reloaded Scope. **Money guidance:** model money as
+integer minor units (cents) or a decimal string — both round-trip with zero loss; a
+`float64` money value is lossy in memory regardless of JSON and is discouraged.
 
 **Web vs. persistence:** `json.Marshal(sc.Snapshot())` → just the data map (web response);
 `json.Marshal(sc)` (or a `*Scope` field) → the envelope (persistence/round-trip). Documented
@@ -195,11 +209,13 @@ A dedicated package of runnable `Example…` tests, each with a `// Output:` blo
   duration.
 - **JSON codec (hot paths + typed-error branches):** marshal with/without timing,
   with/without provenance; **byte-stable round-trip** (`marshal → unmarshal → marshal`
-  yields equal JSON) — asserted at the JSON layer, not on Go-typed values, because
-  `encoding/json` reloads every number as `float64` (a documented consequence, reflected by
-  the strict getters); `timing` restores exactly (`started_at`/`duration_ns` are lossless);
-  `UnmarshalJSON` on malformed JSON returns an error; absent `data` yields an empty (not
-  nil) map; a restored provenance Scope answers `Derivation`/`Explain`.
+  yields equal JSON); **value preservation** — a large integer above 2^53 (e.g. money in
+  cents) round-trips to the *exact* value via `json.Number`, read back losslessly with
+  `GetInt64`; a reloaded number is readable by both `GetInt` and `GetFloat64`; `timing`
+  restores exactly (`started_at`/`duration_ns` are lossless); `UnmarshalJSON` on malformed
+  JSON returns an error; a `json.Number` overflow/non-integer through `GetInt`/`GetInt64`
+  returns a `*ScopeTypeError`; absent `data` yields an empty (not nil) map; a restored
+  provenance Scope answers `Derivation`/`Explain`.
 - **`BareEngine`:** map input and struct input; `Evaluate` returns the snapshot;
   `EvaluateScope` exposes timing/JSON; a pipeline/stage error surfaces unwrapped; a
   non-flattenable input is a wrapped error.
