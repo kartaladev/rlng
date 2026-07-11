@@ -59,6 +59,25 @@ func TestMultiExprExecute(t *testing.T) {
 			},
 		},
 		{
+			name: "equal priority preserves declaration order",
+			build: func(t *testing.T) (*MultiExpr, *Scope) {
+				// Both priority 0; 'later' references 'alpha', so a stable sort
+				// must keep declaration order for 'later' to see 'alpha'.
+				m, err := NewMultiExpr("calc", []NamedExpr{
+					{Name: "alpha", Expression: "5", Priority: 0},
+					{Name: "later", Expression: "alpha + 1", Priority: 0},
+				})
+				require.NoError(t, err)
+				return m, NewScope(nil)
+			},
+			assert: func(t *testing.T, sc *Scope, err error) {
+				require.NoError(t, err)
+				later, ok := sc.Get("calc.later")
+				require.True(t, ok)
+				assert.Equal(t, 6, later)
+			},
+		},
+		{
 			name: "canceled context short-circuits",
 			build: func(t *testing.T) (*MultiExpr, *Scope) {
 				m, err := NewMultiExpr("calc", []NamedExpr{{Name: "x", Expression: "1"}})

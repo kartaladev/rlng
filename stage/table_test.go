@@ -167,6 +167,16 @@ func TestNewDecisionTableValidation(t *testing.T) {
 				require.ErrorAs(t, err, &se)
 			},
 		},
+		{
+			name:      "empty output key is rejected",
+			stageName: "t",
+			rules:     []Rule{{Condition: "true", Decisions: map[string]string{"": "1"}}},
+			assert: func(t *testing.T, err error) {
+				var se *StageError
+				require.ErrorAs(t, err, &se)
+				assert.Equal(t, TypeDecisionTable, se.Type)
+			},
+		},
 	}
 
 	for _, tc := range cases {
