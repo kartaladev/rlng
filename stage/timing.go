@@ -15,16 +15,18 @@ func WithClock(clock func() time.Time) ScopeOption {
 
 // markStarted records the start of an evaluation. Called by Pipeline.Run.
 func (s *Scope) markStarted() {
+	now := s.clock()
 	s.mu.Lock()
-	s.startedAt = s.clock()
+	s.startedAt = now
 	s.mu.Unlock()
 }
 
 // markFinished records the elapsed evaluation time. Called by Pipeline.Run,
 // including when a stage errors — a partial run still took time.
 func (s *Scope) markFinished() {
+	now := s.clock()
 	s.mu.Lock()
-	s.duration = s.clock().Sub(s.startedAt)
+	s.duration = now.Sub(s.startedAt)
 	s.mu.Unlock()
 }
 

@@ -47,6 +47,7 @@ func (s *Scope) GetInt(path string) (int, error) {
 		if err != nil {
 			return 0, &ScopeTypeError{Path: path, Expected: "int", Actual: "json.Number(" + n.String() + ")"}
 		}
+		// Unreachable on 64-bit platforms (int == int64); guards 32-bit builds.
 		if int64(int(i)) != i {
 			return 0, &ScopeTypeError{Path: path, Expected: "int", Actual: "json.Number(" + n.String() + ") overflows int"}
 		}

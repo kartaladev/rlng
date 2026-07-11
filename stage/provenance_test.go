@@ -1,6 +1,7 @@
 package stage
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -188,4 +189,22 @@ func TestScopeLineageAndExplainDiamond(t *testing.T) {
 	// Explain does not re-expand a shared subtree: "x" appears once.
 	explained := sc.Explain("c")
 	assert.Equal(t, 1, strings.Count(explained, "x = 2 [seed]"))
+}
+
+func TestScopeLineageDepthCapped(t *testing.T) {
+	t.Parallel()
+	sc := NewScope(map[string]any{}, WithProvenance())
+	// chain: n0 <- n1 <- ... each derivation's input references the next path.
+	const chain = maxLineageDepth + 50
+	for i := 0; i < chain; i++ {
+		next := fmt.Sprintf("n%d", i+1)
+		require.NoError(t, sc.Derive(fmt.Sprintf("n%d", i), i, Derivation{
+			Stage: "s", StageType: TypeSingleExpr, Operation: "eval",
+			Expression: "x", Inputs: map[string]any{next: 0},
+		}))
+	}
+	// Must return (not stack-overflow) and be bounded by the depth cap.
+	lin := sc.Lineage("n0")
+	assert.LessOrEqual(t, len(lin), maxLineageDepth)
+	assert.NotEmpty(t, sc.Explain("n0")) // terminates
 }

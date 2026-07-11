@@ -39,3 +39,6 @@ timing.
   off path serializes just data (+ timing).
 - The int/float type distinction is not preserved across JSON; a reloaded
   number is a json.Number readable by GetInt (if integral) and GetFloat64.
+- A provenance-enabled Scope with zero recorded derivations loses its
+  provenance flag on JSON round-trip (the empty derivations map is omitted);
+  behaviorally inert since Explain/Lineage/Derivation are empty anyway.

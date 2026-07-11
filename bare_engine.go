@@ -27,7 +27,8 @@ func NewBareEngine(pipeline *stage.Pipeline, opts ...Option) *BareEngine {
 // EvaluateScope seeds a Scope from input, runs the pipeline, and returns the
 // full Scope — exposing timing, JSON serialization, and provenance. A
 // map[string]any input seeds directly; any other value is flattened via
-// mapstructure. Pipeline/stage errors pass through unwrapped.
+// mapstructure. Pipeline/stage errors pass through unwrapped. An input that
+// cannot be flattened into a seed map is returned as a wrapped error.
 func (e *BareEngine) EvaluateScope(ctx context.Context, input any) (*stage.Scope, error) {
 	seed, err := flatten(input)
 	if err != nil {

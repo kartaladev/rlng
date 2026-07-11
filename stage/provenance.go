@@ -11,6 +11,10 @@ const seedStageType = "seed"
 
 const opSeed = "seed"
 
+// maxLineageDepth bounds Lineage/Explain recursion against a maliciously deep
+// restored derivation graph.
+const maxLineageDepth = 1000
+
 // Derivation records how one value in a Scope was produced. It is populated only
 // when the Scope was created WithProvenance.
 type Derivation struct {
@@ -78,7 +82,8 @@ func (s *Scope) Derivations() map[string]Derivation {
 // Lineage returns the derivation of the value at path plus, transitively, the
 // derivations of its inputs — ordered seeds-first (a value appears after every
 // input it depends on). It is empty when provenance is disabled or path has no
-// derivation.
+// derivation. Traversal is bounded to a fixed maximum depth; a derivation chain
+// deeper than that is truncated (a guard for graphs restored from untrusted JSON).
 func (s *Scope) Lineage(path string) []Derivation {
 	if !s.provenance {
 		return nil
@@ -86,18 +91,21 @@ func (s *Scope) Lineage(path string) []Derivation {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var out []Derivation
-	s.collectLineage(path, map[string]struct{}{}, &out)
+	s.collectLineage(path, 0, map[string]struct{}{}, &out)
 	return out
 }
 
-func (s *Scope) collectLineage(key string, visited map[string]struct{}, out *[]Derivation) {
+func (s *Scope) collectLineage(key string, depth int, visited map[string]struct{}, out *[]Derivation) {
+	if depth >= maxLineageDepth {
+		return
+	}
 	for _, d := range s.derivationsFor(key) {
 		if _, seen := visited[d.Path]; seen {
 			continue
 		}
 		visited[d.Path] = struct{}{}
 		for _, id := range sortedInputs(d.Inputs) {
-			s.collectLineage(id, visited, out)
+			s.collectLineage(id, depth+1, visited, out)
 		}
 		*out = append(*out, d)
 	}
@@ -105,7 +113,9 @@ func (s *Scope) collectLineage(key string, visited map[string]struct{}, out *[]D
 
 // Explain renders the derivation of path as an indented ASCII tree, tracing each
 // input back to the seed values. It returns "" when provenance is disabled or
-// path has no derivation.
+// path has no derivation. Traversal is bounded to a fixed maximum depth; a
+// derivation chain deeper than that is truncated (a guard for graphs restored
+// from untrusted JSON).
 func (s *Scope) Explain(path string) string {
 	if !s.provenance {
 		return ""
@@ -118,6 +128,9 @@ func (s *Scope) Explain(path string) string {
 }
 
 func (s *Scope) explain(key string, depth int, visited map[string]struct{}, b *strings.Builder) {
+	if depth >= maxLineageDepth {
+		return
+	}
 	for _, d := range s.derivationsFor(key) {
 		indent := strings.Repeat("  ", depth)
 		if d.StageType == seedStageType {
