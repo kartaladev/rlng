@@ -46,8 +46,13 @@ func NewSingleExpr(name, expression string, opts ...Option) (*SingleExpr, error)
 	return s, nil
 }
 
-func (s *SingleExpr) Name() string        { return s.name }
-func (s *SingleExpr) Type() string        { return TypeSingleExpr }
+// Name returns the stage's name (also its default output path).
+func (s *SingleExpr) Name() string { return s.name }
+
+// Type returns TypeSingleExpr.
+func (s *SingleExpr) Type() string { return TypeSingleExpr }
+
+// DependsOn returns the names of the stages this stage depends on.
 func (s *SingleExpr) DependsOn() []string { return s.deps }
 
 // Execute evaluates the stage against sc. A configured condition that tests

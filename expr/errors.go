@@ -21,6 +21,8 @@ type CompileError struct {
 	Cause      error
 }
 
+// Error renders `compile "name" (expression): <cause>`, omitting the cause
+// suffix when Cause is nil.
 func (e *CompileError) Error() string {
 	prefix := "compile " + label(e.Name, e.Expression)
 	if e.Cause == nil {
@@ -29,6 +31,7 @@ func (e *CompileError) Error() string {
 	return prefix + ": " + e.Cause.Error()
 }
 
+// Unwrap returns the underlying compilation cause for errors.Is/As.
 func (e *CompileError) Unwrap() error { return e.Cause }
 
 // EvalError reports a failure while evaluating a compiled expression. It names
@@ -39,6 +42,8 @@ type EvalError struct {
 	Cause      error
 }
 
+// Error renders `eval "name" (expression): <cause>`, omitting the cause suffix
+// when Cause is nil.
 func (e *EvalError) Error() string {
 	prefix := "eval " + label(e.Name, e.Expression)
 	if e.Cause == nil {
@@ -47,6 +52,7 @@ func (e *EvalError) Error() string {
 	return prefix + ": " + e.Cause.Error()
 }
 
+// Unwrap returns the underlying evaluation cause for errors.Is/As.
 func (e *EvalError) Unwrap() error { return e.Cause }
 
 // label renders `"name" (expression)` when a name is present, else `(expression)`.

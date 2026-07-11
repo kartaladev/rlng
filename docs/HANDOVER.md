@@ -65,17 +65,21 @@ The user directed: **execute increments 3→5 autonomously**, then handed off to
 
 ## Next milestone — first release (`v0.0.1`) backlog
 
-The roadmap is done; before tagging `v0.0.1`, triage this backlog (none are merge-blockers, all release-relevant):
+The roadmap is done. A first **release-prep** pass (branch `chore/release-prep`) closed several of these; what's left before tagging `v0.0.1` follows. None are merge-blockers.
 
-- **Install & run `govulncheck ./...`** (was unavailable in this environment) — a release gate.
-- **Godoc completeness (release-gate):** exported `.Error()`/`Unwrap()` methods and interface methods lack godoc across `stage` (`SingleExpr/MultiExpr/DecisionTable` `Name/Type/DependsOn`; `DuplicateStageError/UnknownDependencyError/CycleError`), `config` (`ConfigError`), and root `rlng` (`MappingError`) — the "every exported symbol documented" gate. golangci-lint is clean; this is the "deliberate public API doc" gate.
-- **README + `Example` sweep:** ensure the README shows the end-to-end `config` → `Build` → `rlng.Engine` flow; the `ExampleEngine`/`ExampleParseYAML`/`ExamplePipeline` tests already double as godoc.
-- **API surface check:** run `gorelease`/`apidiff` conventions before the first tag (baseline).
+**Done in release-prep (2026-07-11):**
+- ✅ **`govulncheck ./...`** run — **0 vulnerabilities in `rlng`'s code**. The only advisories (`GO-2026-4970` in `os`, `GO-2026-5856` in `crypto/tls`) are **stdlib**, fixed in **go1.26.5**, and not called by our code. → **Bump the build/CI toolchain to go1.26.5** at release time (no source change needed).
+- ✅ **Godoc completeness** — added godoc to all exported `.Error()`/`Unwrap()` and stage `Name/Type/DependsOn` methods across `expr`/`stage`/`config`/root; an audit shows no remaining undocumented exported top-level symbols.
+- ✅ **README** refreshed (removed the stale "not written yet"; added a runnable end-to-end `config`→`Build`→`Engine` example).
+- ✅ **`StageError.Error()` nil-`Cause` guard** fixed + tested (the `expr` errors were already guarded; `ConfigError`/`MappingError` use nil-safe `%v`).
+- ✅ **Missing tests added** — `MultiExpr` stable-tie ordering; `DecisionTable` empty-output-key rejection.
+
+**Still open before `v0.0.1`:**
+- **Toolchain:** build/test on **go1.26.5+** (clears the two stdlib advisories) and confirm the CI matrix covers the supported Go versions (1.25+).
+- **API surface baseline:** run `gorelease`/`apidiff` conventions to establish the `v0.0.1` baseline (only meaningful at/after the first tag).
 - **config:** per-decision decision-table options are rejected — extend `stage.Rule` to per-decision `DecisionOptions` if a real need appears.
 - **rlng:** config-declared **output mapping** is not implemented (the `MappingTemplate` is programmatic) — a natural follow-up if declarative result mapping is wanted. `VariablePatcher` config defaults still deferred.
 - `Scope.Set` doesn't validate empty path **segments** (`"a.."`, `".a"` create a `""` key) — inert but worth a guard/doc.
-- `StageError.Error()` (and `expr.CompileError/EvalError`) deref `Cause` unconditionally → panic on a hand-built nil-`Cause` literal. One-line nil guard across all three restores parity. (`ConfigError`/`MappingError` already use `%v`, which is nil-safe.)
-- Missing tests: `MultiExpr` stable-tie ordering; `DecisionTable` empty-output-key rejection (a live untested branch).
 - `DecisionTable.executeSingle`/`executeCollect` duplicate iteration scaffolding — `/simplify` candidate.
 - Stages are **not transactional** (single/multi persist each write incrementally; collect is atomic) — document the semantic.
 - `Scope.Set` doesn't validate empty path **segments** (`"a.."`, `".a"` create a `""` key) — inert but worth a guard/doc.

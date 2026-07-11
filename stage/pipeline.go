@@ -9,6 +9,7 @@ import (
 // DuplicateStageError reports two stages sharing a Name within a Pipeline.
 type DuplicateStageError struct{ Name string }
 
+// Error renders `pipeline: duplicate stage "name"`.
 func (e *DuplicateStageError) Error() string {
 	return fmt.Sprintf("pipeline: duplicate stage %q", e.Name)
 }
@@ -20,6 +21,7 @@ type UnknownDependencyError struct {
 	Dependency string
 }
 
+// Error renders `pipeline: stage "x" depends on unknown stage "y"`.
 func (e *UnknownDependencyError) Error() string {
 	return fmt.Sprintf("pipeline: stage %q depends on unknown stage %q", e.Stage, e.Dependency)
 }
@@ -28,6 +30,7 @@ func (e *UnknownDependencyError) Error() string {
 // loop path, closing on the repeated stage (e.g. ["a", "b", "a"]).
 type CycleError struct{ Cycle []string }
 
+// Error renders `pipeline: dependency cycle: a -> b -> a`.
 func (e *CycleError) Error() string {
 	return "pipeline: dependency cycle: " + strings.Join(e.Cycle, " -> ")
 }

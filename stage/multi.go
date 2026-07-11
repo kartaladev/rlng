@@ -67,8 +67,13 @@ func NewMultiExpr(name string, exprs []NamedExpr, opts ...Option) (*MultiExpr, e
 	return &MultiExpr{name: name, deps: cfg.deps, exprs: compiled}, nil
 }
 
-func (m *MultiExpr) Name() string        { return m.name }
-func (m *MultiExpr) Type() string        { return TypeMultiExpr }
+// Name returns the stage's name; results are written under name.<exprName>.
+func (m *MultiExpr) Name() string { return m.name }
+
+// Type returns TypeMultiExpr.
+func (m *MultiExpr) Type() string { return TypeMultiExpr }
+
+// DependsOn returns the names of the stages this stage depends on.
 func (m *MultiExpr) DependsOn() []string { return m.deps }
 
 // Execute evaluates the expressions in priority order. Each result is visible to

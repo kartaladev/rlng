@@ -11,6 +11,8 @@ type ConfigError struct {
 	Cause error
 }
 
+// Error renders `config: [stage "s"] [field "f"]: <cause>`, including whichever
+// of stage/field are set.
 func (e *ConfigError) Error() string {
 	switch {
 	case e.Stage != "" && e.Field != "":
@@ -24,4 +26,6 @@ func (e *ConfigError) Error() string {
 	}
 }
 
+// Unwrap returns the underlying cause (a decode, stage, expr, or pipeline error)
+// for errors.Is/As.
 func (e *ConfigError) Unwrap() error { return e.Cause }

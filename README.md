@@ -6,10 +6,11 @@ A **pure-Go rule engine library**, built on top of [expr-lang/expr](https://gith
 them against runtime input. It is the *engine* only — not a Business Rules Management
 System: no authoring UI, governance, or persistence, just fast, embeddable evaluation.
 
-> **Status: early development.** The repository is bootstrapped but the Go module and
-> source are not written yet. There is nothing to `go get` at this time. This README and
-> [`CLAUDE.md`](./CLAUDE.md) describe the intended design; APIs below are illustrative and
-> subject to change until the first tagged release.
+> **Status: unreleased (pre-`v0.0.1`).** All five build increments are implemented and
+> merged — the `expr`, `stage`, and `config` packages and the root `rlng` facade are
+> complete, tested (`-race`), and lint-clean. The exported API is stable but **not yet
+> tagged**; pin to a commit until `v0.0.1` is cut. APIs may still change before the first
+> tag. See [`CLAUDE.md`](./CLAUDE.md) for the architecture and contributor workflow.
 
 ## Why another rule engine?
 
@@ -32,6 +33,61 @@ Rules are declared as config and compiled once, then evaluated on the hot path:
   type via a mapping template.
 
 See [`CLAUDE.md`](./CLAUDE.md) for the full architecture blueprint and contributor workflow.
+
+## Usage
+
+Declare a pipeline as config, build it, and evaluate a typed input into a typed result:
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/kartaladev/rlng"
+	"github.com/kartaladev/rlng/config"
+)
+
+type Input struct {
+	Price float64 `mapstructure:"price"`
+	Qty   int     `mapstructure:"qty"`
+}
+
+type Quote struct {
+	Total float64 `mapstructure:"total"`
+}
+
+const rules = `
+stages:
+  - name: base
+    type: single-expr
+    expr: price * qty
+  - name: taxed
+    type: single-expr
+    expr: base * 1.1
+    depends_on: [base]
+`
+
+func main() {
+	def, _ := config.ParseYAML([]byte(rules)) // parse declarative rules
+	pipeline, _ := def.Build()                // compile + topo-sort (cycle-checked)
+
+	mapper, _ := rlng.NewMapper[Quote](rlng.MappingTemplate{"total": "taxed"})
+	engine := rlng.New[Input, Quote](pipeline, mapper)
+
+	q, err := engine.Evaluate(context.Background(), Input{Price: 10, Qty: 2})
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("%.1f\n", q.Total) // 22.0
+}
+```
+
+The packages are also usable independently: `expr` (compile/evaluate one expression),
+`stage` (build stages and a `Pipeline` in Go), and `config` (load definitions). The root
+`rlng` package is the end-to-end facade. Every exported behavior has a runnable `Example`
+test that doubles as godoc.
 
 ## Installation
 

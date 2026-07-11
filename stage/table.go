@@ -87,8 +87,13 @@ func NewDecisionTable(name string, rules []Rule, opts ...Option) (*DecisionTable
 	return &DecisionTable{name: name, deps: cfg.deps, hitPolicy: cfg.hitPolicy, rules: compiled}, nil
 }
 
-func (d *DecisionTable) Name() string        { return d.name }
-func (d *DecisionTable) Type() string        { return TypeDecisionTable }
+// Name returns the stage's name; decision outputs are written under name.<key>.
+func (d *DecisionTable) Name() string { return d.name }
+
+// Type returns TypeDecisionTable.
+func (d *DecisionTable) Type() string { return TypeDecisionTable }
+
+// DependsOn returns the names of the stages this stage depends on.
 func (d *DecisionTable) DependsOn() []string { return d.deps }
 
 // Execute evaluates the rules against a Scope snapshot per the hit policy.
