@@ -19,18 +19,19 @@ type quote struct {
 }
 
 // buildEngine wires a two-stage pipeline (base = price*qty, taxed = base*1.1)
-// and a mapper projecting total = taxed.
-func buildEngine(t *testing.T) *Engine[order, quote] {
-	t.Helper()
+// and a mapper projecting total = taxed, with any Options applied. It accepts a
+// testing.TB so both tests and benchmarks can share it.
+func buildEngine(tb testing.TB, opts ...Option) *Engine[order, quote] {
+	tb.Helper()
 	base, err := stage.NewSingleExpr("base", "price * qty")
-	require.NoError(t, err)
+	require.NoError(tb, err)
 	taxed, err := stage.NewSingleExpr("taxed", "base * 1.1", stage.WithDependsOn("base"))
-	require.NoError(t, err)
+	require.NoError(tb, err)
 	p, err := stage.NewPipeline(base, taxed)
-	require.NoError(t, err)
+	require.NoError(tb, err)
 	m, err := NewMapper[quote](MappingTemplate{"total": "taxed"})
-	require.NoError(t, err)
-	return New[order, quote](p, m)
+	require.NoError(tb, err)
+	return New[order, quote](p, m, opts...)
 }
 
 func TestEngineEvaluate(t *testing.T) {
@@ -38,7 +39,7 @@ func TestEngineEvaluate(t *testing.T) {
 
 	type testCase struct {
 		name   string
-		engine func(t *testing.T) *Engine[order, quote]
+		engine func(tb testing.TB) *Engine[order, quote]
 		input  order
 		ctx    func(ctx context.Context) context.Context
 		assert func(t *testing.T, q quote, err error)
@@ -47,7 +48,7 @@ func TestEngineEvaluate(t *testing.T) {
 	cases := []testCase{
 		{
 			name:   "happy path struct in struct out",
-			engine: buildEngine,
+			engine: func(tb testing.TB) *Engine[order, quote] { return buildEngine(tb) },
 			input:  order{Price: 10, Qty: 2},
 			assert: func(t *testing.T, q quote, err error) {
 				require.NoError(t, err)
@@ -56,14 +57,14 @@ func TestEngineEvaluate(t *testing.T) {
 		},
 		{
 			name: "pipeline stage error surfaces",
-			engine: func(t *testing.T) *Engine[order, quote] {
+			engine: func(tb testing.TB) *Engine[order, quote] {
 				// boom uses modulo by zero on a seeded int, failing at eval.
 				boom, err := stage.NewSingleExpr("taxed", "qty % 0")
-				require.NoError(t, err)
+				require.NoError(tb, err)
 				p, err := stage.NewPipeline(boom)
-				require.NoError(t, err)
+				require.NoError(tb, err)
 				m, err := NewMapper[quote](MappingTemplate{"total": "taxed"})
-				require.NoError(t, err)
+				require.NoError(tb, err)
 				return New[order, quote](p, m)
 			},
 			input: order{Price: 10, Qty: 2},
@@ -75,7 +76,7 @@ func TestEngineEvaluate(t *testing.T) {
 		},
 		{
 			name:   "canceled context short-circuits",
-			engine: buildEngine,
+			engine: func(tb testing.TB) *Engine[order, quote] { return buildEngine(tb) },
 			input:  order{Price: 10, Qty: 2},
 			ctx: func(ctx context.Context) context.Context {
 				cctx, cancel := context.WithCancel(ctx)
