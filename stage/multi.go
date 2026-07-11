@@ -85,12 +85,26 @@ func (m *MultiExpr) Execute(ctx context.Context, sc *Scope) error {
 	}
 
 	env := sc.Snapshot()
+	tracking := sc.TracksProvenance()
 	for _, e := range m.exprs {
 		v, err := e.fn.Apply(env)
 		if err != nil {
 			return &StageError{Stage: m.name, Type: TypeMultiExpr, Cause: err}
 		}
 		env[e.name] = v // visible to later expressions within this stage
+		if tracking {
+			d := Derivation{
+				Stage:      m.name,
+				StageType:  TypeMultiExpr,
+				Operation:  "expr:" + e.name,
+				Expression: e.fn.Source(),
+				Inputs:     snapshotRefs(env, e.fn.References()),
+			}
+			if err := sc.Derive(m.name+"."+e.name, v, d); err != nil {
+				return &StageError{Stage: m.name, Type: TypeMultiExpr, Cause: err}
+			}
+			continue
+		}
 		if err := sc.Set(m.name+"."+e.name, v); err != nil {
 			return &StageError{Stage: m.name, Type: TypeMultiExpr, Cause: err}
 		}

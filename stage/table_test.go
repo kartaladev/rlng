@@ -101,6 +101,60 @@ func TestDecisionTableExecute(t *testing.T) {
 				require.ErrorIs(t, err, context.Canceled)
 			},
 		},
+		{
+			name: "provenance on: single mode records the winning rule's derivation",
+			build: func(t *testing.T) (*DecisionTable, *Scope) {
+				d, err := NewDecisionTable("tier", []Rule{
+					{Condition: "amount >= 1000", Decisions: map[string]string{"level": `"gold"`}},
+					{Condition: "amount >= 100", Decisions: map[string]string{"level": `"silver"`}},
+				})
+				require.NoError(t, err)
+				return d, NewScope(map[string]any{"amount": 5000}, WithProvenance())
+			},
+			assert: func(t *testing.T, sc *Scope, err error) {
+				require.NoError(t, err)
+
+				d, ok := sc.Derivation("tier.level")
+				require.True(t, ok)
+				assert.Equal(t, "tier", d.Stage)
+				assert.Equal(t, TypeDecisionTable, d.StageType)
+				assert.Equal(t, "decision:level", d.Operation)
+				assert.Equal(t, `"gold"`, d.Expression)
+				assert.Equal(t, "gold", d.Value)
+			},
+		},
+		{
+			name: "provenance on: collect mode joins expressions and unions inputs across matched rules",
+			build: func(t *testing.T) (*DecisionTable, *Scope) {
+				d, err := NewDecisionTable("tags", []Rule{
+					{Condition: "amount >= 100", Decisions: map[string]string{"tag": "label1"}},
+					{Condition: "amount >= 1000", Decisions: map[string]string{"tag": "label2"}},
+				}, WithHitPolicy(HitPolicyCollect))
+				require.NoError(t, err)
+				return d, NewScope(map[string]any{"amount": 5000, "label1": "big", "label2": "huge"}, WithProvenance())
+			},
+			assert: func(t *testing.T, sc *Scope, err error) {
+				require.NoError(t, err)
+
+				tags, ok := sc.Get("tags.tag")
+				require.True(t, ok)
+				assert.Equal(t, []any{"big", "huge"}, tags)
+
+				d, ok := sc.Derivation("tags.tag")
+				require.True(t, ok)
+				assert.Equal(t, "tags", d.Stage)
+				assert.Equal(t, TypeDecisionTable, d.StageType)
+				assert.Equal(t, "collect:tag", d.Operation)
+				assert.Equal(t, "label1; label2", d.Expression)
+				assert.Equal(t, map[string]any{"label1": "big", "label2": "huge"}, d.Inputs)
+				assert.Equal(t, []any{"big", "huge"}, d.Value)
+
+				explained := sc.Explain("tags.tag")
+				assert.Contains(t, explained, "tags.tag = [big huge] [tags decision-table] expr: label1; label2")
+				assert.Contains(t, explained, "label1 = big [seed]")
+				assert.Contains(t, explained, "label2 = huge [seed]")
+			},
+		},
 	}
 
 	for _, tc := range cases {

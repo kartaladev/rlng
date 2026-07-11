@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/kartaladev/rlng/expr"
 )
@@ -110,6 +111,7 @@ func (d *DecisionTable) Execute(ctx context.Context, sc *Scope) error {
 }
 
 func (d *DecisionTable) executeSingle(env map[string]any, sc *Scope) error {
+	tracking := sc.TracksProvenance()
 	for _, r := range d.rules {
 		ok, err := r.cond.Test(env)
 		if err != nil {
@@ -123,6 +125,19 @@ func (d *DecisionTable) executeSingle(env map[string]any, sc *Scope) error {
 			if err != nil {
 				return &StageError{Stage: d.name, Type: TypeDecisionTable, Cause: err}
 			}
+			if tracking {
+				derivation := Derivation{
+					Stage:      d.name,
+					StageType:  TypeDecisionTable,
+					Operation:  "decision:" + dec.key,
+					Expression: dec.fn.Source(),
+					Inputs:     snapshotRefs(env, dec.fn.References()),
+				}
+				if err := sc.Derive(d.name+"."+dec.key, v, derivation); err != nil {
+					return &StageError{Stage: d.name, Type: TypeDecisionTable, Cause: err}
+				}
+				continue
+			}
 			if err := sc.Set(d.name+"."+dec.key, v); err != nil {
 				return &StageError{Stage: d.name, Type: TypeDecisionTable, Cause: err}
 			}
@@ -133,8 +148,15 @@ func (d *DecisionTable) executeSingle(env map[string]any, sc *Scope) error {
 }
 
 func (d *DecisionTable) executeCollect(env map[string]any, sc *Scope) error {
+	tracking := sc.TracksProvenance()
 	collected := make(map[string][]any)
 	order := make([]string, 0)
+	var expressions map[string][]string
+	var inputs map[string]map[string]any
+	if tracking {
+		expressions = make(map[string][]string)
+		inputs = make(map[string]map[string]any)
+	}
 	for _, r := range d.rules {
 		ok, err := r.cond.Test(env)
 		if err != nil {
@@ -152,9 +174,34 @@ func (d *DecisionTable) executeCollect(env map[string]any, sc *Scope) error {
 				order = append(order, dec.key)
 			}
 			collected[dec.key] = append(collected[dec.key], v)
+			if tracking {
+				expressions[dec.key] = append(expressions[dec.key], dec.fn.Source())
+				refs := snapshotRefs(env, dec.fn.References())
+				if len(refs) > 0 {
+					if inputs[dec.key] == nil {
+						inputs[dec.key] = make(map[string]any, len(refs))
+					}
+					for k, v := range refs {
+						inputs[dec.key][k] = v
+					}
+				}
+			}
 		}
 	}
 	for _, key := range order {
+		if tracking {
+			derivation := Derivation{
+				Stage:      d.name,
+				StageType:  TypeDecisionTable,
+				Operation:  "collect:" + key,
+				Expression: strings.Join(expressions[key], "; "),
+				Inputs:     inputs[key],
+			}
+			if err := sc.Derive(d.name+"."+key, collected[key], derivation); err != nil {
+				return &StageError{Stage: d.name, Type: TypeDecisionTable, Cause: err}
+			}
+			continue
+		}
 		if err := sc.Set(d.name+"."+key, collected[key]); err != nil {
 			return &StageError{Stage: d.name, Type: TypeDecisionTable, Cause: err}
 		}

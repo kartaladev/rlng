@@ -93,6 +93,35 @@ func TestMultiExprExecute(t *testing.T) {
 				require.ErrorIs(t, err, context.Canceled)
 			},
 		},
+		{
+			name: "provenance on records each expr's derivation",
+			build: func(t *testing.T) (*MultiExpr, *Scope) {
+				m, err := NewMultiExpr("calc", []NamedExpr{
+					{Name: "base", Expression: "price * qty", Priority: 0},
+					{Name: "taxed", Expression: "base * 1.1", Priority: 1},
+				})
+				require.NoError(t, err)
+				return m, NewScope(map[string]any{"price": 10.0, "qty": 2.0}, WithProvenance())
+			},
+			assert: func(t *testing.T, sc *Scope, err error) {
+				require.NoError(t, err)
+
+				base, ok := sc.Derivation("calc.base")
+				require.True(t, ok)
+				assert.Equal(t, "calc", base.Stage)
+				assert.Equal(t, TypeMultiExpr, base.StageType)
+				assert.Equal(t, "expr:base", base.Operation)
+				assert.Equal(t, "price * qty", base.Expression)
+				assert.Equal(t, map[string]any{"price": 10.0, "qty": 2.0}, base.Inputs)
+				assert.Equal(t, 20.0, base.Value)
+
+				taxed, ok := sc.Derivation("calc.taxed")
+				require.True(t, ok)
+				assert.Equal(t, "expr:taxed", taxed.Operation)
+				assert.Equal(t, "base * 1.1", taxed.Expression)
+				assert.Equal(t, map[string]any{"base": 20.0}, taxed.Inputs)
+			},
+		},
 	}
 
 	for _, tc := range cases {

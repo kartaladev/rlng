@@ -121,6 +121,29 @@ func TestSingleExprExecute(t *testing.T) {
 				assert.False(t, ok)
 			},
 		},
+		{
+			name: "provenance on records a derivation",
+			build: func(t *testing.T) (*SingleExpr, *Scope) {
+				s, err := NewSingleExpr("total", "price * qty")
+				require.NoError(t, err)
+				return s, NewScope(map[string]any{"price": 10, "qty": 3}, WithProvenance())
+			},
+			assert: func(t *testing.T, sc *Scope, err error) {
+				require.NoError(t, err)
+				got, ok := sc.Get("total")
+				require.True(t, ok)
+				assert.Equal(t, 30, got)
+
+				d, ok := sc.Derivation("total")
+				require.True(t, ok)
+				assert.Equal(t, "total", d.Stage)
+				assert.Equal(t, TypeSingleExpr, d.StageType)
+				assert.Equal(t, "eval", d.Operation)
+				assert.Equal(t, "price * qty", d.Expression)
+				assert.Equal(t, map[string]any{"price": 10, "qty": 3}, d.Inputs)
+				assert.Equal(t, 30, d.Value)
+			},
+		},
 	}
 
 	for _, tc := range cases {

@@ -78,6 +78,19 @@ func (s *SingleExpr) Execute(ctx context.Context, sc *Scope) error {
 	if err != nil {
 		return &StageError{Stage: s.name, Type: TypeSingleExpr, Cause: err}
 	}
+	if sc.TracksProvenance() {
+		d := Derivation{
+			Stage:      s.name,
+			StageType:  TypeSingleExpr,
+			Operation:  "eval",
+			Expression: s.fn.Source(),
+			Inputs:     snapshotRefs(env, s.fn.References()),
+		}
+		if err := sc.Derive(s.output, v, d); err != nil {
+			return &StageError{Stage: s.name, Type: TypeSingleExpr, Cause: err}
+		}
+		return nil
+	}
 	if err := sc.Set(s.output, v); err != nil {
 		return &StageError{Stage: s.name, Type: TypeSingleExpr, Cause: err}
 	}
