@@ -89,6 +89,21 @@ The packages are also usable independently: `expr` (compile/evaluate one express
 `rlng` package is the end-to-end facade. Every exported behavior has a runnable `Example`
 test that doubles as godoc.
 
+## Examples
+
+Runnable, real-world usage lives in [`examples/`](./examples) — run them with:
+
+```bash
+go test ./examples/
+```
+
+- **Pricing** — a two-stage expression pipeline, typed getters, evaluation
+  timing, and round-tripping the `Scope` through JSON (as a `jsonb` column).
+- **Eligibility** — a decision table with provenance: `Explain` renders how a
+  result was derived back to the seed inputs.
+- **Config → BareEngine** — load a pipeline from a JSON/YAML definition and run
+  it through `BareEngine`, which returns the raw `map[string]any`.
+
 ## Installation
 
 Not yet released. Once the module is published and a `vX.Y.Z` tag is cut:
