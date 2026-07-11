@@ -33,10 +33,18 @@ type StageError struct {
 	Cause error
 }
 
+// Error renders `stage "name" (type): <cause>`, or `stage "name" (type)` when
+// Cause is nil.
 func (e *StageError) Error() string {
-	return fmt.Sprintf("stage %q (%s): %s", e.Stage, e.Type, e.Cause.Error())
+	prefix := fmt.Sprintf("stage %q (%s)", e.Stage, e.Type)
+	if e.Cause == nil {
+		return prefix
+	}
+	return prefix + ": " + e.Cause.Error()
 }
 
+// Unwrap returns the underlying cause, so errors.Is/As reach the wrapped
+// expr.CompileError/EvalError or scope error.
 func (e *StageError) Unwrap() error { return e.Cause }
 
 // errEmptyStageName is the Cause of a StageError returned by New* constructors

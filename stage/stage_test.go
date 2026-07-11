@@ -28,6 +28,13 @@ func TestStageError(t *testing.T) {
 				require.ErrorIs(t, err, inner)
 			},
 		},
+		{
+			name: "nil cause does not panic",
+			err:  &StageError{Stage: "discount", Type: TypeSingleExpr},
+			assert: func(t *testing.T, err *StageError) {
+				assert.Equal(t, `stage "discount" (single-expr)`, err.Error())
+			},
+		},
 	}
 
 	for _, tc := range cases {
