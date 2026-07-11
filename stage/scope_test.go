@@ -55,6 +55,22 @@ func TestScopeSetGet(t *testing.T) {
 			},
 		},
 		{
+			name:  "get with empty path returns false",
+			build: func() *Scope { return NewScope(map[string]any{"a": 1}) },
+			assert: func(t *testing.T, s *Scope) {
+				_, ok := s.Get("")
+				assert.False(t, ok)
+			},
+		},
+		{
+			name:  "get descending through a scalar returns false",
+			build: func() *Scope { return NewScope(map[string]any{"a": 1}) },
+			assert: func(t *testing.T, s *Scope) {
+				_, ok := s.Get("a.b")
+				assert.False(t, ok)
+			},
+		},
+		{
 			name:  "empty path is an error",
 			build: func() *Scope { return NewScope(nil) },
 			assert: func(t *testing.T, s *Scope) {

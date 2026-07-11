@@ -123,6 +123,7 @@ func TestGetAs(t *testing.T) {
 				require.Equal(t, "value", typeErr.Path)
 				require.Equal(t, "int", typeErr.Expected)
 				require.Equal(t, "string", typeErr.Actual)
+				require.Equal(t, `scope: path "value": expected int, got string`, typeErr.Error())
 			},
 		},
 		{

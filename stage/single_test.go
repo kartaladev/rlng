@@ -144,6 +144,54 @@ func TestSingleExprExecute(t *testing.T) {
 				assert.Equal(t, 30, d.Value)
 			},
 		},
+		{
+			name: "condition eval error surfaces as StageError",
+			build: func(t *testing.T) (*SingleExpr, *Scope) {
+				// "a % b" with b == 0 makes the condition predicate fail at eval.
+				s, err := NewSingleExpr("bonus", "100", WithCondition("a % b == 0"))
+				require.NoError(t, err)
+				return s, NewScope(map[string]any{"a": 1, "b": 0})
+			},
+			assert: func(t *testing.T, sc *Scope, err error) {
+				var se *StageError
+				require.ErrorAs(t, err, &se)
+				assert.Equal(t, "bonus", se.Stage)
+				assert.Equal(t, TypeSingleExpr, se.Type)
+			},
+		},
+		{
+			name: "write conflict surfaces as StageError",
+			build: func(t *testing.T) (*SingleExpr, *Scope) {
+				// Output "price.total" makes the write traverse the scalar seed
+				// "price", so Set fails with ErrPathNotMap (provenance off).
+				s, err := NewSingleExpr("total", "qty", WithOutput("price.total"))
+				require.NoError(t, err)
+				return s, NewScope(map[string]any{"price": 10, "qty": 3})
+			},
+			assert: func(t *testing.T, sc *Scope, err error) {
+				var se *StageError
+				require.ErrorAs(t, err, &se)
+				assert.Equal(t, "total", se.Stage)
+				assert.Equal(t, TypeSingleExpr, se.Type)
+				assert.ErrorIs(t, se, ErrPathNotMap)
+			},
+		},
+		{
+			name: "provenance on: write conflict surfaces as StageError",
+			build: func(t *testing.T) (*SingleExpr, *Scope) {
+				// Same collision as above, on the provenance write path (Derive).
+				s, err := NewSingleExpr("total", "qty", WithOutput("price.total"))
+				require.NoError(t, err)
+				return s, NewScope(map[string]any{"price": 10, "qty": 3}, WithProvenance())
+			},
+			assert: func(t *testing.T, sc *Scope, err error) {
+				var se *StageError
+				require.ErrorAs(t, err, &se)
+				assert.Equal(t, "total", se.Stage)
+				assert.Equal(t, TypeSingleExpr, se.Type)
+				assert.ErrorIs(t, se, ErrPathNotMap)
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -161,21 +209,61 @@ func TestSingleExprExecute(t *testing.T) {
 	}
 }
 
-func TestNewSingleExprCompileError(t *testing.T) {
+func TestNewSingleExprErrors(t *testing.T) {
 	t.Parallel()
 
-	_, err := NewSingleExpr("bad", "x +")
-	var se *StageError
-	require.ErrorAs(t, err, &se)
-	assert.Equal(t, TypeSingleExpr, se.Type)
+	type testCase struct {
+		name   string
+		build  func() (*SingleExpr, error)
+		assert func(t *testing.T, err error)
+	}
+
+	cases := []testCase{
+		{
+			name:  "empty name",
+			build: func() (*SingleExpr, error) { return NewSingleExpr("", "1") },
+			assert: func(t *testing.T, err error) {
+				var se *StageError
+				require.ErrorAs(t, err, &se)
+				assert.Equal(t, TypeSingleExpr, se.Type)
+				assert.ErrorIs(t, se, errEmptyStageName)
+			},
+		},
+		{
+			name:  "expression fails to compile",
+			build: func() (*SingleExpr, error) { return NewSingleExpr("bad", "x +") },
+			assert: func(t *testing.T, err error) {
+				var se *StageError
+				require.ErrorAs(t, err, &se)
+				assert.Equal(t, TypeSingleExpr, se.Type)
+			},
+		},
+		{
+			name:  "condition fails to compile",
+			build: func() (*SingleExpr, error) { return NewSingleExpr("s", "1", WithCondition("a &&")) },
+			assert: func(t *testing.T, err error) {
+				var se *StageError
+				require.ErrorAs(t, err, &se)
+				assert.Equal(t, TypeSingleExpr, se.Type)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := tc.build()
+			tc.assert(t, err)
+		})
+	}
 }
 
-func TestNewSingleExprEmptyName(t *testing.T) {
+func TestSingleExprAccessors(t *testing.T) {
 	t.Parallel()
 
-	_, err := NewSingleExpr("", "1")
-	var se *StageError
-	require.ErrorAs(t, err, &se)
-	assert.Equal(t, TypeSingleExpr, se.Type)
-	assert.ErrorIs(t, se, errEmptyStageName)
+	s, err := NewSingleExpr("total", "price * qty", WithDependsOn("base"))
+	require.NoError(t, err)
+	assert.Equal(t, "total", s.Name())
+	assert.Equal(t, TypeSingleExpr, s.Type())
+	assert.Equal(t, []string{"base"}, s.DependsOn())
 }

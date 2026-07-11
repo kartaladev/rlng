@@ -122,6 +122,57 @@ func TestMultiExprExecute(t *testing.T) {
 				assert.Equal(t, map[string]any{"base": 20.0}, taxed.Inputs)
 			},
 		},
+		{
+			name: "eval error surfaces as StageError",
+			build: func(t *testing.T) (*MultiExpr, *Scope) {
+				m, err := NewMultiExpr("calc", []NamedExpr{{Name: "x", Expression: "a % b"}})
+				require.NoError(t, err)
+				return m, NewScope(map[string]any{"a": 1, "b": 0})
+			},
+			assert: func(t *testing.T, sc *Scope, err error) {
+				var se *StageError
+				require.ErrorAs(t, err, &se)
+				assert.Equal(t, "calc", se.Stage)
+				assert.Equal(t, TypeMultiExpr, se.Type)
+			},
+		},
+		{
+			name: "write conflict surfaces as StageError",
+			build: func(t *testing.T) (*MultiExpr, *Scope) {
+				// The scalar seed "calc" collides with the stage namespace, so
+				// Set("calc.base", …) fails with ErrPathNotMap (provenance off).
+				m, err := NewMultiExpr("calc", []NamedExpr{
+					{Name: "base", Expression: "price * qty", Priority: 0},
+				})
+				require.NoError(t, err)
+				return m, NewScope(map[string]any{"calc": 1, "price": 10.0, "qty": 2.0})
+			},
+			assert: func(t *testing.T, sc *Scope, err error) {
+				var se *StageError
+				require.ErrorAs(t, err, &se)
+				assert.Equal(t, "calc", se.Stage)
+				assert.Equal(t, TypeMultiExpr, se.Type)
+				assert.ErrorIs(t, se, ErrPathNotMap)
+			},
+		},
+		{
+			name: "provenance on: write conflict surfaces as StageError",
+			build: func(t *testing.T) (*MultiExpr, *Scope) {
+				// Same collision as above, on the provenance write path (Derive).
+				m, err := NewMultiExpr("calc", []NamedExpr{
+					{Name: "base", Expression: "price * qty", Priority: 0},
+				})
+				require.NoError(t, err)
+				return m, NewScope(map[string]any{"calc": 1, "price": 10.0, "qty": 2.0}, WithProvenance())
+			},
+			assert: func(t *testing.T, sc *Scope, err error) {
+				var se *StageError
+				require.ErrorAs(t, err, &se)
+				assert.Equal(t, "calc", se.Stage)
+				assert.Equal(t, TypeMultiExpr, se.Type)
+				assert.ErrorIs(t, se, ErrPathNotMap)
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -191,6 +242,16 @@ func TestNewMultiExprValidation(t *testing.T) {
 				require.ErrorAs(t, err, &se)
 			},
 		},
+		{
+			name:      "expression fails to compile",
+			stageName: "calc",
+			exprs:     []NamedExpr{{Name: "a", Expression: "x +"}},
+			assert: func(t *testing.T, err error) {
+				var se *StageError
+				require.ErrorAs(t, err, &se)
+				assert.Equal(t, TypeMultiExpr, se.Type)
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -200,4 +261,14 @@ func TestNewMultiExprValidation(t *testing.T) {
 			tc.assert(t, err)
 		})
 	}
+}
+
+func TestMultiExprAccessors(t *testing.T) {
+	t.Parallel()
+
+	m, err := NewMultiExpr("calc", []NamedExpr{{Name: "a", Expression: "1"}}, WithDependsOn("seed"))
+	require.NoError(t, err)
+	assert.Equal(t, "calc", m.Name())
+	assert.Equal(t, TypeMultiExpr, m.Type())
+	assert.Equal(t, []string{"seed"}, m.DependsOn())
 }

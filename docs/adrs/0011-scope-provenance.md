@@ -59,3 +59,19 @@ production hot path: most evaluations don't need a trace, and the engine is
   — no new module dependency.
 - If always-on provenance is ever wanted, it is additive (a default flip) and
   would supersede point 1 here.
+
+## Known limitations (deferred)
+
+- **Intra-stage `MultiExpr` references are not traced.** Within a `MultiExpr`,
+  a later expression may read an earlier one by its **bare local name** (e.g.
+  `b = "a + 1"`), which is only present in the transient stage env, not the
+  Scope. Its `Derivation.Inputs` is therefore keyed by that local name (`"a"`),
+  while the value is written to the Scope at the namespaced path
+  (`"<stage>.a"`). Prefix reconciliation (Decision point 5) links by path, not
+  by local alias, so `Lineage`/`Explain` silently omit such intra-stage inputs'
+  subtrees. Cross-stage references (which appear as member paths like
+  `stage.field` → top-level `stage`) reconcile correctly; only same-stage local
+  aliases are affected. A fix means qualifying local aliases to their
+  `<stage>.<name>` path when recording `Inputs`, which changes the documented
+  "`Inputs` is keyed by referenced identifier" contract — deferred as a
+  follow-up so it can be decided deliberately rather than bundled here.
