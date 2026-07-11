@@ -21,9 +21,11 @@ var errEmptyPath = errors.New("scope: path must not be empty")
 // evaluation. Values are addressed by dot-separated paths; the accumulated map
 // is the environment against which expressions are evaluated.
 type Scope struct {
-	mu     sync.RWMutex
-	data   map[string]any
-	strict bool
+	mu          sync.RWMutex
+	data        map[string]any
+	strict      bool
+	provenance  bool
+	derivations map[string]Derivation // non-nil only when provenance is enabled
 }
 
 // ScopeOption configures a Scope.
@@ -43,6 +45,12 @@ func NewScope(seed map[string]any, opts ...ScopeOption) *Scope {
 	s := &Scope{data: data}
 	for _, opt := range opts {
 		opt(s)
+	}
+	if s.provenance {
+		s.derivations = make(map[string]Derivation, len(data))
+		for k, v := range data {
+			s.derivations[k] = Derivation{Path: k, StageType: seedStageType, Operation: opSeed, Value: v}
+		}
 	}
 	return s
 }
