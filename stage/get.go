@@ -1,6 +1,7 @@
 package stage
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 )
@@ -30,14 +31,72 @@ func GetAs[T any](s *Scope, path string) (T, error) {
 	return t, nil
 }
 
-// GetInt returns the value at path as an int, or an error.
-func (s *Scope) GetInt(path string) (int, error) { return GetAs[int](s, path) }
+// GetInt returns the value at path as an int, or an error. A json.Number
+// (produced by JSON round-trip) is read losslessly; a non-integer or one that
+// overflows int is a *ScopeTypeError.
+func (s *Scope) GetInt(path string) (int, error) {
+	v, ok := s.Get(path)
+	if !ok {
+		return 0, ErrPathNotFound
+	}
+	switch n := v.(type) {
+	case int:
+		return n, nil
+	case json.Number:
+		i, err := n.Int64()
+		if err != nil {
+			return 0, &ScopeTypeError{Path: path, Expected: "int", Actual: "json.Number(" + n.String() + ")"}
+		}
+		if int64(int(i)) != i {
+			return 0, &ScopeTypeError{Path: path, Expected: "int", Actual: "json.Number(" + n.String() + ") overflows int"}
+		}
+		return int(i), nil
+	default:
+		return 0, &ScopeTypeError{Path: path, Expected: "int", Actual: fmt.Sprintf("%T", v)}
+	}
+}
 
-// GetInt64 returns the value at path as an int64, or an error.
-func (s *Scope) GetInt64(path string) (int64, error) { return GetAs[int64](s, path) }
+// GetInt64 returns the value at path as an int64, or an error. A json.Number is
+// read losslessly; a non-integer json.Number is a *ScopeTypeError.
+func (s *Scope) GetInt64(path string) (int64, error) {
+	v, ok := s.Get(path)
+	if !ok {
+		return 0, ErrPathNotFound
+	}
+	switch n := v.(type) {
+	case int64:
+		return n, nil
+	case json.Number:
+		i, err := n.Int64()
+		if err != nil {
+			return 0, &ScopeTypeError{Path: path, Expected: "int64", Actual: "json.Number(" + n.String() + ")"}
+		}
+		return i, nil
+	default:
+		return 0, &ScopeTypeError{Path: path, Expected: "int64", Actual: fmt.Sprintf("%T", v)}
+	}
+}
 
-// GetFloat64 returns the value at path as a float64, or an error.
-func (s *Scope) GetFloat64(path string) (float64, error) { return GetAs[float64](s, path) }
+// GetFloat64 returns the value at path as a float64, or an error. A json.Number
+// is read losslessly.
+func (s *Scope) GetFloat64(path string) (float64, error) {
+	v, ok := s.Get(path)
+	if !ok {
+		return 0, ErrPathNotFound
+	}
+	switch n := v.(type) {
+	case float64:
+		return n, nil
+	case json.Number:
+		f, err := n.Float64()
+		if err != nil {
+			return 0, &ScopeTypeError{Path: path, Expected: "float64", Actual: "json.Number(" + n.String() + ")"}
+		}
+		return f, nil
+	default:
+		return 0, &ScopeTypeError{Path: path, Expected: "float64", Actual: fmt.Sprintf("%T", v)}
+	}
+}
 
 // GetString returns the value at path as a string, or an error.
 func (s *Scope) GetString(path string) (string, error) { return GetAs[string](s, path) }

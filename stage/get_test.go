@@ -29,6 +29,15 @@ func TestGetAs(t *testing.T) {
 			},
 		},
 		{
+			name: "GetString missing path returns ErrPathNotFound",
+			seed: map[string]any{},
+			path: "absent",
+			call: func(s *Scope) (any, error) { return s.GetString("absent") },
+			assert: func(t *testing.T, v any, err error) {
+				require.ErrorIs(t, err, ErrPathNotFound)
+			},
+		},
+		{
 			name: "GetInt64 happy path",
 			seed: map[string]any{"bigcount": int64(9223372036854775807)},
 			path: "bigcount",
@@ -110,6 +119,50 @@ func TestGetAs(t *testing.T) {
 			call: func(s *Scope) (any, error) { return s.GetInt("missing") },
 			assert: func(t *testing.T, v any, err error) {
 				require.ErrorIs(t, err, ErrPathNotFound)
+			},
+		},
+		{
+			name: "GetInt64 missing path returns ErrPathNotFound",
+			seed: map[string]any{"a": int64(1)},
+			path: "missing",
+			call: func(s *Scope) (any, error) { return s.GetInt64("missing") },
+			assert: func(t *testing.T, v any, err error) {
+				require.ErrorIs(t, err, ErrPathNotFound)
+			},
+		},
+		{
+			name: "GetInt64 wrong type returns ScopeTypeError",
+			seed: map[string]any{"value": "string_value"},
+			path: "value",
+			call: func(s *Scope) (any, error) { return s.GetInt64("value") },
+			assert: func(t *testing.T, v any, err error) {
+				var typeErr *ScopeTypeError
+				require.ErrorAs(t, err, &typeErr)
+				require.Equal(t, "value", typeErr.Path)
+				require.Equal(t, "int64", typeErr.Expected)
+				require.Equal(t, "string", typeErr.Actual)
+			},
+		},
+		{
+			name: "GetFloat64 missing path returns ErrPathNotFound",
+			seed: map[string]any{"a": float64(1)},
+			path: "missing",
+			call: func(s *Scope) (any, error) { return s.GetFloat64("missing") },
+			assert: func(t *testing.T, v any, err error) {
+				require.ErrorIs(t, err, ErrPathNotFound)
+			},
+		},
+		{
+			name: "GetFloat64 wrong type returns ScopeTypeError",
+			seed: map[string]any{"value": "string_value"},
+			path: "value",
+			call: func(s *Scope) (any, error) { return s.GetFloat64("value") },
+			assert: func(t *testing.T, v any, err error) {
+				var typeErr *ScopeTypeError
+				require.ErrorAs(t, err, &typeErr)
+				require.Equal(t, "value", typeErr.Path)
+				require.Equal(t, "float64", typeErr.Expected)
+				require.Equal(t, "string", typeErr.Actual)
 			},
 		},
 		{

@@ -14,13 +14,13 @@ const opSeed = "seed"
 // Derivation records how one value in a Scope was produced. It is populated only
 // when the Scope was created WithProvenance.
 type Derivation struct {
-	Path       string         // scope dot-path written
-	Stage      string         // producing stage name ("" for a seed input)
-	StageType  string         // TypeSingleExpr / TypeMultiExpr / TypeDecisionTable, or "seed"
-	Operation  string         // "seed", "eval", "expr:<name>", "decision:<key>", "collect:<key>"
-	Expression string         // source expression ("" for a seed)
-	Inputs     map[string]any // referenced identifier -> value at eval time (nil for a seed)
-	Value      any            // the derived value
+	Path       string         `json:"path"`                 // scope dot-path written
+	Stage      string         `json:"stage,omitempty"`      // producing stage name ("" for a seed input)
+	StageType  string         `json:"stage_type"`           // TypeSingleExpr / TypeMultiExpr / TypeDecisionTable, or "seed"
+	Operation  string         `json:"operation"`            // "seed", "eval", "expr:<name>", "decision:<key>", "collect:<key>"
+	Expression string         `json:"expression,omitempty"` // source expression ("" for a seed)
+	Inputs     map[string]any `json:"inputs,omitempty"`     // referenced identifier -> value at eval time (nil for a seed)
+	Value      any            `json:"value"`                // the derived value
 }
 
 // WithProvenance makes the Scope record a Derivation for every value (seed inputs

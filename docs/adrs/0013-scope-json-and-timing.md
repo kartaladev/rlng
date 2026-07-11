@@ -19,10 +19,23 @@ timing.
    is not opt-in (unlike provenance). `WithClock` injects a deterministic clock
    for tests. Accessors `StartedAt()`/`Duration()` return `(_, false)` until a
    run stamps the Scope.
-2. **JSON envelope** — see the JSON section added alongside the codec.
+2. **JSON envelope, round-trippable.** `Scope.MarshalJSON` emits
+   `{data, timing?, derivations?}`; `UnmarshalJSON` restores all three and,
+   when derivations are present, marks the Scope provenance-enabled for
+   inspection. `data` is always present; `timing`/`derivations` are conditional.
+   Raw result data for a web response is `json.Marshal(Snapshot())` (just the
+   map) — the envelope is deliberately the persistence form. Numbers are
+   restored as json.Number (UseNumber) so integers above 2^53 (e.g. money in
+   cents) round-trip exactly; the numeric getters read json.Number losslessly.
+   Model money as integer minor units or decimal strings. `Derivation` carries
+   snake_case json tags for a stable schema.
 
 ## Consequences
 
 - Every run pays two clock reads; negligible against µs-scale evaluation.
 - Timing is stamped in exactly one place (Pipeline.Run), so every engine
   (`Engine`, `BareEngine`, direct `Run`) gets it for free.
+- The jsonb blob carries the audit trail only when provenance was enabled; the
+  off path serializes just data (+ timing).
+- The int/float type distinction is not preserved across JSON; a reloaded
+  number is a json.Number readable by GetInt (if integral) and GetFloat64.
