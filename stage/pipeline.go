@@ -153,6 +153,8 @@ func findCycle(stages []Stage, index map[string]Stage, emitted map[string]bool) 
 // run. Built-in stages return a *StageError naming themselves, so the failing
 // stage is identified without Run re-wrapping.
 func (p *Pipeline) Run(ctx context.Context, sc *Scope) error {
+	sc.markStarted()
+	defer sc.markFinished()
 	for _, s := range p.ordered {
 		if err := ctx.Err(); err != nil {
 			return err

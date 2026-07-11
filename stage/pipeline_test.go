@@ -3,6 +3,7 @@ package stage
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -239,6 +240,23 @@ func TestPipelineRun(t *testing.T) {
 			assert: func(t *testing.T, order []string, sc *Scope, err error) {
 				require.ErrorIs(t, err, context.Canceled)
 				assert.Empty(t, order)
+			},
+		},
+		{
+			name: "successful run stamps timing on scope",
+			seed: map[string]any{"price": 10, "qty": 2},
+			build: func(order *[]string) []Stage {
+				base, err := NewSingleExpr("base", "price * qty")
+				require.NoError(t, err)
+				return []Stage{base}
+			},
+			assert: func(t *testing.T, order []string, sc *Scope, err error) {
+				require.NoError(t, err)
+				_, ok := sc.StartedAt()
+				assert.True(t, ok)
+				d, ok := sc.Duration()
+				require.True(t, ok)
+				assert.GreaterOrEqual(t, d, time.Duration(0))
 			},
 		},
 	}

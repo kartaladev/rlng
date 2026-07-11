@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"time"
 )
 
 // ErrPathConflict is returned by Set, in strict mode, when a leaf path already
@@ -26,6 +27,9 @@ type Scope struct {
 	strict      bool
 	provenance  bool
 	derivations map[string]Derivation // non-nil only when provenance is enabled
+	startedAt   time.Time
+	duration    time.Duration
+	clock       func() time.Time
 }
 
 // ScopeOption configures a Scope.
@@ -42,7 +46,7 @@ func NewScope(seed map[string]any, opts ...ScopeOption) *Scope {
 	for k, v := range seed {
 		data[k] = v
 	}
-	s := &Scope{data: data}
+	s := &Scope{data: data, clock: time.Now}
 	for _, opt := range opts {
 		opt(s)
 	}
