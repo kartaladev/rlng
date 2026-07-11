@@ -84,6 +84,15 @@ func TestBareEngineEvaluate(t *testing.T) {
 				require.ErrorIs(t, err, context.Canceled)
 			},
 		},
+		{
+			name:   "non-flattenable input is an error",
+			engine: func(tb testing.TB) *BareEngine { return buildBareEngine(tb) },
+			input:  42, // a bare int cannot be decoded into a map[string]any seed
+			assert: func(t *testing.T, out map[string]any, err error) {
+				require.Error(t, err)
+				assert.Nil(t, out)
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -112,4 +121,14 @@ func TestBareEngineEvaluateScope(t *testing.T) {
 	v, err := sc.GetFloat64("taxed")
 	require.NoError(t, err)
 	assert.InDelta(t, 22.0, v, 1e-9)
+}
+
+func TestBareEngineScopeOptions(t *testing.T) {
+	t.Parallel()
+
+	// WithScopeOptions must flow through NewBareEngine to the per-Evaluate Scope.
+	e := buildBareEngine(t, WithScopeOptions(stage.WithProvenance()))
+	sc, err := e.EvaluateScope(t.Context(), map[string]any{"price": 10, "qty": 2})
+	require.NoError(t, err)
+	assert.True(t, sc.TracksProvenance())
 }
