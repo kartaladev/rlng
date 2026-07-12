@@ -9,15 +9,17 @@ import (
 // config holds the settings shared by Predicate and Function, assembled from
 // functional Options passed to their constructors.
 type config struct {
-	globals       map[string]any
-	locals        map[string]any
-	coerce        bool
-	fallback      string
-	returnKind    reflect.Kind
-	hasReturnKind bool
-	functions     []hostFunction
-	env           map[string]any
-	hasEnv        bool
+	globals          map[string]any
+	locals           map[string]any
+	coerce           bool
+	fallback         string
+	returnKind       reflect.Kind
+	hasReturnKind    bool
+	functions        []hostFunction
+	env              map[string]any
+	hasEnv           bool
+	fallbackOnNil    bool
+	fallbackObserver func(name, expression string, cause error)
 }
 
 // hostFunction is a named host function registered into the compile/eval
@@ -75,8 +77,22 @@ func mergeInto(dst, src map[string]any) map[string]any {
 func WithCoerce() Option { return func(c *config) { c.coerce = true } }
 
 // WithFallback sets a Function's fallback expression, evaluated (over an empty
-// env) when the main expression errors or yields nil.
+// env) when the main expression errors (or, with WithFallbackOnNil, also when
+// it yields nil).
 func WithFallback(expression string) Option { return func(c *config) { c.fallback = expression } }
+
+// WithFallbackOnNil makes a Function's fallback also fire when the main
+// expression evaluates to nil (not only when it errors). By default nil is a
+// first-class result and the fallback fires only on an error.
+func WithFallbackOnNil() Option { return func(c *config) { c.fallbackOnNil = true } }
+
+// WithFallbackObserver registers a callback invoked when a Function's fallback
+// fires because the main expression ERRORED, receiving the function name, the
+// main expression, and the triggering cause — so the masked error is observable
+// rather than silently discarded. It is not called for a nil-triggered fallback.
+func WithFallbackObserver(fn func(name, expression string, cause error)) Option {
+	return func(c *config) { c.fallbackObserver = fn }
+}
 
 // WithReturnKind compiles a Function to coerce its result to the given kind.
 func WithReturnKind(k reflect.Kind) Option {

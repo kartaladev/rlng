@@ -166,11 +166,59 @@ func TestFunction_Apply(t *testing.T) {
 				assert.Len(t, joined.Unwrap(), 2, "both the main and fallback errors should survive")
 			},
 		},
+		func() testCase {
+			var seen error
+			return testCase{
+				name:   "error-triggered fallback observer sees the masked cause",
+				fnName: "ratio",
+				expr:   "a % b", // modulo by zero -> runtime error
+				opts: []expr.Option{
+					expr.WithFallback("-1"),
+					expr.WithFallbackObserver(func(_, _ string, cause error) { seen = cause }),
+				},
+				env: map[string]any{"a": 1, "b": 0},
+				assert: func(t *testing.T, got any, err error) {
+					require.NoError(t, err)
+					assert.Equal(t, -1, got)
+					require.Error(t, seen, "the masked division error must be surfaced to the observer")
+				},
+			}
+		}(),
+		func() testCase {
+			var seen error
+			return testCase{
+				name:   "nil-triggered fallback does not invoke the observer",
+				fnName: "x",
+				expr:   "nil",
+				opts: []expr.Option{
+					expr.WithFallback("42"),
+					expr.WithFallbackOnNil(),
+					expr.WithFallbackObserver(func(_, _ string, cause error) { seen = cause }),
+				},
+				env: nil,
+				assert: func(t *testing.T, got any, err error) {
+					require.NoError(t, err)
+					assert.Equal(t, 42, got)
+					assert.NoError(t, seen, "observer must only be called for an error-triggered fallback")
+				},
+			}
+		}(),
 		{
-			name:   "fallback used on nil result",
+			name:   "nil is first-class: fallback not used on nil result by default",
 			fnName: "x",
 			expr:   "nil",
 			opts:   []expr.Option{expr.WithFallback("42")},
+			env:    nil,
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				assert.Nil(t, got, "fallback must not fire on a nil main result unless WithFallbackOnNil is set")
+			},
+		},
+		{
+			name:   "fallback used on nil result when WithFallbackOnNil is set",
+			fnName: "x",
+			expr:   "nil",
+			opts:   []expr.Option{expr.WithFallback("42"), expr.WithFallbackOnNil()},
 			env:    nil,
 			assert: func(t *testing.T, got any, err error) {
 				require.NoError(t, err)
