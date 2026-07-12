@@ -55,7 +55,11 @@ func (d *PipelineDef) Build(opts ...BuildOption) (*pipe.Pipeline, error) {
 	if err != nil {
 		return nil, &ConfigError{Cause: err}
 	}
-	return p, nil
+	version := cfg.version
+	if version == "" {
+		version = d.Version
+	}
+	return p.WithRuleset(pipe.RulesetIdentity{Hash: d.Hash(), Version: version}), nil
 }
 
 func (sd StageDef) build(constants, schema map[string]any, strict bool) (pipe.Stage, error) {

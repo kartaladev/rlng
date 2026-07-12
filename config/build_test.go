@@ -261,3 +261,43 @@ func assertConfigErr(t *testing.T, p *pipe.Pipeline, err error) {
 	var ce *config.ConfigError
 	require.ErrorAs(t, err, &ce)
 }
+
+func TestBuildStampsRulesetIdentity(t *testing.T) {
+	t.Parallel()
+
+	d, err := config.ParseYAML([]byte(hashYAML + "version: v1.0.0\n"))
+	require.NoError(t, err)
+
+	tests := []struct {
+		name   string
+		opts   []config.BuildOption
+		assert func(t *testing.T, id pipe.RulesetIdentity, wantHash string)
+	}{
+		{
+			name: "version from the document",
+			assert: func(t *testing.T, id pipe.RulesetIdentity, wantHash string) {
+				assert.Equal(t, wantHash, id.Hash)
+				assert.Equal(t, "v1.0.0", id.Version)
+			},
+		},
+		{
+			name: "WithRulesetVersion overrides the document",
+			opts: []config.BuildOption{config.WithRulesetVersion("v2.0.0")},
+			assert: func(t *testing.T, id pipe.RulesetIdentity, wantHash string) {
+				assert.Equal(t, "v2.0.0", id.Version)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			p, err := d.Build(tt.opts...)
+			require.NoError(t, err)
+			sc := pipe.NewScope(map[string]any{"price": 1, "qty": 1})
+			require.NoError(t, p.Run(t.Context(), sc))
+			id, ok := sc.Ruleset()
+			require.True(t, ok)
+			tt.assert(t, id, d.Hash())
+		})
+	}
+}

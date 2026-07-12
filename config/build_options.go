@@ -10,6 +10,7 @@ type buildConfig struct {
 	lintErrors bool
 	schema     map[string]any // set by WithSchema; overrides PipelineDef.Schema when non-nil
 	strict     bool           // set by WithStrict; also implied whenever a schema is present
+	version    string         // set by WithRulesetVersion; overrides PipelineDef.Version
 }
 
 // BuildOption configures (*PipelineDef).Build.
@@ -34,6 +35,14 @@ func WithStrict() BuildOption {
 // for callers who cannot edit the document. It enables strict compilation.
 func WithSchema(env map[string]any) BuildOption {
 	return func(c *buildConfig) { c.schema = env }
+}
+
+// WithRulesetVersion sets the author-declared release label stamped onto the
+// built pipeline's ruleset identity, overriding any version: field in the
+// document. The content Hash() is always computed regardless; this only names
+// the release.
+func WithRulesetVersion(v string) BuildOption {
+	return func(c *buildConfig) { c.version = v }
 }
 
 // LintError reports Lint findings promoted to a Build error by WithLintErrors.

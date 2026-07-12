@@ -22,6 +22,12 @@ type PipelineDef struct {
 	// against it (expr.WithEnv): a field typo is a Build-time error instead of a
 	// silent nil. Absent, compilation stays lenient (undefined vars allowed).
 	Schema map[string]any `yaml:"schema" json:"schema"`
+
+	// Version is an optional author-declared release label (e.g. "v2.3.1"). It
+	// names WHICH release a ruleset is, distinct from Hash() which fingerprints
+	// WHAT it contains — so Version is deliberately excluded from the content
+	// hash. Empty is valid; it is not an error.
+	Version string `yaml:"version" json:"version"`
 }
 
 // StageDef is a flat union over the three stage types, selected by Type. Fields
