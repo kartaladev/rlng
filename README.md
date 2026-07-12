@@ -235,6 +235,44 @@ checks, _ := pipe.NewDecisionTable("checks", []pipe.Rule{
 flags, _ := sc.GetSlice("checks.flag") // [low_score high_dti]
 ```
 
+### Line-item adjudication (`foreach`)
+
+A `foreach` stage runs an inner pipeline once per element of a collection,
+each against its own per-element scope (the element bound under `as`, default
+`item`). It writes structured per-element output to `<stage>.items`,
+optionally rolls a per-element key up into a header value (`rollups:`, same
+decimal/int64-faithful aggregations as decision-table `collect`), and records
+each element's firing rules under `<stage>[i]` — so "line 3 was denied by rule
+LTV_MAX_80" is answerable directly:
+
+```yaml
+stages:
+  - name: lines
+    type: foreach
+    collection: collateral
+    as: item
+    stages:
+      - name: check
+        type: decision-table
+        rules:
+          - id: LTV_MAX_80
+            condition: item.ltv > 80
+            decisions: {status: '"denied"'}
+        default: {status: '"approved"'}
+    rollups:
+      - key: approved
+        agg: sum
+        as: totalApproved
+```
+
+```go
+firings := sc.FiringRulesFor("lines[2]") // rule that decided line 3
+```
+
+Nested `foreach` (a `foreach` inside a `foreach`'s inner `stages:`) is
+rejected at build time — see `examples/foreach_lineitem_test.go` for a
+full runnable adjudication.
+
 ### One-off expressions — `expr`
 
 Compile and evaluate a single value expression or boolean predicate directly:
