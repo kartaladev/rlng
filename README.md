@@ -34,6 +34,15 @@ Rules are declared as config and compiled once, then evaluated on the hot path:
 - **Decision tables** — ordered `condition → decisions` rules with hit policies
   **single / unique / any / collect**, a per-table **default (else)** branch, and collect
   **aggregation** (`sum`/`min`/`max`/`count`/list).
+- **Exact-decimal money & value fidelity** — an in-expression `decimal` type (built on
+  [shopspring/decimal](https://github.com/shopspring/decimal)) with arithmetic operator
+  overloads and `round`/`roundBank` (banker's) rounding, so `$250,000 × 7.25%` is exactly
+  `$18,125.00`, not the `18124.999…` a `float64` produces. A value keeps its **type and
+  precision at every serde boundary**: declarable as a config constant (`{"$dec": "0.0725"}`),
+  preserved through the struct/map seed, numerically-exact in aggregation (integer sums stay
+  `int64` with checked overflow; no float round-trip), and — via a **canonically type-tagged
+  Scope JSON** (`"v":2`, backward-compatible reads) — reloaded as the *same kind* so a
+  persisted decision replays losslessly.
 - **Explainable decisions** — optional rule `id`/`message`, a recorded firing trail per
   stage (`FiringRule` for the first/only match, `FiringRulesFor` for every rule a
   **collect**/**any** table matched), value **provenance/lineage**, and **per-stage timing**.
@@ -156,6 +165,42 @@ taxed, _ := sc.GetFloat64("calc.taxed") // 22.0
 dur, _ := sc.Duration()                 // evaluation duration
 blob, _ := json.Marshal(sc)             // persist; json.Unmarshal restores it losslessly
 ```
+
+The JSON codec is **kind-preserving** (`"v":2` type tagging): an `int64`, `decimal`, `time`,
+`float64`, etc. reloads as the same Go type, so a persisted decision reproduces the same
+result on replay. Legacy (pre-tagging) blobs still load.
+
+### Exact-decimal money
+
+Money and rate math is exact end to end. Declare the rate once as a decimal constant, seed the
+principal as a decimal, keep the arithmetic decimal via `decimal(...)`, and round deterministically
+with `roundBank` — the fee survives a JSON round-trip and maps into a typed result unchanged:
+
+```go
+const rules = `
+constants:
+  rate: {$dec: "0.0725"}
+stages:
+  - name: loan
+    type: single-expr
+    expr: roundBank(decimal(principal) * decimal(rate), 2)
+`
+def, _ := config.ParseYAML([]byte(rules))
+pipeline, _ := def.Build()
+engine, _ := rlng.New(pipeline)
+
+scope, _ := engine.EvaluateScope(context.Background(), map[string]any{
+	"principal": decimal.NewFromInt(250000),
+})
+fee, _ := pipe.GetAs[decimal.Decimal](scope, "loan")
+fmt.Println(fee.StringFixed(2)) // 18125.00 — exact, not 18124.999999999996
+```
+
+Bare-variable decimal arithmetic (`principal * rate` without `decimal(...)`) resolves only under
+strict-env mode (`expr.WithEnv`), where the type-checker knows the operands are decimals; the
+`decimal(...)`-wrapped form above works everywhere. See
+[`examples/decimal_money_test.go`](./examples/decimal_money_test.go) for the full seed → evaluate →
+JSON round-trip → map flow.
 
 ### Decision tables & provenance
 
