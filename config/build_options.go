@@ -8,8 +8,8 @@ import (
 // buildConfig holds Build-time toggles assembled from BuildOption values.
 type buildConfig struct {
 	lintErrors bool
-	schema     map[string]any // set in Task 4
-	strict     bool           // set in Task 4
+	schema     map[string]any // set by WithSchema; overrides PipelineDef.Schema when non-nil
+	strict     bool           // set by WithStrict; also implied whenever a schema is present
 }
 
 // BuildOption configures (*PipelineDef).Build.
@@ -20,6 +20,20 @@ type BuildOption func(*buildConfig)
 // construction instead of surfacing only if the caller separately calls Lint.
 func WithLintErrors() BuildOption {
 	return func(c *buildConfig) { c.lintErrors = true }
+}
+
+// WithStrict requires strict compilation against the declared schema. Build
+// returns a *ConfigError if no schema is available (neither PipelineDef.Schema
+// nor WithSchema). Without WithStrict, strict mode is still enabled whenever a
+// schema is present.
+func WithStrict() BuildOption {
+	return func(c *buildConfig) { c.strict = true }
+}
+
+// WithSchema supplies or overrides the type-check environment programmatically,
+// for callers who cannot edit the document. It enables strict compilation.
+func WithSchema(env map[string]any) BuildOption {
+	return func(c *buildConfig) { c.schema = env }
 }
 
 // LintError reports Lint findings promoted to a Build error by WithLintErrors.

@@ -16,6 +16,12 @@ type PipelineDef struct {
 	Constants map[string]any    `yaml:"constants" json:"constants"`
 	Stages    []StageDef        `yaml:"stages" json:"stages"`
 	Mapping   map[string]string `yaml:"mapping" json:"mapping"`
+
+	// Schema declares the input shape (field name -> a representative value
+	// giving its type). When present, every stage expression compiles strictly
+	// against it (expr.WithEnv): a field typo is a Build-time error instead of a
+	// silent nil. Absent, compilation stays lenient (undefined vars allowed).
+	Schema map[string]any `yaml:"schema" json:"schema"`
 }
 
 // StageDef is a flat union over the three stage types, selected by Type. Fields

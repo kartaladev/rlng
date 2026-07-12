@@ -35,9 +35,17 @@ func (d *PipelineDef) Build(opts ...BuildOption) (*pipe.Pipeline, error) {
 			return nil, &LintError{Findings: findings}
 		}
 	}
+	schema := cfg.schema
+	if schema == nil {
+		schema = d.Schema
+	}
+	strict := cfg.strict || len(schema) > 0
+	if cfg.strict && len(schema) == 0 {
+		return nil, &ConfigError{Field: "schema", Cause: errors.New("strict build requires a schema")}
+	}
 	stages := make([]pipe.Stage, 0, len(d.Stages))
 	for _, sd := range d.Stages {
-		st, err := sd.build(d.Constants)
+		st, err := sd.build(d.Constants, schema, strict)
 		if err != nil {
 			return nil, err
 		}
@@ -50,18 +58,18 @@ func (d *PipelineDef) Build(opts ...BuildOption) (*pipe.Pipeline, error) {
 	return p, nil
 }
 
-func (sd StageDef) build(constants map[string]any) (pipe.Stage, error) {
+func (sd StageDef) build(constants, schema map[string]any, strict bool) (pipe.Stage, error) {
 	var base []pipe.Option
 	if len(sd.DependsOn) > 0 {
 		base = append(base, pipe.WithDependsOn(sd.DependsOn...))
 	}
 	switch sd.Type {
 	case pipe.TypeSingleExpr:
-		return sd.buildSingle(base, constants)
+		return sd.buildSingle(base, constants, schema, strict)
 	case pipe.TypeMultiExpr:
-		return sd.buildMulti(base, constants)
+		return sd.buildMulti(base, constants, schema, strict)
 	case pipe.TypeDecisionTable:
-		return sd.buildTable(base, constants)
+		return sd.buildTable(base, constants, schema, strict)
 	default:
 		return nil, &ConfigError{Stage: sd.Name, Field: "type", Cause: fmt.Errorf("unknown stage type %q", sd.Type)}
 	}
@@ -79,13 +87,24 @@ func withConstants(constants map[string]any, opts []expr.Option) []expr.Option {
 	return append([]expr.Option{expr.WithGlobals(constants)}, opts...)
 }
 
-func (sd StageDef) buildSingle(base []pipe.Option, constants map[string]any) (pipe.Stage, error) {
+// withStrictEnv appends expr.WithEnv(schema) to opts when strict, so the
+// expression type-checks against the declared input shape. Declared
+// globals/locals and registered functions are merged into the check env by
+// expr.buildExprOpts, so they remain usable.
+func withStrictEnv(strict bool, schema map[string]any, opts []expr.Option) []expr.Option {
+	if !strict || len(schema) == 0 {
+		return opts
+	}
+	return append(opts, expr.WithEnv(schema))
+}
+
+func (sd StageDef) buildSingle(base []pipe.Option, constants, schema map[string]any, strict bool) (pipe.Stage, error) {
 	if sd.Expr == nil {
 		return nil, &ConfigError{Stage: sd.Name, Field: "expr", Cause: errors.New("single-expr requires an expr")}
 	}
-	condOpts := withConstants(constants, sd.condOptions())
+	condOpts := withStrictEnv(strict, schema, withConstants(constants, sd.condOptions()))
 	opts := append([]pipe.Option{}, base...)
-	opts = append(opts, pipe.WithExprOptions(withConstants(constants, sd.Expr.options())...))
+	opts = append(opts, pipe.WithExprOptions(withStrictEnv(strict, schema, withConstants(constants, sd.Expr.options()))...))
 	if sd.Condition != nil {
 		opts = append(opts, pipe.WithCondition(sd.Condition.Expr, condOpts...))
 	}
@@ -98,7 +117,7 @@ func (sd StageDef) buildSingle(base []pipe.Option, constants map[string]any) (pi
 		// expression is compiled first, so a value error is the true first
 		// failure; only a value expression that compiles cleanly leaves the
 		// condition as the culprit.
-		if _, verr := expr.NewFunction(sd.Name, sd.Expr.Expr, withConstants(constants, sd.Expr.options())...); verr != nil {
+		if _, verr := expr.NewFunction(sd.Name, sd.Expr.Expr, withStrictEnv(strict, schema, withConstants(constants, sd.Expr.options()))...); verr != nil {
 			return nil, &ConfigError{Stage: sd.Name, Field: "expr", Cause: err}
 		}
 		if sd.Condition != nil {
@@ -118,7 +137,7 @@ func (sd StageDef) condOptions() []expr.Option {
 	return sd.Condition.options()
 }
 
-func (sd StageDef) buildMulti(base []pipe.Option, constants map[string]any) (pipe.Stage, error) {
+func (sd StageDef) buildMulti(base []pipe.Option, constants, schema map[string]any, strict bool) (pipe.Stage, error) {
 	if len(sd.Exprs) == 0 {
 		return nil, &ConfigError{Stage: sd.Name, Field: "exprs", Cause: errors.New("multi-expr requires at least one expr")}
 	}
@@ -128,7 +147,7 @@ func (sd StageDef) buildMulti(base []pipe.Option, constants map[string]any) (pip
 			Name:       e.Name,
 			Expression: e.Expr.Expr,
 			Priority:   e.Priority,
-			Options:    withConstants(constants, e.Expr.options()),
+			Options:    withStrictEnv(strict, schema, withConstants(constants, e.Expr.options())),
 		})
 	}
 	s, err := pipe.NewMultiExpr(sd.Name, named, base...)
@@ -138,7 +157,7 @@ func (sd StageDef) buildMulti(base []pipe.Option, constants map[string]any) (pip
 	return s, nil
 }
 
-func (sd StageDef) buildTable(base []pipe.Option, constants map[string]any) (pipe.Stage, error) {
+func (sd StageDef) buildTable(base []pipe.Option, constants, schema map[string]any, strict bool) (pipe.Stage, error) {
 	if len(sd.Rules) == 0 {
 		return nil, &ConfigError{Stage: sd.Name, Field: "rules", Cause: errors.New("decision-table requires at least one rule")}
 	}
@@ -160,8 +179,8 @@ func (sd StageDef) buildTable(base []pipe.Option, constants map[string]any) (pip
 			ID:               r.ID,
 			Message:          r.Message,
 			Condition:        r.Condition.Expr,
-			ConditionOptions: withConstants(constants, r.Condition.options()),
-			DecisionOptions:  withConstants(constants, nil),
+			ConditionOptions: withStrictEnv(strict, schema, withConstants(constants, r.Condition.options())),
+			DecisionOptions:  withStrictEnv(strict, schema, withConstants(constants, nil)),
 			Decisions:        decisions,
 		})
 	}
@@ -172,7 +191,7 @@ func (sd StageDef) buildTable(base []pipe.Option, constants map[string]any) (pip
 		if err != nil {
 			return nil, err
 		}
-		opts = append(opts, pipe.WithDefault(defaults, withConstants(constants, nil)...))
+		opts = append(opts, pipe.WithDefault(defaults, withStrictEnv(strict, schema, withConstants(constants, nil))...))
 	}
 	s, err := pipe.NewDecisionTable(sd.Name, rules, opts...)
 	if err != nil {
