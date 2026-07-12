@@ -119,3 +119,33 @@ func TestFiringRulesAll(t *testing.T) {
 	assert.Equal(t, "b", all[1].Stage)
 	assert.Equal(t, "RB", all[1].RuleID)
 }
+
+func TestScopeFiringRulesForSingleMatch(t *testing.T) {
+	t.Parallel()
+	// A first-match (single) table records the matched rule; FiringRulesFor
+	// returns it as a one-element slice, and FiringRule returns that first rule.
+	tbl, err := pipe.NewDecisionTable("t", []pipe.Rule{
+		{ID: "R1", Condition: "x > 0", Decisions: map[string]string{"tag": `"a"`}},
+	}, pipe.WithHitPolicy(pipe.HitPolicySingle))
+	require.NoError(t, err)
+	sc := pipe.NewScope(map[string]any{"x": 2})
+	require.NoError(t, tbl.Execute(context.Background(), sc))
+
+	got := sc.FiringRulesFor("t")
+	require.Len(t, got, 1)
+	assert.Equal(t, "R1", got[0].RuleID)
+
+	first, ok := sc.FiringRule("t")
+	require.True(t, ok)
+	assert.Equal(t, "R1", first.RuleID)
+
+	assert.Len(t, sc.FiringRules(), 1)
+}
+
+func TestScopeFiringRulesForAbsent(t *testing.T) {
+	t.Parallel()
+	sc := pipe.NewScope(nil)
+	assert.Nil(t, sc.FiringRulesFor("nope"))
+	_, ok := sc.FiringRule("nope")
+	assert.False(t, ok)
+}
