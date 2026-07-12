@@ -40,6 +40,7 @@ func (e *CycleError) Error() string {
 // sequential and deterministic (see ADR-0006).
 type Pipeline struct {
 	ordered []Stage
+	ruleset RulesetIdentity
 }
 
 // NewPipeline validates stages and computes their execution order. Stage names
@@ -155,6 +156,7 @@ func findCycle(stages []Stage, index map[string]Stage, emitted map[string]bool) 
 func (p *Pipeline) Run(ctx context.Context, sc *Scope) error {
 	sc.markStarted()
 	defer sc.markFinished()
+	sc.stampRuleset(p.ruleset)
 	for _, st := range p.ordered {
 		if err := ctx.Err(); err != nil {
 			return err

@@ -1,6 +1,6 @@
 # Spec 013 — Ruleset identity & decision stamping
 
-- **Status:** Draft (awaiting review)
+- **Status:** Accepted (design resolved 2026-07-12; realized by Plan 013)
 - **Date:** 2026-07-12
 - **Post-010 audit remediation.** Findings embedded inline (no standalone audit
   record).
@@ -53,6 +53,45 @@ gives no help, and a mismatched ruleset replays silently against the wrong rules
    replay against the wrong ruleset is detectable rather than silent. The engine
    provides the identity and the comparison primitive; the caller owns storage
    and the version→artifact mapping (BRMS concern, out of scope).
+
+## Resolved design decisions (brainstormed 2026-07-12)
+
+These concretize the open questions in G1–G4 and set the scope Plan 013 realizes.
+
+- **D1 — Fingerprint = canonical JSON + SHA-256.** `(*config.PipelineDef).Hash()`
+  returns the hex SHA-256 of the canonical JSON encoding of the *parsed*
+  `PipelineDef`. Because it hashes the parsed struct (not source bytes), YAML and
+  equivalent JSON hash identically, reordered map keys hash identically
+  (`encoding/json` sorts map keys), and rule-slice order stays semantic. stdlib
+  only (`crypto/sha256`), no new dependency. Implementation must confirm `ExprDef`
+  marshals deterministically.
+- **D2 — `version` is excluded from the hash.** The content hash proves *what*
+  ran; the author `version` names *which release*. They are orthogonal, so the
+  new `PipelineDef.Version` field is omitted from the hashed canonical form —
+  changing the version label must not change the content fingerprint. All other
+  fields (stages, constants, schema, mapping) are logic and are included.
+- **D3 — Programmatic path is caller-supplied.** A compiled `pipe.Pipeline` has no
+  stable canonical source to hash across `expr-lang` versions, so only the config
+  path computes a `Hash()`. The programmatic path carries caller-supplied identity
+  (version and/or an externally-computed hash). Documented in ADR-0037.
+- **D4 — Identity lives on `pipe.Pipeline`; `Pipeline.Run` stamps the Scope.**
+  Both paths converge on `*pipe.Pipeline` (which `rlng.Engine` holds), and
+  `config.Build` (a different package) needs an exported hook, so identity attaches
+  via a chainable `func (p *Pipeline) WithRuleset(id RulesetIdentity) *Pipeline`
+  (configure-once-before-Run; not safe to call concurrently with Run). `NewPipeline`
+  keeps its variadic-over-`Stage` signature unchanged. `config.WithRulesetVersion`
+  is a new `BuildOption`; `Build` always sets `Hash` from `def.Hash()`.
+- **D5 — `RulesetIdentity` is a `pipe` value type.** `type RulesetIdentity struct {
+  Hash, Version string }`, directly comparable. `Scope.Ruleset() (RulesetIdentity,
+  bool)` returns the stamp after a run.
+- **D6 — Scope JSON round-trips ruleset AND firing (expanded scope).** To realize
+  G3's "self-describing" record, Plan 013 also closes the firing-serialization gap:
+  `scopeJSON` gains `ruleset` and `firing` fields, and `FiringRule` gains snake_case
+  json tags. A reloaded Scope then exposes `Ruleset()`, `FiringRule(s)`, and
+  `FiringRulesFor` — inputs + firing + provenance + identity.
+- **D7 — Replay primitive.** `RulesetIdentity` is comparable; the documented check
+  is `candidateDef.Hash() == persisted.Ruleset().Hash`, with a thin helper
+  `func (d *PipelineDef) MatchesRuleset(id pipe.RulesetIdentity) bool`.
 
 ## Non-goals
 

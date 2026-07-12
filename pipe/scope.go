@@ -32,6 +32,7 @@ type Scope struct {
 	provenance  bool
 	derivations map[string]Derivation   // non-nil only when provenance is enabled
 	firing      map[string][]FiringRule // stage name -> the ordered rules that fired
+	ruleset     RulesetIdentity         // which ruleset produced this decision (stamped by Pipeline.Run)
 	startedAt   time.Time
 	duration    time.Duration
 	stageTimes  map[string]time.Duration
