@@ -9,9 +9,11 @@ import (
 // scopeJSON is the on-wire envelope for a Scope: the accumulated result data,
 // evaluation timing, and (when provenance is enabled) the derivations.
 type scopeJSON struct {
-	Data        map[string]any        `json:"data"`
-	Timing      *scopeTimingJSON      `json:"timing,omitempty"`
-	Derivations map[string]Derivation `json:"derivations,omitempty"`
+	Data        map[string]any          `json:"data"`
+	Timing      *scopeTimingJSON        `json:"timing,omitempty"`
+	Derivations map[string]Derivation   `json:"derivations,omitempty"`
+	Ruleset     *RulesetIdentity        `json:"ruleset,omitempty"`
+	Firing      map[string][]FiringRule `json:"firing,omitempty"`
 }
 
 type scopeTimingJSON struct {
@@ -33,6 +35,13 @@ func (s *Scope) MarshalJSON() ([]byte, error) {
 	}
 	if s.provenance {
 		env.Derivations = s.derivations
+	}
+	if s.ruleset != (RulesetIdentity{}) {
+		id := s.ruleset
+		env.Ruleset = &id
+	}
+	if len(s.firing) > 0 {
+		env.Firing = s.firing
 	}
 	return json.Marshal(env)
 }
@@ -74,6 +83,12 @@ func (s *Scope) UnmarshalJSON(b []byte) error {
 	if env.Derivations != nil {
 		s.provenance = true
 		s.derivations = env.Derivations
+	}
+	if env.Ruleset != nil {
+		s.ruleset = *env.Ruleset
+	}
+	if env.Firing != nil {
+		s.firing = env.Firing
 	}
 	return nil
 }

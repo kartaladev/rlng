@@ -104,6 +104,75 @@ func TestScopeJSONRoundTrip(t *testing.T) {
 	}
 }
 
+// TestScopeJSONRoundTripsRulesetAndFiring covers the Scope JSON envelope's
+// ruleset/firing members: present and restored when the Scope was stamped
+// and fired rules, omitted from the wire when absent. Same SUT shape as
+// TestScopeJSONRoundTrip (build -> marshal -> unmarshal -> assert on blob and
+// reloaded), so both scenarios are folded into one table rather than two
+// standalone TestXxx functions.
+func TestScopeJSONRoundTripsRulesetAndFiring(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		build  func(t *testing.T) *pipe.Scope
+		assert func(t *testing.T, blob []byte, reloaded *pipe.Scope)
+	}
+
+	cases := []testCase{
+		{
+			name: "ruleset stamp and firing rules round-trip",
+			build: func(t *testing.T) *pipe.Scope {
+				tbl, err := pipe.NewDecisionTable("denial", []pipe.Rule{
+					{ID: "R1", Message: "too low", Condition: "score < 650", Decisions: map[string]string{"deny": "true"}},
+				}, pipe.WithHitPolicy(pipe.HitPolicySingle))
+				require.NoError(t, err)
+				p, err := pipe.NewPipeline(tbl)
+				require.NoError(t, err)
+				p = p.WithRuleset(pipe.RulesetIdentity{Hash: "h123", Version: "v1"})
+
+				sc := pipe.NewScope(map[string]any{"score": 600})
+				require.NoError(t, p.Run(t.Context(), sc))
+				return sc
+			},
+			assert: func(t *testing.T, blob []byte, reloaded *pipe.Scope) {
+				id, ok := reloaded.Ruleset()
+				require.True(t, ok)
+				assert.Equal(t, pipe.RulesetIdentity{Hash: "h123", Version: "v1"}, id)
+
+				fired := reloaded.FiringRulesFor("denial")
+				require.Len(t, fired, 1)
+				assert.Equal(t, "R1", fired[0].RuleID)
+				assert.Equal(t, "too low", fired[0].Message)
+			},
+		},
+		{
+			name: "absent ruleset and firing are omitted from the wire",
+			build: func(t *testing.T) *pipe.Scope {
+				return pipe.NewScope(map[string]any{"x": 1})
+			},
+			assert: func(t *testing.T, blob []byte, reloaded *pipe.Scope) {
+				assert.NotContains(t, string(blob), "ruleset")
+				assert.NotContains(t, string(blob), "firing")
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			sc := tc.build(t)
+
+			blob, err := json.Marshal(sc)
+			require.NoError(t, err)
+
+			var reloaded pipe.Scope
+			require.NoError(t, json.Unmarshal(blob, &reloaded))
+			tc.assert(t, blob, &reloaded)
+		})
+	}
+}
+
 func TestScopeJSONValuePreservation(t *testing.T) {
 	t.Parallel()
 

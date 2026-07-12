@@ -8,10 +8,10 @@ import "sort"
 // decisions when no rule matched. For policies that can fire several rules
 // (collect, any), use FiringRulesFor to retrieve all contributing rules.
 type FiringRule struct {
-	Stage     string // the decision-table stage name
-	RuleID    string // the matched rule's ID ("" when the default fired)
-	Message   string // the matched rule's Message (if any)
-	IsDefault bool   // true when the table's default decisions fired
+	Stage     string `json:"stage"`                // the decision-table stage name
+	RuleID    string `json:"rule_id,omitempty"`    // the matched rule's ID ("" when the default fired)
+	Message   string `json:"message,omitempty"`    // the matched rule's Message (if any)
+	IsDefault bool   `json:"is_default,omitempty"` // true when the table's default decisions fired
 }
 
 // recordFiring notes the single rule that fired for a stage (single/unique
