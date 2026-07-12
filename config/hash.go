@@ -15,7 +15,11 @@ import (
 // order (encoding/json sorts map keys); a changed rule or expression changes the
 // hash. The author Version label is excluded, so re-labelling a release does not
 // change what the hash proves. This is a plain fingerprint, not a tamper-proof
-// signature (see ADR-0037).
+// signature (see ADR-0037). Hash assumes every field value is JSON-marshalable;
+// a hand-built PipelineDef carrying a non-marshalable value (e.g. a chan or
+// func) falls back to a stable placeholder hash and loses change-detection —
+// the parse paths (ParseYAML/ParseJSON) can never produce such values, so this
+// only affects definitions constructed by hand.
 func (d *PipelineDef) Hash() string {
 	// Hash a copy with Version cleared so the label never affects the content
 	// fingerprint. The copy shares the definition's maps/slices but does not

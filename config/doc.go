@@ -22,4 +22,12 @@
 // Without WithLintErrors(), the same checks are available via the Lint function
 // but do not block construction. LintError lists all violations and the stage
 // each one occurs in.
+//
+// Ruleset identity: (*PipelineDef).Hash() is a deterministic content
+// fingerprint (hex SHA-256 of the canonical parsed definition); a top-level
+// version field (or the WithRulesetVersion BuildOption, which wins) names an
+// author-declared release label, excluded from the hash. Build always stamps
+// both onto the compiled Pipeline (pipe.WithRuleset), so every Scope it
+// produces reports Scope.Ruleset(); MatchesRuleset checks a candidate
+// definition against a persisted decision's stamped identity for safe replay.
 package config

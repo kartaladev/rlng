@@ -37,6 +37,10 @@ Rules are declared as config and compiled once, then evaluated on the hot path:
 - **Explainable decisions** — optional rule `id`/`message`, a recorded firing trail per
   stage (`FiringRule` for the first/only match, `FiringRulesFor` for every rule a
   **collect**/**any** table matched), value **provenance/lineage**, and **per-stage timing**.
+- **Ruleset identity & replay** — a deterministic content `Hash()` plus an author
+  `version` label stamped onto every `Scope` (`Scope.Ruleset()`), and a `MatchesRuleset`
+  replay-safety check, so a persisted decision round-trips as a self-describing,
+  replayable record (which ruleset produced it, and whether a candidate ruleset matches).
 - **Strict typed evaluation** — opt-in `expr.WithEnv` rejects field typos and type errors
   at compile time instead of silently evaluating to nil.
 - **Extensible** — register host functions (`expr.WithFunction`), including a clock-backed

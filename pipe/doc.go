@@ -11,6 +11,12 @@
 // (see the Get/Snapshot docs). Engines give each evaluation its own Scope, so
 // concurrent Engine use is safe.
 //
+// A Pipeline stamped with WithRuleset(RulesetIdentity) records which ruleset
+// produced each Scope it runs (Scope.Ruleset()); combined with the
+// decision-table firing trail (FiringRule/FiringRulesFor), a Scope round-trips
+// through its JSON MarshalJSON/UnmarshalJSON as a self-describing, replayable
+// decision record.
+//
 // A Stage is Name/Type/DependsOn/Execute. Three implementations are provided:
 // SingleExpr (one value expression with an optional condition gate), MultiExpr
 // (several named expressions in priority order, each visible to later ones), and

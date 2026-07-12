@@ -22,9 +22,14 @@ type scopeTimingJSON struct {
 }
 
 // MarshalJSON serializes the Scope as a round-trippable envelope
-// {data, timing?, derivations?} suitable for a jsonb column. `timing` appears
-// after a run; `derivations` only when provenance is enabled. For just the
-// result data (e.g. a web response) marshal Snapshot() instead.
+// {data, timing?, derivations?, ruleset?, firing?} suitable for a jsonb
+// column. `timing` appears after a run; `derivations` only when provenance is
+// enabled; `ruleset` only when the Scope was stamped by a Pipeline.WithRuleset
+// pipeline's Run; `firing` only when a decision-table stage recorded a firing
+// rule. The ruleset stamp and firing rules round-trip through
+// Unmarshal/MarshalJSON, so a reloaded Scope's Ruleset() and
+// FiringRule(s)/FiringRulesFor report the same values as before persisting.
+// For just the result data (e.g. a web response) marshal Snapshot() instead.
 func (s *Scope) MarshalJSON() ([]byte, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
