@@ -1,8 +1,11 @@
 package expr_test
 
 import (
-	"github.com/kartaladev/rlng/expr"
+	"math"
 	"testing"
+	"time"
+
+	"github.com/kartaladev/rlng/expr"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -96,6 +99,17 @@ func TestPredicate_Test(t *testing.T) {
 				assert.False(t, got)
 			},
 		},
+		{
+			name: "coerce: unhandled result type is a typed EvalError",
+			expr: "v",
+			opts: []expr.Option{expr.WithCoerce()},
+			env:  map[string]any{"v": time.Now()},
+			assert: func(t *testing.T, got bool, err error) {
+				require.Error(t, err, "an unhandled result type must be a typed error, not a silent false")
+				var ee *expr.EvalError
+				require.ErrorAs(t, err, &ee)
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -135,6 +149,9 @@ func TestPredicate_Test_CoerceMatrix(t *testing.T) {
 		{name: "zero uint is false", val: uint(0), assert: isFalse},
 		{name: "non-zero float is true", val: 1.5, assert: isTrue},
 		{name: "zero float is false", val: 0.0, assert: isFalse},
+		{name: "NaN is false", val: math.NaN(), assert: isFalse},
+		{name: "+Inf is false", val: math.Inf(1), assert: isFalse},
+		{name: "-Inf is false", val: math.Inf(-1), assert: isFalse},
 		{name: "bool true is true", val: true, assert: isTrue},
 		{name: "bool false is false", val: false, assert: isFalse},
 		{name: `string "true" parses true`, val: "true", assert: isTrue},

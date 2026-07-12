@@ -2,6 +2,7 @@ package expr
 
 import (
 	"fmt"
+	"math"
 	"reflect"
 	"strconv"
 	"strings"
@@ -56,7 +57,11 @@ func (p *Predicate) Test(env any) (bool, error) {
 	}
 
 	if p.coerce {
-		return truthy(result), nil
+		b, err := truthy(result)
+		if err != nil {
+			return false, &EvalError{Expression: p.expression, Cause: err}
+		}
+		return b, nil
 	}
 
 	b, ok := result.(bool)
@@ -69,38 +74,40 @@ func (p *Predicate) Test(env any) (bool, error) {
 	return b, nil
 }
 
-// truthy implements lenient truthiness for WithCoerce predicates: nil is
-// false; bool is itself; a string is parsed via strconv.ParseBool when
-// possible, else true iff non-empty (after trimming); any numeric kind (int,
-// uint, or float, of any width) is true iff non-zero; a slice or map is true
-// iff non-empty; anything else is false.
-func truthy(v any) bool {
+// truthy implements lenient truthiness for WithCoerce predicates: nil is false;
+// bool is itself; a string is parsed via strconv.ParseBool when it names one
+// (1/t/T/TRUE/true/True and 0/f/F/FALSE/false/False), else true iff non-empty
+// after trimming; any integer/uint kind is true iff non-zero; a float is true
+// iff non-zero AND finite (NaN and ±Inf are false); a slice/array/map is true
+// iff non-empty. Any other kind (struct, pointer, chan, func, time.Time, ...) is
+// an error, so a mistyped predicate fails loudly instead of silently as false.
+func truthy(v any) (bool, error) {
 	if v == nil {
-		return false
+		return false, nil
 	}
-
 	switch x := v.(type) {
 	case bool:
-		return x
+		return x, nil
 	case string:
 		s := strings.TrimSpace(x)
 		if b, err := strconv.ParseBool(s); err == nil {
-			return b
+			return b, nil
 		}
-		return s != ""
+		return s != "", nil
 	}
 
 	rv := reflect.ValueOf(v)
 	switch rv.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return rv.Int() != 0
+		return rv.Int() != 0, nil
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-		return rv.Uint() != 0
+		return rv.Uint() != 0, nil
 	case reflect.Float32, reflect.Float64:
-		return rv.Float() != 0
+		f := rv.Float()
+		return f != 0 && !math.IsNaN(f) && !math.IsInf(f, 0), nil
 	case reflect.Slice, reflect.Array, reflect.Map:
-		return rv.Len() > 0
+		return rv.Len() > 0, nil
 	default:
-		return false
+		return false, fmt.Errorf("%w: cannot coerce %T to bool", ErrNotBool, v)
 	}
 }
