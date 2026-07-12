@@ -200,6 +200,50 @@ func TestBuild(t *testing.T) {
 	}
 }
 
+func TestBuildSingleExprAttributeErrors(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		doc    []byte
+		assert func(t *testing.T, err error)
+	}
+
+	cases := []testCase{
+		{
+			name: "value-expr failure attributed to expr field",
+			doc:  []byte(`{"stages":[{"name":"s","type":"single-expr","expr":"@@@","condition":"###"}]}`),
+			assert: func(t *testing.T, err error) {
+				require.Error(t, err)
+				var ce *config.ConfigError
+				require.ErrorAs(t, err, &ce)
+				assert.Equal(t, "s", ce.Stage)
+				assert.Equal(t, "expr", ce.Field) // the value expr is the real first failure
+			},
+		},
+		{
+			name: "condition-only failure attributed to condition field",
+			doc:  []byte(`{"stages":[{"name":"s","type":"single-expr","expr":"1","condition":"###"}]}`),
+			assert: func(t *testing.T, err error) {
+				require.Error(t, err)
+				var ce *config.ConfigError
+				require.ErrorAs(t, err, &ce)
+				assert.Equal(t, "condition", ce.Field)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			d, err := config.ParseJSON(tc.doc)
+			require.NoError(t, err)
+			_, err = d.Build()
+			tc.assert(t, err)
+		})
+	}
+}
+
 func assertConfigErr(t *testing.T, p *pipe.Pipeline, err error) {
 	t.Helper()
 	assert.Nil(t, p)

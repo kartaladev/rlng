@@ -81,12 +81,15 @@ func (sd StageDef) buildSingle(base []pipe.Option, constants map[string]any) (pi
 	}
 	s, err := pipe.NewSingleExpr(sd.Name, sd.Expr.Expr, opts...)
 	if err != nil {
-		// The stage error already names the stage; don't re-prefix it. If the
-		// culprit is the condition sub-expression, attribute it to that field.
+		// Attribute to the field that actually failed to compile. The value
+		// expression is compiled first, so a value error is the true first
+		// failure; only a value expression that compiles cleanly leaves the
+		// condition as the culprit.
+		if _, verr := expr.NewFunction(sd.Name, sd.Expr.Expr, withConstants(constants, sd.Expr.options())...); verr != nil {
+			return nil, &ConfigError{Stage: sd.Name, Field: "expr", Cause: err}
+		}
 		if sd.Condition != nil {
-			if _, cerr := expr.NewPredicate(sd.Condition.Expr, condOpts...); cerr != nil {
-				return nil, &ConfigError{Stage: sd.Name, Field: "condition", Cause: cerr}
-			}
+			return nil, &ConfigError{Stage: sd.Name, Field: "condition", Cause: err}
 		}
 		return nil, &ConfigError{Cause: err}
 	}
