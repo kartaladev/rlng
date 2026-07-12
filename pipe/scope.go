@@ -31,8 +31,11 @@ type Scope struct {
 	strict      bool
 	provenance  bool
 	derivations map[string]Derivation // non-nil only when provenance is enabled
+	firing      map[string]FiringRule // stage name -> the rule that fired
 	startedAt   time.Time
 	duration    time.Duration
+	stageTimes  map[string]time.Duration
+	stageOrder  []string
 	clock       Clock
 }
 

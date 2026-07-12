@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -17,13 +18,51 @@ const (
 	// HitPolicySingle applies the first matching rule's decisions and stops.
 	HitPolicySingle HitPolicy = iota
 	// HitPolicyCollect applies every matching rule; each output key accumulates
-	// a []any with one entry per matched rule, in rule order.
+	// the matched values (reduced per WithCollectAggregation, default a slice).
 	HitPolicyCollect
+	// HitPolicyUnique requires at most one rule to match; two or more matching
+	// rules is ErrMultipleMatches. It guards tables meant to be non-overlapping.
+	HitPolicyUnique
+	// HitPolicyAny allows several rules to match but requires their outputs to
+	// agree for every shared key; a disagreement is ErrConflictingMatches.
+	HitPolicyAny
 )
 
+// CollectAggregation reduces the matched values of a HitPolicyCollect table's
+// output key into a single value.
+type CollectAggregation int
+
+const (
+	// AggregateList keeps every matched value as a []any in rule order (default).
+	AggregateList CollectAggregation = iota
+	// AggregateSum sums the matched numeric values (int if all ints, else float).
+	AggregateSum
+	// AggregateMin returns the smallest matched numeric value.
+	AggregateMin
+	// AggregateMax returns the largest matched numeric value.
+	AggregateMax
+	// AggregateCount returns the number of matched values as an int.
+	AggregateCount
+)
+
+// ErrMultipleMatches is the Cause of a StageError from a HitPolicyUnique table
+// when more than one rule matches.
+var ErrMultipleMatches = errors.New("decision-table: multiple rules matched under unique hit policy")
+
+// ErrConflictingMatches is the Cause of a StageError from a HitPolicyAny table
+// when matching rules produce differing values for the same output key.
+var ErrConflictingMatches = errors.New("decision-table: matching rules disagree under any hit policy")
+
+// ErrNonNumericAggregate is the Cause of a StageError when a sum/min/max
+// aggregation encounters a non-numeric matched value.
+var ErrNonNumericAggregate = errors.New("decision-table: non-numeric value in numeric aggregation")
+
 // Rule is one row of a DecisionTable: a boolean condition and a set of
-// output-key -> value-expression decisions.
+// output-key -> value-expression decisions. Optional ID and Message make a
+// firing rule identifiable for explainable decisions.
 type Rule struct {
+	ID               string
+	Message          string
 	Condition        string
 	Decisions        map[string]string
 	ConditionOptions []expr.Option
@@ -33,13 +72,17 @@ type Rule struct {
 // DecisionTable evaluates ordered rules against a Scope snapshot, writing
 // decision outputs under name.<outputKey>.
 type DecisionTable struct {
-	name      string
-	deps      []string
-	hitPolicy HitPolicy
-	rules     []compiledRule
+	name        string
+	deps        []string
+	hitPolicy   HitPolicy
+	aggregation CollectAggregation
+	rules       []compiledRule
+	defaults    []compiledDecision
 }
 
 type compiledRule struct {
+	id        string
+	message   string
 	cond      *expr.Predicate
 	decisions []compiledDecision
 }
@@ -52,7 +95,7 @@ type compiledDecision struct {
 // NewDecisionTable compiles a DecisionTable stage. Every condition and decision
 // is compiled up front. Within a rule, decisions are independent (evaluated
 // against the same pre-rule snapshot), so their order is not significant; they
-// are compiled in sorted-key order for deterministic collect output.
+// are compiled in sorted-key order for deterministic output.
 func NewDecisionTable(name string, rules []Rule, opts ...Option) (*DecisionTable, error) {
 	if name == "" {
 		return nil, &StageError{Stage: name, Type: TypeDecisionTable, Cause: ErrEmptyStageName}
@@ -71,21 +114,47 @@ func NewDecisionTable(name string, rules []Rule, opts ...Option) (*DecisionTable
 		if err != nil {
 			return nil, &StageError{Stage: name, Type: TypeDecisionTable, Cause: fmt.Errorf("rule %d condition: %w", i, err)}
 		}
-
-		decisions := make([]compiledDecision, 0, len(r.Decisions))
-		for _, key := range sortedKeys(r.Decisions) {
-			if key == "" {
-				return nil, &StageError{Stage: name, Type: TypeDecisionTable, Cause: fmt.Errorf("rule %d has an empty output key", i)}
-			}
-			fn, err := expr.NewFunction(key, r.Decisions[key], r.DecisionOptions...)
-			if err != nil {
-				return nil, &StageError{Stage: name, Type: TypeDecisionTable, Cause: fmt.Errorf("rule %d decision %q: %w", i, key, err)}
-			}
-			decisions = append(decisions, compiledDecision{key: key, fn: fn})
+		decisions, err := compileDecisions(name, fmt.Sprintf("rule %d", i), r.Decisions, r.DecisionOptions)
+		if err != nil {
+			return nil, err
 		}
-		compiled = append(compiled, compiledRule{cond: cond, decisions: decisions})
+		compiled = append(compiled, compiledRule{id: r.ID, message: r.Message, cond: cond, decisions: decisions})
 	}
-	return &DecisionTable{name: name, deps: cfg.deps, hitPolicy: cfg.hitPolicy, rules: compiled}, nil
+
+	var defaults []compiledDecision
+	if len(cfg.defaults) > 0 {
+		var err error
+		defaults, err = compileDecisions(name, "default", cfg.defaults, cfg.defaultsOpts)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &DecisionTable{
+		name:        name,
+		deps:        cfg.deps,
+		hitPolicy:   cfg.hitPolicy,
+		aggregation: cfg.aggregation,
+		rules:       compiled,
+		defaults:    defaults,
+	}, nil
+}
+
+// compileDecisions compiles a key->expression decision set in sorted-key order,
+// wrapping failures in a StageError attributed to where (e.g. "rule 2").
+func compileDecisions(stage, where string, decisions map[string]string, opts []expr.Option) ([]compiledDecision, error) {
+	out := make([]compiledDecision, 0, len(decisions))
+	for _, key := range sortedKeys(decisions) {
+		if key == "" {
+			return nil, &StageError{Stage: stage, Type: TypeDecisionTable, Cause: fmt.Errorf("%s has an empty output key", where)}
+		}
+		fn, err := expr.NewFunction(key, decisions[key], opts...)
+		if err != nil {
+			return nil, &StageError{Stage: stage, Type: TypeDecisionTable, Cause: fmt.Errorf("%s decision %q: %w", where, key, err)}
+		}
+		out = append(out, compiledDecision{key: key, fn: fn})
+	}
+	return out, nil
 }
 
 // Name returns the stage's name; decision outputs are written under name.<key>.
@@ -109,59 +178,87 @@ func (d *DecisionTable) Execute(ctx context.Context, sc *Scope) error {
 	}
 
 	env := sc.Snapshot()
-	if d.hitPolicy == HitPolicyCollect {
+	switch d.hitPolicy {
+	case HitPolicyCollect:
 		return d.executeCollect(env, sc)
+	case HitPolicyUnique:
+		return d.executeUnique(env, sc)
+	case HitPolicyAny:
+		return d.executeAny(env, sc)
+	default:
+		return d.executeSingle(env, sc)
 	}
-	return d.executeSingle(env, sc)
 }
 
-func (d *DecisionTable) executeSingle(env map[string]any, sc *Scope) error {
-	tracking := sc.TracksProvenance()
-	for _, r := range d.rules {
+// matches evaluates every rule's condition and returns the indices of the rules
+// that match, in rule order.
+func (d *DecisionTable) matches(env map[string]any) ([]int, error) {
+	var matched []int
+	for i, r := range d.rules {
 		ok, err := r.cond.Test(env)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			matched = append(matched, i)
+		}
+	}
+	return matched, nil
+}
+
+// writeDecision writes one decision value under name.<key>, recording provenance
+// when the Scope tracks it.
+func (d *DecisionTable) writeDecision(env map[string]any, sc *Scope, dec compiledDecision, v any, op string) error {
+	if sc.TracksProvenance() {
+		return sc.Derive(d.name+"."+dec.key, v, Derivation{
+			Stage:      d.name,
+			StageType:  TypeDecisionTable,
+			Operation:  op,
+			Expression: dec.fn.Source(),
+			Inputs:     snapshotRefs(env, dec.fn.References()),
+		})
+	}
+	return sc.Set(d.name+"."+dec.key, v)
+}
+
+// applyRule evaluates and writes every decision of a single rule, recording it
+// as the firing rule.
+func (d *DecisionTable) applyRule(env map[string]any, sc *Scope, r compiledRule) error {
+	sc.recordFiring(d.name, r.id, r.message, false)
+	for _, dec := range r.decisions {
+		v, err := dec.fn.Apply(env)
 		if err != nil {
 			return d.stageErr(err)
 		}
-		if !ok {
-			continue
+		if err := d.writeDecision(env, sc, dec, v, "decision:"+dec.key); err != nil {
+			return d.stageErr(err)
 		}
-		for _, dec := range r.decisions {
-			v, err := dec.fn.Apply(env)
-			if err != nil {
-				return d.stageErr(err)
-			}
-			if tracking {
-				derivation := Derivation{
-					Stage:      d.name,
-					StageType:  TypeDecisionTable,
-					Operation:  "decision:" + dec.key,
-					Expression: dec.fn.Source(),
-					Inputs:     snapshotRefs(env, dec.fn.References()),
-				}
-				if err := sc.Derive(d.name+"."+dec.key, v, derivation); err != nil {
-					return d.stageErr(err)
-				}
-				continue
-			}
-			if err := sc.Set(d.name+"."+dec.key, v); err != nil {
-				return d.stageErr(err)
-			}
-		}
-		return nil // first match wins
 	}
 	return nil
 }
 
-func (d *DecisionTable) executeCollect(env map[string]any, sc *Scope) error {
-	tracking := sc.TracksProvenance()
-	collected := make(map[string][]any)
-	order := make([]string, 0)
-	var expressions map[string][]string
-	var inputs map[string]map[string]any
-	if tracking {
-		expressions = make(map[string][]string)
-		inputs = make(map[string]map[string]any)
+// applyDefaults writes the default decisions (no-op when none configured),
+// recording the default as the firing rule when it fires.
+func (d *DecisionTable) applyDefaults(env map[string]any, sc *Scope) error {
+	if len(d.defaults) == 0 {
+		return nil
 	}
+	sc.recordFiring(d.name, "", "", true)
+	for _, dec := range d.defaults {
+		v, err := dec.fn.Apply(env)
+		if err != nil {
+			return d.stageErr(err)
+		}
+		if err := d.writeDecision(env, sc, dec, v, "default:"+dec.key); err != nil {
+			return d.stageErr(err)
+		}
+	}
+	return nil
+}
+
+// executeSingle applies the first matching rule (first match wins), or the
+// default decisions when no rule matches.
+func (d *DecisionTable) executeSingle(env map[string]any, sc *Scope) error {
 	for _, r := range d.rules {
 		ok, err := r.cond.Test(env)
 		if err != nil {
@@ -170,6 +267,90 @@ func (d *DecisionTable) executeCollect(env map[string]any, sc *Scope) error {
 		if !ok {
 			continue
 		}
+		return d.applyRule(env, sc, r)
+	}
+	return d.applyDefaults(env, sc)
+}
+
+// executeUnique requires at most one matching rule.
+func (d *DecisionTable) executeUnique(env map[string]any, sc *Scope) error {
+	matched, err := d.matches(env)
+	if err != nil {
+		return d.stageErr(err)
+	}
+	switch len(matched) {
+	case 0:
+		return d.applyDefaults(env, sc)
+	case 1:
+		return d.applyRule(env, sc, d.rules[matched[0]])
+	default:
+		return d.stageErr(fmt.Errorf("%w: %d rules matched", ErrMultipleMatches, len(matched)))
+	}
+}
+
+// executeAny allows several matches but requires agreement on shared keys.
+func (d *DecisionTable) executeAny(env map[string]any, sc *Scope) error {
+	matched, err := d.matches(env)
+	if err != nil {
+		return d.stageErr(err)
+	}
+	if len(matched) == 0 {
+		return d.applyDefaults(env, sc)
+	}
+	sc.recordFiring(d.name, d.rules[matched[0]].id, d.rules[matched[0]].message, false)
+
+	agreed := make(map[string]any)
+	order := make([]string, 0)
+	for _, idx := range matched {
+		for _, dec := range d.rules[idx].decisions {
+			v, err := dec.fn.Apply(env)
+			if err != nil {
+				return d.stageErr(err)
+			}
+			prev, seen := agreed[dec.key]
+			if !seen {
+				agreed[dec.key] = v
+				order = append(order, dec.key)
+				continue
+			}
+			if !reflect.DeepEqual(prev, v) {
+				return d.stageErr(fmt.Errorf("%w: key %q has %v and %v", ErrConflictingMatches, dec.key, prev, v))
+			}
+		}
+	}
+
+	for _, key := range order {
+		if err := d.writeAgg(sc, key, agreed[key], "any:"+key); err != nil {
+			return d.stageErr(err)
+		}
+	}
+	return nil
+}
+
+// executeCollect accumulates every matching rule's decisions per key, then
+// reduces each key by the configured aggregation. When no rule matches, the
+// default decisions apply.
+func (d *DecisionTable) executeCollect(env map[string]any, sc *Scope) error {
+	tracking := sc.TracksProvenance()
+	collected := make(map[string][]any)
+	order := make([]string, 0)
+	var exprs map[string][]string
+	var inputs map[string]map[string]any
+	if tracking {
+		exprs = make(map[string][]string)
+		inputs = make(map[string]map[string]any)
+	}
+	matchedAny := false
+
+	for _, r := range d.rules {
+		ok, err := r.cond.Test(env)
+		if err != nil {
+			return d.stageErr(err)
+		}
+		if !ok {
+			continue
+		}
+		matchedAny = true
 		for _, dec := range r.decisions {
 			v, err := dec.fn.Apply(env)
 			if err != nil {
@@ -180,38 +361,156 @@ func (d *DecisionTable) executeCollect(env map[string]any, sc *Scope) error {
 			}
 			collected[dec.key] = append(collected[dec.key], v)
 			if tracking {
-				expressions[dec.key] = append(expressions[dec.key], dec.fn.Source())
-				refs := snapshotRefs(env, dec.fn.References())
-				if len(refs) > 0 {
+				exprs[dec.key] = append(exprs[dec.key], dec.fn.Source())
+				for k, rv := range snapshotRefs(env, dec.fn.References()) {
 					if inputs[dec.key] == nil {
-						inputs[dec.key] = make(map[string]any, len(refs))
+						inputs[dec.key] = make(map[string]any)
 					}
-					for k, v := range refs {
-						inputs[dec.key][k] = v
-					}
+					inputs[dec.key][k] = rv
 				}
 			}
 		}
 	}
+
+	if !matchedAny {
+		return d.applyDefaults(env, sc)
+	}
+
 	for _, key := range order {
-		if tracking {
-			derivation := Derivation{
-				Stage:      d.name,
-				StageType:  TypeDecisionTable,
-				Operation:  "collect:" + key,
-				Expression: strings.Join(expressions[key], "; "),
-				Inputs:     inputs[key],
-			}
-			if err := sc.Derive(d.name+"."+key, collected[key], derivation); err != nil {
-				return d.stageErr(err)
-			}
-			continue
+		reduced, err := aggregate(d.aggregation, collected[key])
+		if err != nil {
+			return d.stageErr(err)
 		}
-		if err := sc.Set(d.name+"."+key, collected[key]); err != nil {
+		// Preserve the "collect:<key>" provenance label for the default (list)
+		// aggregation; name the reducer for sum/min/max/count. An unrecognized
+		// aggregation keeps the plain label (and list behavior), never panics.
+		op := "collect:" + key
+		if lbl, ok := aggLabel(d.aggregation); ok {
+			op = "collect:" + lbl + ":" + key
+		}
+		if err := d.writeCollected(sc, key, reduced, op, exprs[key], inputs[key]); err != nil {
 			return d.stageErr(err)
 		}
 	}
 	return nil
+}
+
+// writeCollected writes an aggregated collect value under name.<key>, recording
+// the joined source expressions and unioned inputs when provenance is tracked.
+func (d *DecisionTable) writeCollected(sc *Scope, key string, v any, op string, exprs []string, inputs map[string]any) error {
+	if sc.TracksProvenance() {
+		return sc.Derive(d.name+"."+key, v, Derivation{
+			Stage:      d.name,
+			StageType:  TypeDecisionTable,
+			Operation:  op,
+			Expression: strings.Join(exprs, "; "),
+			Inputs:     inputs,
+		})
+	}
+	return sc.Set(d.name+"."+key, v)
+}
+
+// writeAgg writes an agreed value (HitPolicyAny) under name.<key>. It is
+// provenance-aware but carries no single source expression, since the value is
+// shared across several matching rules.
+func (d *DecisionTable) writeAgg(sc *Scope, key string, v any, op string) error {
+	if sc.TracksProvenance() {
+		return sc.Derive(d.name+"."+key, v, Derivation{
+			Stage:     d.name,
+			StageType: TypeDecisionTable,
+			Operation: op,
+		})
+	}
+	return sc.Set(d.name+"."+key, v)
+}
+
+// aggregate reduces vals per the aggregation policy.
+func aggregate(a CollectAggregation, vals []any) (any, error) {
+	switch a {
+	case AggregateCount:
+		return len(vals), nil
+	case AggregateSum:
+		return foldNumeric(vals, aggSum)
+	case AggregateMin:
+		return foldNumeric(vals, aggMin)
+	case AggregateMax:
+		return foldNumeric(vals, aggMax)
+	default: // AggregateList
+		return vals, nil
+	}
+}
+
+type numericOp int
+
+const (
+	aggSum numericOp = iota
+	aggMin
+	aggMax
+)
+
+// foldNumeric folds numeric values by op. Integers stay integers; a mix with any
+// float yields a float. A non-numeric value is ErrNonNumericAggregate. vals is
+// non-empty (only reached for a matched key).
+func foldNumeric(vals []any, op numericOp) (any, error) {
+	var acc float64
+	allInt := true
+	for i, v := range vals {
+		f, isInt, ok := asFloat(v)
+		if !ok {
+			return nil, fmt.Errorf("%w: %v (%T)", ErrNonNumericAggregate, v, v)
+		}
+		if !isInt {
+			allInt = false
+		}
+		switch {
+		case op == aggSum:
+			acc += f
+		case i == 0:
+			acc = f
+		case op == aggMin && f < acc:
+			acc = f
+		case op == aggMax && f > acc:
+			acc = f
+		}
+	}
+	if allInt {
+		return int(acc), nil
+	}
+	return acc, nil
+}
+
+// asFloat reports v as a float64, whether it was an integer kind, and whether it
+// was numeric at all.
+func asFloat(v any) (f float64, isInt bool, ok bool) {
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return float64(rv.Int()), true, true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return float64(rv.Uint()), true, true
+	case reflect.Float32, reflect.Float64:
+		return rv.Float(), false, true
+	default:
+		return 0, false, false
+	}
+}
+
+// aggLabel names a reducing aggregation for provenance operation labels,
+// reporting false for the list default or any unrecognized value (so callers
+// keep the plain "collect:<key>" label rather than indexing out of range).
+func aggLabel(a CollectAggregation) (string, bool) {
+	switch a {
+	case AggregateSum:
+		return "sum", true
+	case AggregateMin:
+		return "min", true
+	case AggregateMax:
+		return "max", true
+	case AggregateCount:
+		return "count", true
+	default:
+		return "", false
+	}
 }
 
 func sortedKeys(m map[string]string) []string {

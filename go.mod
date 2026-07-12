@@ -1,6 +1,6 @@
 module github.com/kartaladev/rlng
 
-go 1.26.4
+go 1.25
 
 require (
 	github.com/expr-lang/expr v1.17.8

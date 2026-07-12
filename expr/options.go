@@ -15,6 +15,16 @@ type config struct {
 	fallback      string
 	returnKind    reflect.Kind
 	hasReturnKind bool
+	functions     []hostFunction
+	env           map[string]any
+	hasEnv        bool
+}
+
+// hostFunction is a named host function registered into the compile/eval
+// environment via WithFunction.
+type hostFunction struct {
+	name string
+	fn   func(...any) (any, error)
 }
 
 // Option configures a Predicate or Function. Options that do not apply to a
@@ -31,11 +41,34 @@ func newConfig(opts []Option) *config {
 	return c
 }
 
-// WithGlobals sets engine-wide default variables, injected as `??` defaults.
-func WithGlobals(vars map[string]any) Option { return func(c *config) { c.globals = vars } }
+// WithGlobals adds engine-wide default variables, injected as `??` defaults.
+// Multiple calls merge (last value wins per key), so a pipeline-level constant
+// and a per-expression global can coexist rather than the later call discarding
+// the earlier keys.
+func WithGlobals(vars map[string]any) Option {
+	return func(c *config) { c.globals = mergeInto(c.globals, vars) }
+}
 
-// WithLocals sets per-evaluator default variables; they take precedence over globals.
-func WithLocals(vars map[string]any) Option { return func(c *config) { c.locals = vars } }
+// WithLocals adds per-evaluator default variables; they take precedence over
+// globals. Multiple calls merge (last value wins per key), as WithGlobals.
+func WithLocals(vars map[string]any) Option {
+	return func(c *config) { c.locals = mergeInto(c.locals, vars) }
+}
+
+// mergeInto returns dst with every entry of src copied in (last wins),
+// allocating dst if nil. It never mutates src.
+func mergeInto(dst, src map[string]any) map[string]any {
+	if len(src) == 0 {
+		return dst
+	}
+	if dst == nil {
+		dst = make(map[string]any, len(src))
+	}
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
 
 // WithCoerce makes a Predicate use lenient truthiness instead of the default
 // strict (bool-only) mode.
@@ -50,13 +83,63 @@ func WithReturnKind(k reflect.Kind) Option {
 	return func(c *config) { c.returnKind = k; c.hasReturnKind = true }
 }
 
+// WithEnv enables strict compilation against a declared environment: the
+// expression is type-checked against env (a map of field name -> a
+// representative value giving its type), and undefined-variable tolerance is
+// dropped. A field typo such as `scoer` then fails at compile time instead of
+// silently evaluating to nil. Declared globals/locals (WithGlobals/WithLocals)
+// and registered functions (WithFunction) are merged into the type-check
+// environment so they remain usable. Without WithEnv the default is lenient
+// (undefined variables allowed), preserving prior behavior.
+func WithEnv(env map[string]any) Option {
+	return func(c *config) { c.env = env; c.hasEnv = true }
+}
+
+// WithFunction registers a host function callable from the expression by name,
+// e.g. WithFunction("now", ...) or a domain helper like businessDaysBetween.
+// The function is visible to both the compiler (so it type-checks, including in
+// WithEnv strict mode) and the VM. Registering the same name twice keeps the
+// last registration.
+func WithFunction(name string, fn func(...any) (any, error)) Option {
+	return func(c *config) { c.functions = append(c.functions, hostFunction{name: name, fn: fn}) }
+}
+
 // buildExprOpts assembles the base expr compile options shared by both
 // evaluators: undefined-variables allowed, plus the variable-default patcher
 // when any variables are declared.
 func buildExprOpts(cfg *config) []exprlang.Option {
-	opts := []exprlang.Option{exprlang.AllowUndefinedVariables()}
+	var opts []exprlang.Option
+	if cfg.hasEnv {
+		// Strict: type-check against the declared env (plus declared
+		// globals/locals so patched defaults resolve) and reject unknown names.
+		opts = append(opts, exprlang.Env(strictEnv(cfg)))
+	} else {
+		opts = append(opts, exprlang.AllowUndefinedVariables())
+	}
 	if p := newPatcher(cfg.globals, cfg.locals); p != nil {
 		opts = append(opts, exprlang.Patch(p))
 	}
+	for _, f := range cfg.functions {
+		opts = append(opts, exprlang.Function(f.name, f.fn))
+	}
 	return opts
+}
+
+// strictEnv builds the type-check environment for WithEnv: the declared env,
+// overlaid with declared globals then locals (locals take precedence), so an
+// identifier resolved by a `??` default patch still type-checks. Registered
+// functions are supplied separately via exprlang.Function and need not appear
+// here.
+func strictEnv(cfg *config) map[string]any {
+	out := make(map[string]any, len(cfg.env)+len(cfg.globals)+len(cfg.locals))
+	for k, v := range cfg.env {
+		out[k] = v
+	}
+	for k, v := range cfg.globals {
+		out[k] = v
+	}
+	for k, v := range cfg.locals {
+		out[k] = v
+	}
+	return out
 }

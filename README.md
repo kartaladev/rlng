@@ -24,15 +24,26 @@ It also stays trivially cross-compilable (`CGO_ENABLED=0`).
 
 Rules are declared as config and compiled once, then evaluated on the hot path:
 
-- **Declarative config** — YAML/JSON rule definitions loaded via pluggable sources.
+- **Declarative config** — YAML/JSON rule definitions loaded via pluggable sources, with
+  pipeline-level `constants` and an output `mapping` block so a whole decision service is
+  one document.
 - **Staged evaluation** — stages (single-expression, multi-expression, and decision-table)
   are ordered by their declared dependencies (a topologically sorted DAG).
-- **Decision tables** — ordered `condition → decisions` rules, in first-match or
-  collect-all modes.
+- **Decision tables** — ordered `condition → decisions` rules with hit policies
+  **single / unique / any / collect**, a per-table **default (else)** branch, and collect
+  **aggregation** (`sum`/`min`/`max`/`count`/list).
+- **Explainable decisions** — optional rule `id`/`message`, a recorded **firing rule**
+  per stage, value **provenance/lineage**, and **per-stage timing**.
+- **Strict typed evaluation** — opt-in `expr.WithEnv` rejects field typos and type errors
+  at compile time instead of silently evaluating to nil.
+- **Extensible** — register host functions (`expr.WithFunction`), including a clock-backed
+  `now()` for deterministic temporal rules.
+- **Ruleset lint** — static checks for unreachable rules and missing-default coverage gaps.
 - **Typed result mapping** — the evaluated context is projected into a caller-supplied Go
   type via a mapping template.
 
-See [`CLAUDE.md`](./CLAUDE.md) for the full architecture blueprint and contributor workflow.
+See [`CLAUDE.md`](./CLAUDE.md) for the full architecture blueprint and contributor workflow,
+and [`examples/`](./examples) for runnable end-to-end examples.
 
 ## Usage
 

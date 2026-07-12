@@ -155,11 +155,11 @@ func findCycle(stages []Stage, index map[string]Stage, emitted map[string]bool) 
 func (p *Pipeline) Run(ctx context.Context, sc *Scope) error {
 	sc.markStarted()
 	defer sc.markFinished()
-	for _, s := range p.ordered {
+	for _, st := range p.ordered {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if err := s.Execute(ctx, sc); err != nil {
+		if err := sc.timeStage(st.Name(), func() error { return st.Execute(ctx, sc) }); err != nil {
 			return err
 		}
 	}

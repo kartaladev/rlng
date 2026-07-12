@@ -24,7 +24,7 @@ func (d *PipelineDef) Build() (*pipe.Pipeline, error) {
 	}
 	stages := make([]pipe.Stage, 0, len(d.Stages))
 	for _, sd := range d.Stages {
-		st, err := sd.build()
+		st, err := sd.build(d.Constants)
 		if err != nil {
 			return nil, err
 		}
@@ -37,31 +37,44 @@ func (d *PipelineDef) Build() (*pipe.Pipeline, error) {
 	return p, nil
 }
 
-func (sd StageDef) build() (pipe.Stage, error) {
+func (sd StageDef) build(constants map[string]any) (pipe.Stage, error) {
 	var base []pipe.Option
 	if len(sd.DependsOn) > 0 {
 		base = append(base, pipe.WithDependsOn(sd.DependsOn...))
 	}
 	switch sd.Type {
 	case pipe.TypeSingleExpr:
-		return sd.buildSingle(base)
+		return sd.buildSingle(base, constants)
 	case pipe.TypeMultiExpr:
-		return sd.buildMulti(base)
+		return sd.buildMulti(base, constants)
 	case pipe.TypeDecisionTable:
-		return sd.buildTable(base)
+		return sd.buildTable(base, constants)
 	default:
 		return nil, &ConfigError{Stage: sd.Name, Field: "type", Cause: fmt.Errorf("unknown stage type %q", sd.Type)}
 	}
 }
 
-func (sd StageDef) buildSingle(base []pipe.Option) (pipe.Stage, error) {
+// withConstants prepends a WithGlobals option carrying the pipeline constants to
+// opts (a no-op when there are none), so every compiled expression sees the
+// constants as overridable compile-time defaults. Constants are prepended so a
+// stage's own WithGlobals (if any) merges on top and wins on a key conflict —
+// the more specific value takes precedence (expr.WithGlobals merges, last wins).
+func withConstants(constants map[string]any, opts []expr.Option) []expr.Option {
+	if len(constants) == 0 {
+		return opts
+	}
+	return append([]expr.Option{expr.WithGlobals(constants)}, opts...)
+}
+
+func (sd StageDef) buildSingle(base []pipe.Option, constants map[string]any) (pipe.Stage, error) {
 	if sd.Expr == nil {
 		return nil, &ConfigError{Stage: sd.Name, Field: "expr", Cause: errors.New("single-expr requires an expr")}
 	}
+	condOpts := withConstants(constants, sd.condOptions())
 	opts := append([]pipe.Option{}, base...)
-	opts = append(opts, pipe.WithExprOptions(sd.Expr.options()...))
+	opts = append(opts, pipe.WithExprOptions(withConstants(constants, sd.Expr.options())...))
 	if sd.Condition != nil {
-		opts = append(opts, pipe.WithCondition(sd.Condition.Expr, sd.Condition.options()...))
+		opts = append(opts, pipe.WithCondition(sd.Condition.Expr, condOpts...))
 	}
 	if sd.Output != "" {
 		opts = append(opts, pipe.WithOutput(sd.Output))
@@ -71,7 +84,7 @@ func (sd StageDef) buildSingle(base []pipe.Option) (pipe.Stage, error) {
 		// The stage error already names the stage; don't re-prefix it. If the
 		// culprit is the condition sub-expression, attribute it to that field.
 		if sd.Condition != nil {
-			if _, cerr := expr.NewPredicate(sd.Condition.Expr, sd.Condition.options()...); cerr != nil {
+			if _, cerr := expr.NewPredicate(sd.Condition.Expr, condOpts...); cerr != nil {
 				return nil, &ConfigError{Stage: sd.Name, Field: "condition", Cause: cerr}
 			}
 		}
@@ -80,7 +93,16 @@ func (sd StageDef) buildSingle(base []pipe.Option) (pipe.Stage, error) {
 	return s, nil
 }
 
-func (sd StageDef) buildMulti(base []pipe.Option) (pipe.Stage, error) {
+// condOptions returns the condition sub-expression's options, or nil when there
+// is no condition.
+func (sd StageDef) condOptions() []expr.Option {
+	if sd.Condition == nil {
+		return nil
+	}
+	return sd.Condition.options()
+}
+
+func (sd StageDef) buildMulti(base []pipe.Option, constants map[string]any) (pipe.Stage, error) {
 	if len(sd.Exprs) == 0 {
 		return nil, &ConfigError{Stage: sd.Name, Field: "exprs", Cause: errors.New("multi-expr requires at least one expr")}
 	}
@@ -90,7 +112,7 @@ func (sd StageDef) buildMulti(base []pipe.Option) (pipe.Stage, error) {
 			Name:       e.Name,
 			Expression: e.Expr.Expr,
 			Priority:   e.Priority,
-			Options:    e.Expr.options(),
+			Options:    withConstants(constants, e.Expr.options()),
 		})
 	}
 	s, err := pipe.NewMultiExpr(sd.Name, named, base...)
@@ -100,7 +122,7 @@ func (sd StageDef) buildMulti(base []pipe.Option) (pipe.Stage, error) {
 	return s, nil
 }
 
-func (sd StageDef) buildTable(base []pipe.Option) (pipe.Stage, error) {
+func (sd StageDef) buildTable(base []pipe.Option, constants map[string]any) (pipe.Stage, error) {
 	if len(sd.Rules) == 0 {
 		return nil, &ConfigError{Stage: sd.Name, Field: "rules", Cause: errors.New("decision-table requires at least one rule")}
 	}
@@ -108,32 +130,73 @@ func (sd StageDef) buildTable(base []pipe.Option) (pipe.Stage, error) {
 	if err != nil {
 		return nil, &ConfigError{Stage: sd.Name, Field: "hit_policy", Cause: err}
 	}
+	agg, err := parseAggregation(sd.Aggregation)
+	if err != nil {
+		return nil, &ConfigError{Stage: sd.Name, Field: "aggregation", Cause: err}
+	}
 	rules := make([]pipe.Rule, 0, len(sd.Rules))
 	for i, r := range sd.Rules {
-		decisions := make(map[string]string, len(r.Decisions))
-		for key, ed := range r.Decisions {
-			if ed.hasOptions() {
-				return nil, &ConfigError{
-					Stage: sd.Name,
-					Field: fmt.Sprintf("rules[%d].decisions.%s", i, key),
-					Cause: errors.New("per-decision options are not supported; use a bare expression"),
-				}
-			}
-			decisions[key] = ed.Expr
+		decisions, err := bareDecisions(sd.Name, fmt.Sprintf("rules[%d].decisions", i), r.Decisions)
+		if err != nil {
+			return nil, err
 		}
 		rules = append(rules, pipe.Rule{
+			ID:               r.ID,
+			Message:          r.Message,
 			Condition:        r.Condition.Expr,
-			ConditionOptions: r.Condition.options(),
+			ConditionOptions: withConstants(constants, r.Condition.options()),
+			DecisionOptions:  withConstants(constants, nil),
 			Decisions:        decisions,
 		})
 	}
 	opts := append([]pipe.Option{}, base...)
-	opts = append(opts, pipe.WithHitPolicy(hp))
+	opts = append(opts, pipe.WithHitPolicy(hp), pipe.WithCollectAggregation(agg))
+	if len(sd.Default) > 0 {
+		defaults, err := bareDecisions(sd.Name, "default", sd.Default)
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, pipe.WithDefault(defaults, withConstants(constants, nil)...))
+	}
 	s, err := pipe.NewDecisionTable(sd.Name, rules, opts...)
 	if err != nil {
 		return nil, &ConfigError{Cause: err} // stage error already names the stage
 	}
 	return s, nil
+}
+
+// bareDecisions converts a key->ExprDef decision set to key->expression,
+// rejecting per-decision options (only bare expressions are supported here).
+func bareDecisions(stage, field string, in map[string]ExprDef) (map[string]string, error) {
+	out := make(map[string]string, len(in))
+	for key, ed := range in {
+		if ed.hasOptions() {
+			return nil, &ConfigError{
+				Stage: stage,
+				Field: fmt.Sprintf("%s.%s", field, key),
+				Cause: errors.New("per-decision options are not supported; use a bare expression"),
+			}
+		}
+		out[key] = ed.Expr
+	}
+	return out, nil
+}
+
+func parseAggregation(s string) (pipe.CollectAggregation, error) {
+	switch s {
+	case "", "list":
+		return pipe.AggregateList, nil
+	case "sum":
+		return pipe.AggregateSum, nil
+	case "min":
+		return pipe.AggregateMin, nil
+	case "max":
+		return pipe.AggregateMax, nil
+	case "count":
+		return pipe.AggregateCount, nil
+	default:
+		return 0, fmt.Errorf("unknown aggregation %q", s)
+	}
 }
 
 func parseHitPolicy(s string) (pipe.HitPolicy, error) {
@@ -142,6 +205,10 @@ func parseHitPolicy(s string) (pipe.HitPolicy, error) {
 		return pipe.HitPolicySingle, nil
 	case "collect":
 		return pipe.HitPolicyCollect, nil
+	case "unique":
+		return pipe.HitPolicyUnique, nil
+	case "any":
+		return pipe.HitPolicyAny, nil
 	default:
 		return 0, fmt.Errorf("unknown hit policy %q", s)
 	}
