@@ -122,7 +122,8 @@ func WithFunction(name string, fn func(...any) (any, error)) Option {
 
 // buildExprOpts assembles the base expr compile options shared by both
 // evaluators: undefined-variables allowed, plus the variable-default patcher
-// when any variables are declared.
+// when any variables are declared, plus the exact-decimal value type (see
+// decimalExprOptions) which is always available regardless of other options.
 func buildExprOpts(cfg *config) []exprlang.Option {
 	var opts []exprlang.Option
 	if cfg.hasEnv {
@@ -138,6 +139,7 @@ func buildExprOpts(cfg *config) []exprlang.Option {
 	for _, f := range cfg.functions {
 		opts = append(opts, exprlang.Function(f.name, f.fn))
 	}
+	opts = append(opts, decimalExprOptions()...) // exact-decimal type, always available
 	return opts
 }
 
