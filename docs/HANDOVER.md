@@ -1,87 +1,83 @@
 # HANDOVER — rlng (updated 2026-07-13)
 
 > **To the next session (READ FIRST, trust these over any memory):** `CLAUDE.md`, then the SDD
-> ledger `.superpowers/sdd/progress.md` (the durable per-task record), and the next-increment specs
-> `docs/specs/014-value-serde-consistency.md` and `docs/specs/015-foreach-line-item-stage.md` (plans
-> NOT yet written). This file points at them; it does not restate them. **Never commit/push without
-> explicit user approval** — per-task commits during an approved plan are the only pre-authorized
-> exception (CLAUDE.md).
+> ledger `.superpowers/sdd/progress.md` (durable per-task record with commit SHAs), then the active
+> spec. Trust the ledger + `git log` over any recollection.
 
 ## Objective & roadmap position
 
-`rlng` is a pure-Go rule + calculation engine on `expr-lang/expr` (debuggability-first: no cgo, typed
-wrapping errors). Executing a deeper business-rule production-readiness audit remediation as five
-focused specs (011–015).
+`rlng` is a pure-Go rule + calculation engine on `expr-lang/expr` (debuggability-first, no cgo, typed
+wrapping errors). Executing the post-010 audit remediation as focused specs (011–015).
 
-- **Increment status:** **011 DONE & merged**, **012 DONE & merged** (both on `origin/main`),
-  **013 DONE & gated** (on branch, awaiting merge/push approval). **014/015 NOT started.**
-- **Active branch:** `claude/ruleset-identity-013` (off `main@7a60d69`), holding the complete 013
-  increment. `main` currently = `7a60d69` (010+011+012 merged).
+- **Increment 014 (value serde consistency): COMPLETE, gated green, merged to `main`, and pushed.**
+- **Increment 015 (foreach line-item stage): NEXT — not yet started.**
 
-## Exact state (safepoint)
+## Increment 014 — DONE
 
-Tree builds; `go test ./... -race` green (all 5 pkgs); `go vet` / `gofmt -l .` clean;
-`CGO_ENABLED=0 go build ./...` OK. `git status --short`: only ` M docs/HANDOVER.md` (this file). Last
-commit: `1e9ce5e docs(rlng): ADR-0037 + ruleset identity example and docs`.
+Delivered exact-decimal money + value fidelity across all six serde boundaries. Merged to `main`
+(fast-forward) and pushed per explicit user authorization. Branch `claude/value-serde-014` deleted.
 
-**Increment 013 — Ruleset identity & decision stamping: COMPLETE, gated, green.**
-- Task 1 `c5d379a` — `pipe.RulesetIdentity{Hash, Version}`, chainable `Pipeline.WithRuleset`, `Run`
-  stamps the Scope, `Scope.Ruleset()`.
-- Task 2 `ccdccf9` — `(*config.PipelineDef).Hash()` (canonical JSON + SHA-256, version excluded),
-  `Version` field, `WithRulesetVersion` BuildOption, `Build` wiring, `MatchesRuleset`.
-- Task 3 `dd21745` — Scope JSON round-trips ruleset + firing (fully replayable record); `FiringRule`
-  json tags.
-- Task 4 `1e9ce5e` — ADR-0037 + runnable example + firing/identity docs.
-- All 4 tasks reviewed-Approved (Task 1 had one plan-mandated table-test fold, fixed). **Whole-branch
-  gate over `main..HEAD` done:** `/code-review` (high) 0 correctness bugs, 2 Minor triaged to backlog;
-  `/security-review` clean. See the ledger for the triaged Minors.
+Commits (base `main@98e59d1`): `6cc30b2` spec · `3f4a5cf` T1 expr decimal type · `1207939` T2
+aggregation fidelity · `30dbcb6` T3 type-tagged Scope JSON (v2) · `96d3cac` T4 config/seed/mapping ·
+`eed5962` T5 acceptance example + README · `11a6f1a` fix-4 · `4e42c45` whole-branch gate fixes.
 
-**Specs/plans/ADRs:** Specs 011–015 committed. Plans **011/012/013 done**; **014/015 NOT written.**
-ADRs 0031–0037 authored & committed. Spec 013 carries resolved decisions D1–D7.
+Gate: `/code-review` (high) — 4 findings, 2 fixed (mapper int64-overflow narrowing → `ErrLossyResultNarrowing`;
+Scope JSON decimal scale preservation), 2 triaged (below). `/security-review` — clean. `go test ./... -race`
+green; `go vet`/`gofmt`/`CGO_ENABLED=0 build` clean; `go mod tidy` no-op, `go mod verify` passes.
+`shopspring/decimal v1.4.0` is the only new dep. New exported API: `decimal()`/`round`/`roundBank`
+builtins; `pipe.ErrAggregateOverflow`, `pipe.ErrMalformedScopeValue`, `config.ErrDecimalLiteral`,
+`rlng.ErrLossyResultNarrowing`; Scope JSON `"v":2` type-tagged codec; config `{"$dec":"…"}` literals.
 
-## Traceability pointers (read first, in order)
+### Observable API changes shipped in 014 (note for any SemVer/apidiff work)
+- Aggregation sum/min/max now returns `int64` (was `int(acc)`) — the concrete type inside the `any`
+  result changed `int`→`int64` (spec G2).
+- Scope JSON write format is now `v2` (type-tagged): a pre-014 reader cannot parse a v2 blob; new
+  code still reads legacy v0 blobs (one-way format evolution, ADR-0038).
+- Integers reload from v2 JSON as `int64`; `GetInt` gained an `int64` case; a reloaded integer read
+  via `GetFloat64` now errors (strict, no coercion) instead of widening.
 
-1. `CLAUDE.md` (workflow, gates, commit discipline, testing rules).
-2. `.superpowers/sdd/progress.md` — the SDD ledger: every task's SHA, the 011/012/013 whole-branch gate
-   results, and the triaged Minor findings. **Trust the ledger + `git log` over memory.**
-3. `docs/specs/014-value-serde-consistency.md`, `docs/specs/015-foreach-line-item-stage.md` — the
-   remaining increments to plan & execute.
-4. Background: `docs/specs/010`/`011`/`012`/`013` + ADRs 0022–0037.
+### Carried-Minor backlog (triaged, non-blocking — address in a future increment)
+- `expr/variables.go`: a decimal-constant default via `String()` drops scale for trailing-zero
+  constants (`{"$dec":"1.50"}` → `decimal("1.5")`); numerically exact, rare.
+- `expr/options.go`: `decimalExprOptions()` rebuilt per expression compile (one-time cost, not hot path).
+- `pipe/table.go`: `classify` + `toInt64`/`toFloat64`/`asDecimal` are 3 parallel type-lists (drift risk).
+- `pipe/valuejson.go`: `derivations` values remain untagged (only `data` is type-tagged); redundant
+  (harmless) `sort.Strings` in the map encode.
+- `mapper_test.go`: `TestMapperDecimalFidelity` uses a `run`-closure, not the canonical assert-closure shape.
+- Pre-existing (Plan-013 leftover): a `golangci-lint`/`staticcheck` finding in
+  `config/ruleset_example_test.go:58` — unrelated to 014; clean up when convenient.
 
-## Decisions & deviations this session
+## Increment 015 — NEXT (foreach line-item stage)
 
-- **013 shipped** all of G1–G4 plus the expanded scope the user chose (firing serialization in the
-  Scope JSON), realized per spec 013's D1–D7. All additive/backward-compatible — no breaking change.
-- **013 code-review Minors (triaged, non-blocking — ledger has rationale):** (1) `FiringRule` json tags
-  change wire keys for a consumer who directly marshaled the struct pre-013 (library never emitted it
-  before). (2) `MatchesRuleset` re-hashes via `Hash()` each call (replay path, not hot path).
-- **User process directive (carry forward):** implementers start from `cc-skills-golang:golang-how-to`
-  and honor the custom skills (`table-test`, `use-mockgen`, `use-testcontainers`); run `/code-review` +
-  `/security-review` before delivery.
+Read `docs/specs/015-foreach-line-item-stage.md` first (Draft; goals G1–G5, ADR-0040 anticipated).
+Per the user's AFK directive (2026-07-13): take 015 through the full brainstorm → spec(Accepted) →
+Plan 015 → SDD execution → whole-branch gate cycle **autonomously**, documenting decisions +
+alternatives (the user is unavailable to brainstorm live). **LEAVE 015 GATED — do NOT push 015; its
+merge/push awaits the user's explicit morning approval.** (The "merge then push" authorization
+attached to increment 014 only.)
 
-## Pending approvals / open questions
-
-- **Nothing is pushed.** Merge/push of `claude/ruleset-identity-013` needs explicit user approval
-  (fast-forward onto `main@7a60d69`; 4 commits `c5d379a..1e9ce5e`). Offer to commit this `HANDOVER.md`
-  too, then delete the merged branch (CLAUDE.md).
-- **014 decimal approach** (decimal-library dependency vs in-house minor-units type) must be
-  **brainstormed with the user before Plan 014 is written** — it touches the minimal-deps and
-  pure-Go/no-cgo constraints (deferred to ADR-0039).
-
-## Next actions (resume here)
-
-1. **Present increment 013 for the user's merge/push decision** (do not push without approval). On
-   approval: commit `HANDOVER.md`, fast-forward merge to `main`, push, delete the branch.
-2. **Then plans 014 → 015** — brainstorm 014's decimal decision with the user first, write each plan
-   just-in-time (`superpowers:writing-plans` from the committed spec), execute via
-   `superpowers:subagent-driven-development`. Each plan must include a Task that authors its ADRs, and
-   ensure `scripts/task-brief` is run for EVERY task (013 Task 4's brief was initially missed).
+Key 015 design decisions to settle in the autonomous brainstorm (record in ADR-0040 + the spec):
+per-element scope binding (element as `item`, outer scope readable); indexed/namespaced per-element
+output path + optional Spec-010 roll-up; per-element firing/provenance (reuse Spec-012 model keyed by
+index); YAML/JSON config surface (Spec-011 strict-decoding honored); nested-foreach → defer with a
+clear error (spec non-goal); empty collection = defined no-op; non-list path / per-element error =
+typed `StageError` naming the index; context-cancellable at element boundaries. 015 per-element
+numeric outputs must honor the 014 value contract (decimal/int64 fidelity).
 
 ## Gotchas / environment
 
-- **`govulncheck` and `golangci-lint` are NOT installed locally** — `.github/workflows/ci.yml` runs
-  them (plus build/vet/fmt/race across a Go 1.25/1.26 matrix). Let CI go green before any merge.
-- **`go.mod` declares `go 1.25`.** Supported floor is Go 1.25+.
-- **SDD hand-off files** (`.superpowers/sdd/task-N-brief.md`, `task-N-report.md`, `review-*.diff`) are
-  git-ignored scratch reused per task/increment (overwritten each time) — a stale brief from a prior
-  plan can linger (013 Task 4 hit this); the ledger `progress.md` is the durable record.
+- **Session limit was hit ~014 Task-4-fix (reset 5am Asia/Jakarta).** The remaining 014 work
+  (Task-4-fix completion, Task 5, the whole-branch gate, and both fixes) was completed by the
+  controller in-context (the `/code-review` and `/security-review` skills run in the main context, not
+  via subagents). If resuming 015 hits the same limit, prefer in-context work over subagent dispatch,
+  or wait for reset. Task-4's fixes were controller-self-verified (not subagent-re-reviewed).
+- `govulncheck`/`golangci-lint` are NOT installed locally — CI (`.github/workflows/ci.yml`) runs them
+  across a Go 1.25/1.26 matrix. Let CI go green.
+- **Verified expr/decimal facts (do not re-derive):** operator overloading resolves at COMPILE time by
+  static type → `decimal(...)` wrapping is universal, bare arithmetic needs strict-env (`expr.WithEnv`);
+  YAML `!decimal` tag collapses to string in `map[string]any` → use object form `{"$dec":"…"}`;
+  mapstructure decomposes struct-nested `decimal.Decimal` to an empty map and hooks don't fire → the
+  map-seed path preserves decimals, struct-seed needs the `flatten` reflection restore, struct-nested
+  slices stay typed slices (no restore needed).
+- SDD hand-off files (`.superpowers/sdd/*`) are gitignored scratch; the ledger `progress.md` is the
+  durable record. `git clean -fdx` would destroy it — recover from `git log`.
