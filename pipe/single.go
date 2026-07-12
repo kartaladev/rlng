@@ -1,4 +1,4 @@
-package stage
+package pipe
 
 import (
 	"context"
@@ -20,7 +20,7 @@ type SingleExpr struct {
 // expression and any condition happens now; Execute only evaluates.
 func NewSingleExpr(name, expression string, opts ...Option) (*SingleExpr, error) {
 	if name == "" {
-		return nil, &StageError{Stage: name, Type: TypeSingleExpr, Cause: errEmptyStageName}
+		return nil, &StageError{Stage: name, Type: TypeSingleExpr, Cause: ErrEmptyStageName}
 	}
 
 	cfg := newStageConfig(opts)

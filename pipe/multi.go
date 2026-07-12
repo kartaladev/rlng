@@ -1,4 +1,4 @@
-package stage
+package pipe
 
 import (
 	"context"
@@ -36,7 +36,7 @@ type compiledNamed struct {
 // (stable for ties).
 func NewMultiExpr(name string, exprs []NamedExpr, opts ...Option) (*MultiExpr, error) {
 	if name == "" {
-		return nil, &StageError{Stage: name, Type: TypeMultiExpr, Cause: errEmptyStageName}
+		return nil, &StageError{Stage: name, Type: TypeMultiExpr, Cause: ErrEmptyStageName}
 	}
 	if len(exprs) == 0 {
 		return nil, &StageError{Stage: name, Type: TypeMultiExpr, Cause: errors.New("multi-expr requires at least one expression")}

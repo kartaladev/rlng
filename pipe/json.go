@@ -1,4 +1,4 @@
-package stage
+package pipe
 
 import (
 	"bytes"
@@ -65,7 +65,7 @@ func (s *Scope) UnmarshalJSON(b []byte) error {
 		s.data = map[string]any{}
 	}
 	if s.clock == nil {
-		s.clock = time.Now
+		s.clock = realClock{}
 	}
 	if env.Timing != nil {
 		s.startedAt = env.Timing.StartedAt

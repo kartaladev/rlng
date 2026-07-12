@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/kartaladev/rlng"
-	"github.com/kartaladev/rlng/stage"
+	"github.com/kartaladev/rlng/pipe"
 )
 
 type input struct {
@@ -17,13 +17,13 @@ type result struct {
 	Total float64 `mapstructure:"total"`
 }
 
-func ExampleEngine() {
-	base, _ := stage.NewSingleExpr("base", "price * qty")
-	taxed, _ := stage.NewSingleExpr("taxed", "base * 1.1", stage.WithDependsOn("base"))
-	pipeline, _ := stage.NewPipeline(base, taxed)
+func ExampleTypedEngine() {
+	base, _ := pipe.NewSingleExpr("base", "price * qty")
+	taxed, _ := pipe.NewSingleExpr("taxed", "base * 1.1", pipe.WithDependsOn("base"))
+	pipeline, _ := pipe.NewPipeline(base, taxed)
 
 	mapper, _ := rlng.NewMapper[result](rlng.MappingTemplate{"total": "taxed"})
-	engine := rlng.New[input, result](pipeline, mapper)
+	engine, _ := rlng.NewTypedEngine[input, result](pipeline, mapper)
 
 	out, err := engine.Evaluate(context.Background(), input{Price: 10, Qty: 2})
 	if err != nil {

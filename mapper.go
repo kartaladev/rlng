@@ -37,7 +37,7 @@ func NewMapper[R any](tmpl MappingTemplate) (*Mapper[R], error) {
 	fields := make([]mappedField, 0, len(paths))
 	for _, p := range paths {
 		if p == "" {
-			return nil, &MappingError{Field: p, Cause: errEmptyMappingKey}
+			return nil, &MappingError{Field: p, Cause: ErrEmptyMappingKey}
 		}
 		fn, err := expr.NewFunction(p, tmpl[p])
 		if err != nil {
@@ -73,7 +73,7 @@ func (m *Mapper[R]) Map(scope map[string]any) (R, error) {
 // setNested writes v at a dot-separated path in out, creating intermediate maps.
 // It returns an error when an output path collides with a value already written
 // at a shorter prefix (e.g. both "a" and "a.b" are mapped), rather than silently
-// overwriting — mirroring stage.Scope.Set's ErrPathNotMap guard.
+// overwriting — mirroring pipe.Scope.Set's ErrPathNotMap guard.
 func setNested(out map[string]any, path string, v any) error {
 	keys := strings.Split(path, ".")
 	m := out

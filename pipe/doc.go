@@ -1,6 +1,6 @@
-// Package stage provides rlng's Scope accumulator and the stage types that
-// compose the expr evaluators (github.com/kartaladev/rlng/expr) into reusable
-// rule and calculation units.
+// Package pipe provides rlng's Scope accumulator, the stage types that compose
+// the expr evaluators (github.com/kartaladev/rlng/expr) into reusable rule and
+// calculation units, and the Pipeline that runs them in dependency order.
 //
 // Scope is a mutex-guarded map[string]any accumulator addressed by dot-separated
 // paths (Set/Get), with a decoupled Snapshot that serves as the expression
@@ -20,4 +20,4 @@
 // in Execute; failures are a *StageError that unwraps to the underlying expr
 // error. Stages declare DependsOn but do not order themselves — dependency-DAG
 // orchestration is a later increment.
-package stage
+package pipe

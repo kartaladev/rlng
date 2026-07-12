@@ -115,6 +115,13 @@ Three **project-local skills override samber's testing guidance** where they con
 - **`use-mockgen`** — generate test doubles with uber-go/mock (`mockgen`, `--typed`), placed alongside the interface in the producer package via `//go:generate`. Overrides mock-generation in `golang-testing` / `golang-stretchr-testify`.
 - **`use-testcontainers`** — provision heavy external resources (Postgres, Redis, Kafka, MinIO, …) via testcontainers-go, never mocks/in-memory fakes; expose each through a single `RunTestX(t, opts...)` helper. Overrides integration-test scaffolding in `golang-testing`.
 
+**Testing rules (mandatory — this project).** In addition to the skills above:
+
+- **Blackbox tests only.** Every `_test.go` uses the external `package <pkg>_test` form and exercises only the exported API. A test that seems to need an unexported helper is rewritten to drive that behavior through the public surface (env conversion via `Function.Apply`, timing via an empty `Pipeline.Run`, config-option wiring via `Build`+run) — never fall back to whitebox `package <pkg>`. Example tests are already `_test`-package; keep them so.
+- **Export what a test must assert.** When a test needs to `errors.Is` a sentinel, export it (`ErrX`) as part of the public error contract rather than whitebox-testing an unexported `errX`; those sentinels are the same debuggability surface callers rely on (e.g. `rlng.ErrNilPipeline`, `pipe.ErrEmptyPath`, `config.ErrNoStages`).
+- **Assert-closure tables always** (reinforces `table-test`): every table case carries an `assert func(t, …)` closure, never `want`/`wantErr` fields.
+- **Injectable time is an interface, not a func:** a small `Clock interface { Now() time.Time }` (compatible with `jonboulle/clockwork`), defaulting to an internal real clock; inject via a `WithClock`-style option.
+
 ## What this is — and is not
 
 - **Is:** a rule *engine* — an importable Go **library** that compiles rule/expression definitions (from YAML/JSON/config) and evaluates them against runtime input. Consumed via `go get` + import; the exported API is the product.

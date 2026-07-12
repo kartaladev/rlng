@@ -1,4 +1,4 @@
-package stage
+package pipe
 
 import (
 	"context"
@@ -47,6 +47,6 @@ func (e *StageError) Error() string {
 // expr.CompileError/EvalError or scope error.
 func (e *StageError) Unwrap() error { return e.Cause }
 
-// errEmptyStageName is the Cause of a StageError returned by New* constructors
+// ErrEmptyStageName is the Cause of a StageError returned by New* constructors
 // when given an empty stage name, before any compilation is attempted.
-var errEmptyStageName = errors.New("stage name must not be empty")
+var ErrEmptyStageName = errors.New("stage name must not be empty")

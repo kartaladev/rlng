@@ -1,6 +1,7 @@
-package expr
+package expr_test
 
 import (
+	"github.com/kartaladev/rlng/expr"
 	"reflect"
 	"testing"
 	"time"
@@ -16,7 +17,7 @@ func TestNewFunction(t *testing.T) {
 		name   string
 		fnName string
 		expr   string
-		opts   []Option
+		opts   []expr.Option
 		assert func(t *testing.T, err error)
 	}
 
@@ -26,7 +27,7 @@ func TestNewFunction(t *testing.T) {
 			fnName: "x",
 			expr:   "   ",
 			assert: func(t *testing.T, err error) {
-				require.ErrorIs(t, err, errEmptyExpression)
+				require.ErrorIs(t, err, expr.ErrEmptyExpression)
 			},
 		},
 		{
@@ -36,7 +37,7 @@ func TestNewFunction(t *testing.T) {
 			assert: func(t *testing.T, err error) {
 				require.Error(t, err)
 
-				var compileErr *CompileError
+				var compileErr *expr.CompileError
 				require.ErrorAs(t, err, &compileErr)
 			},
 		},
@@ -44,11 +45,11 @@ func TestNewFunction(t *testing.T) {
 			name:   "invalid fallback expression surfaces at construction",
 			fnName: "x",
 			expr:   "1 + 1",
-			opts:   []Option{WithFallback("(")},
+			opts:   []expr.Option{expr.WithFallback("(")},
 			assert: func(t *testing.T, err error) {
 				require.Error(t, err)
 
-				var compileErr *CompileError
+				var compileErr *expr.CompileError
 				require.ErrorAs(t, err, &compileErr)
 			},
 		},
@@ -58,7 +59,7 @@ func TestNewFunction(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := NewFunction(tc.fnName, tc.expr, tc.opts...)
+			_, err := expr.NewFunction(tc.fnName, tc.expr, tc.opts...)
 			tc.assert(t, err)
 		})
 	}
@@ -71,7 +72,7 @@ func TestFunction_Apply(t *testing.T) {
 		name   string
 		fnName string
 		expr   string
-		opts   []Option
+		opts   []expr.Option
 		env    any
 		assert func(t *testing.T, got any, err error)
 	}
@@ -101,7 +102,7 @@ func TestFunction_Apply(t *testing.T) {
 			name:   "fallback used on eval error",
 			fnName: "ratio",
 			expr:   "a % b",
-			opts:   []Option{WithFallback("-1")},
+			opts:   []expr.Option{expr.WithFallback("-1")},
 			env:    map[string]any{"a": 1, "b": 0}, // modulo by zero -> runtime error
 			assert: func(t *testing.T, got any, err error) {
 				require.NoError(t, err)
@@ -116,7 +117,7 @@ func TestFunction_Apply(t *testing.T) {
 			assert: func(t *testing.T, got any, err error) {
 				require.Error(t, err)
 
-				var evalErr *EvalError
+				var evalErr *expr.EvalError
 				require.ErrorAs(t, err, &evalErr)
 			},
 		},
@@ -126,22 +127,22 @@ func TestFunction_Apply(t *testing.T) {
 			expr:   "a % b", // main errors: modulo by zero
 			// fallback runs over an EMPTY env, so `z` is nil and `1 % z`
 			// errors at runtime (it is not constant-folded at compile time).
-			opts: []Option{WithFallback("1 % z")},
+			opts: []expr.Option{expr.WithFallback("1 % z")},
 			env:  map[string]any{"a": 1, "b": 0},
 			assert: func(t *testing.T, got any, err error) {
 				require.Error(t, err)
 
-				var evalErr *EvalError
+				var evalErr *expr.EvalError
 				require.ErrorAs(t, err, &evalErr)
 				assert.Equal(t, "1 % z", evalErr.Expression)
 				assert.NotEqual(t, "a % b", evalErr.Expression)
 			},
 		},
 		{
-			name:   "fallback honors WithReturnKind coercion",
+			name:   "fallback honors expr.WithReturnKind coercion",
 			fnName: "x",
 			expr:   "a % b", // main errors: modulo by zero -> fallback runs
-			opts:   []Option{WithFallback("0"), WithReturnKind(reflect.Float64)},
+			opts:   []expr.Option{expr.WithFallback("0"), expr.WithReturnKind(reflect.Float64)},
 			env:    map[string]any{"a": 1, "b": 0},
 			assert: func(t *testing.T, got any, err error) {
 				require.NoError(t, err)
@@ -153,12 +154,12 @@ func TestFunction_Apply(t *testing.T) {
 		{
 			name:   "fallback failure preserves the triggering main error",
 			fnName: "ratio",
-			expr:   "a % b",                         // main errors: modulo by zero
-			opts:   []Option{WithFallback("1 % z")}, // fallback also errors over empty env
+			expr:   "a % b",                                   // main errors: modulo by zero
+			opts:   []expr.Option{expr.WithFallback("1 % z")}, // fallback also errors over empty env
 			env:    map[string]any{"a": 1, "b": 0},
 			assert: func(t *testing.T, got any, err error) {
 				require.Error(t, err)
-				var evalErr *EvalError
+				var evalErr *expr.EvalError
 				require.ErrorAs(t, err, &evalErr)
 				joined, ok := evalErr.Cause.(interface{ Unwrap() []error })
 				require.True(t, ok, "a fallback failure should join the main error into the cause")
@@ -169,7 +170,7 @@ func TestFunction_Apply(t *testing.T) {
 			name:   "fallback used on nil result",
 			fnName: "x",
 			expr:   "nil",
-			opts:   []Option{WithFallback("42")},
+			opts:   []expr.Option{expr.WithFallback("42")},
 			env:    nil,
 			assert: func(t *testing.T, got any, err error) {
 				require.NoError(t, err)
@@ -187,10 +188,10 @@ func TestFunction_Apply(t *testing.T) {
 			},
 		},
 		{
-			name:   "WithReturnKind coerces the result",
+			name:   "expr.WithReturnKind coerces the result",
 			fnName: "x",
 			expr:   "1 + 1",
-			opts:   []Option{WithReturnKind(reflect.Float64)},
+			opts:   []expr.Option{expr.WithReturnKind(reflect.Float64)},
 			env:    nil,
 			assert: func(t *testing.T, got any, err error) {
 				require.NoError(t, err)
@@ -201,7 +202,7 @@ func TestFunction_Apply(t *testing.T) {
 			name:   "global default used",
 			fnName: "total",
 			expr:   "price * qty",
-			opts:   []Option{WithGlobals(map[string]any{"qty": 2})},
+			opts:   []expr.Option{expr.WithGlobals(map[string]any{"qty": 2})},
 			env:    map[string]any{"price": 10},
 			assert: func(t *testing.T, got any, err error) {
 				require.NoError(t, err)
@@ -224,7 +225,7 @@ func TestFunction_Apply(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			f, err := NewFunction(tc.fnName, tc.expr, tc.opts...)
+			f, err := expr.NewFunction(tc.fnName, tc.expr, tc.opts...)
 			require.NoError(t, err)
 
 			got, err := f.Apply(tc.env)

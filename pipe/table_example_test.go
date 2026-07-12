@@ -1,14 +1,14 @@
-package stage_test
+package pipe_test
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/kartaladev/rlng/stage"
+	"github.com/kartaladev/rlng/pipe"
 )
 
 func ExampleDecisionTable() {
-	d, err := stage.NewDecisionTable("tier", []stage.Rule{
+	d, err := pipe.NewDecisionTable("tier", []pipe.Rule{
 		{Condition: "amount >= 1000", Decisions: map[string]string{"level": `"gold"`}},
 		{Condition: "amount >= 100", Decisions: map[string]string{"level": `"silver"`}},
 	})
@@ -17,7 +17,7 @@ func ExampleDecisionTable() {
 		return
 	}
 
-	sc := stage.NewScope(map[string]any{"amount": 5000})
+	sc := pipe.NewScope(map[string]any{"amount": 5000})
 	if err := d.Execute(context.TODO(), sc); err != nil {
 		fmt.Println("error:", err)
 		return

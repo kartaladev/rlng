@@ -1,14 +1,14 @@
-package stage_test
+package pipe_test
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/kartaladev/rlng/stage"
+	"github.com/kartaladev/rlng/pipe"
 )
 
 func ExampleMultiExpr() {
-	m, err := stage.NewMultiExpr("calc", []stage.NamedExpr{
+	m, err := pipe.NewMultiExpr("calc", []pipe.NamedExpr{
 		{Name: "base", Expression: "price * qty", Priority: 0},
 		{Name: "taxed", Expression: "base * 1.1", Priority: 1},
 	})
@@ -17,7 +17,7 @@ func ExampleMultiExpr() {
 		return
 	}
 
-	sc := stage.NewScope(map[string]any{"price": 10.0, "qty": 2.0})
+	sc := pipe.NewScope(map[string]any{"price": 10.0, "qty": 2.0})
 	if err := m.Execute(context.TODO(), sc); err != nil {
 		fmt.Println("error:", err)
 		return

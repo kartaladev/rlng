@@ -9,9 +9,9 @@ import (
 // expression evaluates to a non-boolean value.
 var ErrNotBool = errors.New("expression did not evaluate to bool")
 
-// errEmptyExpression is returned (wrapped in a CompileError) when an empty or
+// ErrEmptyExpression is returned (wrapped in a CompileError) when an empty or
 // whitespace-only expression is supplied to NewPredicate/NewFunction.
-var errEmptyExpression = errors.New("expression must not be empty")
+var ErrEmptyExpression = errors.New("expression must not be empty")
 
 // CompileError reports a failure to compile an expression. It names the field
 // (if any) and the offending expression, and unwraps to the underlying cause.

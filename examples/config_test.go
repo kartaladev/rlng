@@ -8,9 +8,9 @@ import (
 	"github.com/kartaladev/rlng/config"
 )
 
-// Example_configBareEngine loads a pipeline from a JSON definition and runs it
-// through a BareEngine, which returns the raw accumulated map[string]any.
-func Example_configBareEngine() {
+// Example_configEngine loads a pipeline from a JSON definition and runs it
+// through an Engine, which returns the raw accumulated map[string]any.
+func Example_configEngine() {
 	def, err := config.ParseJSON([]byte(`{
 		"stages": [
 			{"name": "base", "type": "single-expr", "expr": "price * qty"},
@@ -27,7 +27,11 @@ func Example_configBareEngine() {
 		return
 	}
 
-	engine := rlng.NewBareEngine(pipeline)
+	engine, err := rlng.New(pipeline)
+	if err != nil {
+		fmt.Println("engine:", err)
+		return
+	}
 	out, err := engine.Evaluate(context.Background(), map[string]any{"price": 10, "qty": 2})
 	if err != nil {
 		fmt.Println("evaluate:", err)
@@ -39,10 +43,10 @@ func Example_configBareEngine() {
 	// base=20 taxed=22.0
 }
 
-// Example_configBareEngine_yaml loads the same kind of pipeline from a YAML
+// Example_configEngine_yaml loads the same kind of pipeline from a YAML
 // definition (stage expressions use the scalar-shorthand string form) and
-// runs it through a BareEngine.
-func Example_configBareEngine_yaml() {
+// runs it through an Engine.
+func Example_configEngine_yaml() {
 	def, err := config.ParseYAML([]byte(`
 stages:
   - name: base
@@ -63,7 +67,11 @@ stages:
 		return
 	}
 
-	engine := rlng.NewBareEngine(pipeline)
+	engine, err := rlng.New(pipeline)
+	if err != nil {
+		fmt.Println("engine:", err)
+		return
+	}
 	out, err := engine.Evaluate(context.Background(), map[string]any{"price": 10, "qty": 2})
 	if err != nil {
 		fmt.Println("evaluate:", err)

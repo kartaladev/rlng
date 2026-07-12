@@ -1,10 +1,12 @@
-package stage
+package pipe_test
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
 
+	"github.com/kartaladev/rlng/pipe"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -14,21 +16,20 @@ func TestScopeJSONRoundTrip(t *testing.T) {
 
 	type testCase struct {
 		name   string
-		build  func() *Scope
-		assert func(t *testing.T, blob []byte, reloaded *Scope)
+		build  func() *pipe.Scope
+		assert func(t *testing.T, blob []byte, reloaded *pipe.Scope)
 	}
 
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	fixedClock := func() time.Time { return start }
 
 	cases := []testCase{
 		{
 			name: "data only, no run, no provenance",
-			build: func() *Scope {
-				sc := NewScope(map[string]any{"a": "x"})
+			build: func() *pipe.Scope {
+				sc := pipe.NewScope(map[string]any{"a": "x"})
 				return sc
 			},
-			assert: func(t *testing.T, blob []byte, reloaded *Scope) {
+			assert: func(t *testing.T, blob []byte, reloaded *pipe.Scope) {
 				assert.NotContains(t, string(blob), "timing")
 				assert.NotContains(t, string(blob), "derivations")
 				v, ok := reloaded.Get("a")
@@ -38,13 +39,13 @@ func TestScopeJSONRoundTrip(t *testing.T) {
 		},
 		{
 			name: "timing present after a run",
-			build: func() *Scope {
-				sc := NewScope(map[string]any{"a": 1}, WithClock(fixedClock))
-				sc.markStarted()
-				sc.markFinished()
+			build: func() *pipe.Scope {
+				sc := pipe.NewScope(map[string]any{"a": 1}, pipe.WithClock(fixedClock{t: start}))
+				p, _ := pipe.NewPipeline()
+				_ = p.Run(context.Background(), sc)
 				return sc
 			},
-			assert: func(t *testing.T, blob []byte, reloaded *Scope) {
+			assert: func(t *testing.T, blob []byte, reloaded *pipe.Scope) {
 				assert.Contains(t, string(blob), "\"timing\"")
 				at, ok := reloaded.StartedAt()
 				require.True(t, ok)
@@ -56,15 +57,15 @@ func TestScopeJSONRoundTrip(t *testing.T) {
 		},
 		{
 			name: "provenance derivations round-trip and restore inspection",
-			build: func() *Scope {
-				sc := NewScope(map[string]any{"price": 10}, WithProvenance())
-				require.NoError(t, sc.Derive("base", 20, Derivation{
-					Stage: "base", StageType: TypeSingleExpr, Operation: "eval",
+			build: func() *pipe.Scope {
+				sc := pipe.NewScope(map[string]any{"price": 10}, pipe.WithProvenance())
+				require.NoError(t, sc.Derive("base", 20, pipe.Derivation{
+					Stage: "base", StageType: pipe.TypeSingleExpr, Operation: "eval",
 					Expression: "price * 2", Inputs: map[string]any{"price": 10},
 				}))
 				return sc
 			},
-			assert: func(t *testing.T, blob []byte, reloaded *Scope) {
+			assert: func(t *testing.T, blob []byte, reloaded *pipe.Scope) {
 				assert.Contains(t, string(blob), "\"derivations\"")
 				assert.True(t, reloaded.TracksProvenance())
 				d, ok := reloaded.Derivation("base")
@@ -75,13 +76,13 @@ func TestScopeJSONRoundTrip(t *testing.T) {
 		},
 		{
 			name: "byte-stable round-trip (marshal->unmarshal->marshal)",
-			build: func() *Scope {
-				sc := NewScope(map[string]any{"a": 1.5, "b": "y"}, WithClock(fixedClock))
-				sc.markStarted()
-				sc.markFinished()
+			build: func() *pipe.Scope {
+				sc := pipe.NewScope(map[string]any{"a": 1.5, "b": "y"}, pipe.WithClock(fixedClock{t: start}))
+				p, _ := pipe.NewPipeline()
+				_ = p.Run(context.Background(), sc)
 				return sc
 			},
-			assert: func(t *testing.T, blob []byte, reloaded *Scope) {
+			assert: func(t *testing.T, blob []byte, reloaded *pipe.Scope) {
 				again, err := json.Marshal(reloaded)
 				require.NoError(t, err)
 				assert.JSONEq(t, string(blob), string(again))
@@ -96,7 +97,7 @@ func TestScopeJSONRoundTrip(t *testing.T) {
 			blob, err := json.Marshal(sc)
 			require.NoError(t, err)
 
-			var reloaded Scope
+			var reloaded pipe.Scope
 			require.NoError(t, json.Unmarshal(blob, &reloaded))
 			tc.assert(t, blob, &reloaded)
 		})
@@ -115,11 +116,11 @@ func TestScopeJSONValuePreservation(t *testing.T) {
 		assert.NotEqual(t, big, int64(float64(big)))
 		assert.Equal(t, float64(9007199254740992), float64(big))
 
-		sc := NewScope(map[string]any{"cents": big})
+		sc := pipe.NewScope(map[string]any{"cents": big})
 		blob, err := json.Marshal(sc)
 		require.NoError(t, err)
 
-		var reloaded Scope
+		var reloaded pipe.Scope
 		require.NoError(t, json.Unmarshal(blob, &reloaded))
 
 		got, err := reloaded.GetInt64("cents")
@@ -131,15 +132,15 @@ func TestScopeJSONValuePreservation(t *testing.T) {
 		t.Parallel()
 		const big int64 = 9007199254740993 // 2^53 + 1
 
-		sc := NewScope(map[string]any{}, WithProvenance())
-		require.NoError(t, sc.Derive("cents", big, Derivation{
-			Stage: "calc", StageType: TypeSingleExpr, Operation: "eval",
+		sc := pipe.NewScope(map[string]any{}, pipe.WithProvenance())
+		require.NoError(t, sc.Derive("cents", big, pipe.Derivation{
+			Stage: "calc", StageType: pipe.TypeSingleExpr, Operation: "eval",
 			Expression: "amount", Inputs: map[string]any{"amount": big},
 		}))
 		blob, err := json.Marshal(sc)
 		require.NoError(t, err)
 
-		var reloaded Scope
+		var reloaded pipe.Scope
 		require.NoError(t, json.Unmarshal(blob, &reloaded))
 
 		// data value exact.
@@ -160,11 +161,11 @@ func TestScopeJSONValuePreservation(t *testing.T) {
 
 	t.Run("reloaded int is readable by GetInt and GetFloat64", func(t *testing.T) {
 		t.Parallel()
-		sc := NewScope(map[string]any{"n": 20})
+		sc := pipe.NewScope(map[string]any{"n": 20})
 		blob, err := json.Marshal(sc)
 		require.NoError(t, err)
 
-		var reloaded Scope
+		var reloaded pipe.Scope
 		require.NoError(t, json.Unmarshal(blob, &reloaded))
 
 		i, err := reloaded.GetInt("n")
@@ -178,15 +179,15 @@ func TestScopeJSONValuePreservation(t *testing.T) {
 
 	t.Run("GetInt64 on reloaded non-integer json.Number errors", func(t *testing.T) {
 		t.Parallel()
-		sc := NewScope(map[string]any{"r": 1.5})
+		sc := pipe.NewScope(map[string]any{"r": 1.5})
 		blob, err := json.Marshal(sc)
 		require.NoError(t, err)
 
-		var reloaded Scope
+		var reloaded pipe.Scope
 		require.NoError(t, json.Unmarshal(blob, &reloaded))
 
 		_, err = reloaded.GetInt64("r")
-		var typeErr *ScopeTypeError
+		var typeErr *pipe.ScopeTypeError
 		require.ErrorAs(t, err, &typeErr)
 		assert.Equal(t, "r", typeErr.Path)
 		assert.Equal(t, "int64", typeErr.Expected)
@@ -194,15 +195,15 @@ func TestScopeJSONValuePreservation(t *testing.T) {
 
 	t.Run("GetFloat64 on reloaded out-of-range json.Number errors", func(t *testing.T) {
 		t.Parallel()
-		sc := NewScope(map[string]any{"huge": json.Number("1e400")})
+		sc := pipe.NewScope(map[string]any{"huge": json.Number("1e400")})
 		blob, err := json.Marshal(sc)
 		require.NoError(t, err)
 
-		var reloaded Scope
+		var reloaded pipe.Scope
 		require.NoError(t, json.Unmarshal(blob, &reloaded))
 
 		_, err = reloaded.GetFloat64("huge")
-		var typeErr *ScopeTypeError
+		var typeErr *pipe.ScopeTypeError
 		require.ErrorAs(t, err, &typeErr)
 		assert.Equal(t, "huge", typeErr.Path)
 		assert.Equal(t, "float64", typeErr.Expected)
@@ -218,7 +219,7 @@ func TestScopeGetIntOnReloadedErrors(t *testing.T) {
 	type testCase struct {
 		name   string
 		path   string
-		build  func() *Scope
+		build  func() *pipe.Scope
 		assert func(t *testing.T, err error)
 	}
 
@@ -226,17 +227,17 @@ func TestScopeGetIntOnReloadedErrors(t *testing.T) {
 		{
 			name: "non-integer json.Number",
 			path: "r",
-			build: func() *Scope {
-				sc := NewScope(map[string]any{"r": 1.5})
+			build: func() *pipe.Scope {
+				sc := pipe.NewScope(map[string]any{"r": 1.5})
 				blob, err := json.Marshal(sc)
 				require.NoError(t, err)
 
-				var reloaded Scope
+				var reloaded pipe.Scope
 				require.NoError(t, json.Unmarshal(blob, &reloaded))
 				return &reloaded
 			},
 			assert: func(t *testing.T, err error) {
-				var typeErr *ScopeTypeError
+				var typeErr *pipe.ScopeTypeError
 				require.ErrorAs(t, err, &typeErr)
 				assert.Equal(t, "r", typeErr.Path)
 				assert.Equal(t, "int", typeErr.Expected)
@@ -245,17 +246,17 @@ func TestScopeGetIntOnReloadedErrors(t *testing.T) {
 		{
 			name: "non-numeric value via default branch",
 			path: "s",
-			build: func() *Scope {
-				sc := NewScope(map[string]any{"s": "not a number"})
+			build: func() *pipe.Scope {
+				sc := pipe.NewScope(map[string]any{"s": "not a number"})
 				blob, err := json.Marshal(sc)
 				require.NoError(t, err)
 
-				var reloaded Scope
+				var reloaded pipe.Scope
 				require.NoError(t, json.Unmarshal(blob, &reloaded))
 				return &reloaded
 			},
 			assert: func(t *testing.T, err error) {
-				var typeErr *ScopeTypeError
+				var typeErr *pipe.ScopeTypeError
 				require.ErrorAs(t, err, &typeErr)
 				assert.Equal(t, "string", typeErr.Actual)
 			},
@@ -279,14 +280,14 @@ func TestScopeUnmarshalErrors(t *testing.T) {
 	type testCase struct {
 		name   string
 		input  string
-		assert func(t *testing.T, s *Scope, err error)
+		assert func(t *testing.T, s *pipe.Scope, err error)
 	}
 
 	cases := []testCase{
 		{
 			name:  "malformed json is an error",
 			input: `{bad`,
-			assert: func(t *testing.T, s *Scope, err error) {
+			assert: func(t *testing.T, s *pipe.Scope, err error) {
 				require.Error(t, err)
 			},
 		},
@@ -295,14 +296,14 @@ func TestScopeUnmarshalErrors(t *testing.T) {
 			// the inner Decode (timing must be an object, not a number).
 			name:  "type-mismatched envelope is a decode error",
 			input: `{"data":{},"timing":5}`,
-			assert: func(t *testing.T, s *Scope, err error) {
+			assert: func(t *testing.T, s *pipe.Scope, err error) {
 				require.Error(t, err)
 			},
 		},
 		{
 			name:  "absent data yields empty (not nil) map",
 			input: `{"timing":{"started_at":"2026-01-01T00:00:00Z","duration_ns":0}}`,
-			assert: func(t *testing.T, s *Scope, err error) {
+			assert: func(t *testing.T, s *pipe.Scope, err error) {
 				require.NoError(t, err)
 				assert.NotNil(t, s.Snapshot())
 				assert.Empty(t, s.Snapshot())
@@ -313,7 +314,7 @@ func TestScopeUnmarshalErrors(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			var s Scope
+			var s pipe.Scope
 			err := json.Unmarshal([]byte(tc.input), &s)
 			tc.assert(t, &s, err)
 		})

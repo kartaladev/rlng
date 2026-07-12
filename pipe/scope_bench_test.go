@@ -1,11 +1,15 @@
-package stage
+package pipe_test
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/kartaladev/rlng/pipe"
+)
 
 // BenchmarkScopeSet measures a bare Set on a Scope created without
 // WithProvenance — the baseline write path.
 func BenchmarkScopeSet(b *testing.B) {
-	sc := NewScope(map[string]any{"price": 10, "qty": 2})
+	sc := pipe.NewScope(map[string]any{"price": 10, "qty": 2})
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -18,8 +22,8 @@ func BenchmarkScopeSet(b *testing.B) {
 // allocs/op must match BenchmarkScopeSet — proving the provenance-off path
 // adds no cost.
 func BenchmarkScopeDeriveOff(b *testing.B) {
-	sc := NewScope(map[string]any{"price": 10, "qty": 2})
-	d := Derivation{Stage: "total", StageType: TypeSingleExpr, Operation: "eval", Expression: "price * qty"}
+	sc := pipe.NewScope(map[string]any{"price": 10, "qty": 2})
+	d := pipe.Derivation{Stage: "total", StageType: pipe.TypeSingleExpr, Operation: "eval", Expression: "price * qty"}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -30,8 +34,8 @@ func BenchmarkScopeDeriveOff(b *testing.B) {
 // BenchmarkScopeDeriveOn measures Derive on a Scope created WITH
 // WithProvenance, where each call also records a Derivation.
 func BenchmarkScopeDeriveOn(b *testing.B) {
-	sc := NewScope(map[string]any{"price": 10, "qty": 2}, WithProvenance())
-	d := Derivation{Stage: "total", StageType: TypeSingleExpr, Operation: "eval", Expression: "price * qty"}
+	sc := pipe.NewScope(map[string]any{"price": 10, "qty": 2}, pipe.WithProvenance())
+	d := pipe.Derivation{Stage: "total", StageType: pipe.TypeSingleExpr, Operation: "eval", Expression: "price * qty"}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -42,14 +46,14 @@ func BenchmarkScopeDeriveOn(b *testing.B) {
 // BenchmarkExplain measures rendering the derivation tree for a value with one
 // upstream input, on a provenance-enabled Scope.
 func BenchmarkExplain(b *testing.B) {
-	sc := NewScope(map[string]any{"price": 10, "qty": 2}, WithProvenance())
-	baseDerivation := Derivation{
-		Stage: "base", StageType: TypeSingleExpr, Operation: "eval",
+	sc := pipe.NewScope(map[string]any{"price": 10, "qty": 2}, pipe.WithProvenance())
+	baseDerivation := pipe.Derivation{
+		Stage: "base", StageType: pipe.TypeSingleExpr, Operation: "eval",
 		Expression: "price * qty", Inputs: map[string]any{"price": 10, "qty": 2},
 	}
 	_ = sc.Derive("base", 20, baseDerivation)
-	taxedDerivation := Derivation{
-		Stage: "taxed", StageType: TypeSingleExpr, Operation: "eval",
+	taxedDerivation := pipe.Derivation{
+		Stage: "taxed", StageType: pipe.TypeSingleExpr, Operation: "eval",
 		Expression: "base * 1.1", Inputs: map[string]any{"base": 20},
 	}
 	_ = sc.Derive("taxed", 22, taxedDerivation)

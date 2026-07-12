@@ -1,9 +1,10 @@
-package stage
+package pipe_test
 
 import (
 	"context"
 	"testing"
 
+	"github.com/kartaladev/rlng/pipe"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -13,23 +14,23 @@ func TestMultiExprExecute(t *testing.T) {
 
 	type testCase struct {
 		name   string
-		build  func(t *testing.T) (*MultiExpr, *Scope)
+		build  func(t *testing.T) (*pipe.MultiExpr, *pipe.Scope)
 		ctx    func(ctx context.Context) context.Context
-		assert func(t *testing.T, sc *Scope, err error)
+		assert func(t *testing.T, sc *pipe.Scope, err error)
 	}
 
 	cases := []testCase{
 		{
 			name: "writes each result under stage.name",
-			build: func(t *testing.T) (*MultiExpr, *Scope) {
-				m, err := NewMultiExpr("calc", []NamedExpr{
+			build: func(t *testing.T) (*pipe.MultiExpr, *pipe.Scope) {
+				m, err := pipe.NewMultiExpr("calc", []pipe.NamedExpr{
 					{Name: "base", Expression: "price * qty", Priority: 0},
 					{Name: "taxed", Expression: "base * 1.1", Priority: 1},
 				})
 				require.NoError(t, err)
-				return m, NewScope(map[string]any{"price": 10.0, "qty": 2.0})
+				return m, pipe.NewScope(map[string]any{"price": 10.0, "qty": 2.0})
 			},
-			assert: func(t *testing.T, sc *Scope, err error) {
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
 				require.NoError(t, err)
 				base, ok := sc.Get("calc.base")
 				require.True(t, ok)
@@ -41,17 +42,17 @@ func TestMultiExprExecute(t *testing.T) {
 		},
 		{
 			name: "priority controls visibility order",
-			build: func(t *testing.T) (*MultiExpr, *Scope) {
+			build: func(t *testing.T) (*pipe.MultiExpr, *pipe.Scope) {
 				// 'taxed' references 'base'; declaring it first but with a higher
 				// priority number must still evaluate 'base' first.
-				m, err := NewMultiExpr("calc", []NamedExpr{
+				m, err := pipe.NewMultiExpr("calc", []pipe.NamedExpr{
 					{Name: "taxed", Expression: "base * 2", Priority: 10},
 					{Name: "base", Expression: "5", Priority: 1},
 				})
 				require.NoError(t, err)
-				return m, NewScope(nil)
+				return m, pipe.NewScope(nil)
 			},
-			assert: func(t *testing.T, sc *Scope, err error) {
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
 				require.NoError(t, err)
 				taxed, ok := sc.Get("calc.taxed")
 				require.True(t, ok)
@@ -60,17 +61,17 @@ func TestMultiExprExecute(t *testing.T) {
 		},
 		{
 			name: "equal priority preserves declaration order",
-			build: func(t *testing.T) (*MultiExpr, *Scope) {
+			build: func(t *testing.T) (*pipe.MultiExpr, *pipe.Scope) {
 				// Both priority 0; 'later' references 'alpha', so a stable sort
 				// must keep declaration order for 'later' to see 'alpha'.
-				m, err := NewMultiExpr("calc", []NamedExpr{
+				m, err := pipe.NewMultiExpr("calc", []pipe.NamedExpr{
 					{Name: "alpha", Expression: "5", Priority: 0},
 					{Name: "later", Expression: "alpha + 1", Priority: 0},
 				})
 				require.NoError(t, err)
-				return m, NewScope(nil)
+				return m, pipe.NewScope(nil)
 			},
-			assert: func(t *testing.T, sc *Scope, err error) {
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
 				require.NoError(t, err)
 				later, ok := sc.Get("calc.later")
 				require.True(t, ok)
@@ -79,37 +80,37 @@ func TestMultiExprExecute(t *testing.T) {
 		},
 		{
 			name: "canceled context short-circuits",
-			build: func(t *testing.T) (*MultiExpr, *Scope) {
-				m, err := NewMultiExpr("calc", []NamedExpr{{Name: "x", Expression: "1"}})
+			build: func(t *testing.T) (*pipe.MultiExpr, *pipe.Scope) {
+				m, err := pipe.NewMultiExpr("calc", []pipe.NamedExpr{{Name: "x", Expression: "1"}})
 				require.NoError(t, err)
-				return m, NewScope(nil)
+				return m, pipe.NewScope(nil)
 			},
 			ctx: func(ctx context.Context) context.Context {
 				cctx, cancel := context.WithCancel(ctx)
 				cancel()
 				return cctx
 			},
-			assert: func(t *testing.T, sc *Scope, err error) {
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
 				require.ErrorIs(t, err, context.Canceled)
 			},
 		},
 		{
 			name: "provenance on records each expr's derivation",
-			build: func(t *testing.T) (*MultiExpr, *Scope) {
-				m, err := NewMultiExpr("calc", []NamedExpr{
+			build: func(t *testing.T) (*pipe.MultiExpr, *pipe.Scope) {
+				m, err := pipe.NewMultiExpr("calc", []pipe.NamedExpr{
 					{Name: "base", Expression: "price * qty", Priority: 0},
 					{Name: "taxed", Expression: "base * 1.1", Priority: 1},
 				})
 				require.NoError(t, err)
-				return m, NewScope(map[string]any{"price": 10.0, "qty": 2.0}, WithProvenance())
+				return m, pipe.NewScope(map[string]any{"price": 10.0, "qty": 2.0}, pipe.WithProvenance())
 			},
-			assert: func(t *testing.T, sc *Scope, err error) {
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
 				require.NoError(t, err)
 
 				base, ok := sc.Derivation("calc.base")
 				require.True(t, ok)
 				assert.Equal(t, "calc", base.Stage)
-				assert.Equal(t, TypeMultiExpr, base.StageType)
+				assert.Equal(t, pipe.TypeMultiExpr, base.StageType)
 				assert.Equal(t, "expr:base", base.Operation)
 				assert.Equal(t, "price * qty", base.Expression)
 				assert.Equal(t, map[string]any{"price": 10.0, "qty": 2.0}, base.Inputs)
@@ -124,53 +125,53 @@ func TestMultiExprExecute(t *testing.T) {
 		},
 		{
 			name: "eval error surfaces as StageError",
-			build: func(t *testing.T) (*MultiExpr, *Scope) {
-				m, err := NewMultiExpr("calc", []NamedExpr{{Name: "x", Expression: "a % b"}})
+			build: func(t *testing.T) (*pipe.MultiExpr, *pipe.Scope) {
+				m, err := pipe.NewMultiExpr("calc", []pipe.NamedExpr{{Name: "x", Expression: "a % b"}})
 				require.NoError(t, err)
-				return m, NewScope(map[string]any{"a": 1, "b": 0})
+				return m, pipe.NewScope(map[string]any{"a": 1, "b": 0})
 			},
-			assert: func(t *testing.T, sc *Scope, err error) {
-				var se *StageError
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
 				assert.Equal(t, "calc", se.Stage)
-				assert.Equal(t, TypeMultiExpr, se.Type)
+				assert.Equal(t, pipe.TypeMultiExpr, se.Type)
 			},
 		},
 		{
 			name: "write conflict surfaces as StageError",
-			build: func(t *testing.T) (*MultiExpr, *Scope) {
+			build: func(t *testing.T) (*pipe.MultiExpr, *pipe.Scope) {
 				// The scalar seed "calc" collides with the stage namespace, so
 				// Set("calc.base", …) fails with ErrPathNotMap (provenance off).
-				m, err := NewMultiExpr("calc", []NamedExpr{
+				m, err := pipe.NewMultiExpr("calc", []pipe.NamedExpr{
 					{Name: "base", Expression: "price * qty", Priority: 0},
 				})
 				require.NoError(t, err)
-				return m, NewScope(map[string]any{"calc": 1, "price": 10.0, "qty": 2.0})
+				return m, pipe.NewScope(map[string]any{"calc": 1, "price": 10.0, "qty": 2.0})
 			},
-			assert: func(t *testing.T, sc *Scope, err error) {
-				var se *StageError
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
 				assert.Equal(t, "calc", se.Stage)
-				assert.Equal(t, TypeMultiExpr, se.Type)
-				assert.ErrorIs(t, se, ErrPathNotMap)
+				assert.Equal(t, pipe.TypeMultiExpr, se.Type)
+				assert.ErrorIs(t, se, pipe.ErrPathNotMap)
 			},
 		},
 		{
 			name: "provenance on: write conflict surfaces as StageError",
-			build: func(t *testing.T) (*MultiExpr, *Scope) {
+			build: func(t *testing.T) (*pipe.MultiExpr, *pipe.Scope) {
 				// Same collision as above, on the provenance write path (Derive).
-				m, err := NewMultiExpr("calc", []NamedExpr{
+				m, err := pipe.NewMultiExpr("calc", []pipe.NamedExpr{
 					{Name: "base", Expression: "price * qty", Priority: 0},
 				})
 				require.NoError(t, err)
-				return m, NewScope(map[string]any{"calc": 1, "price": 10.0, "qty": 2.0}, WithProvenance())
+				return m, pipe.NewScope(map[string]any{"calc": 1, "price": 10.0, "qty": 2.0}, pipe.WithProvenance())
 			},
-			assert: func(t *testing.T, sc *Scope, err error) {
-				var se *StageError
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
 				assert.Equal(t, "calc", se.Stage)
-				assert.Equal(t, TypeMultiExpr, se.Type)
-				assert.ErrorIs(t, se, ErrPathNotMap)
+				assert.Equal(t, pipe.TypeMultiExpr, se.Type)
+				assert.ErrorIs(t, se, pipe.ErrPathNotMap)
 			},
 		},
 	}
@@ -196,7 +197,7 @@ func TestNewMultiExprValidation(t *testing.T) {
 	type testCase struct {
 		name      string
 		stageName string
-		exprs     []NamedExpr
+		exprs     []pipe.NamedExpr
 		assert    func(t *testing.T, err error)
 	}
 
@@ -206,50 +207,50 @@ func TestNewMultiExprValidation(t *testing.T) {
 			stageName: "calc",
 			exprs:     nil,
 			assert: func(t *testing.T, err error) {
-				var se *StageError
+				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
 			},
 		},
 		{
 			name:      "empty stage name is rejected",
 			stageName: "",
-			exprs:     []NamedExpr{{Name: "a", Expression: "1"}},
+			exprs:     []pipe.NamedExpr{{Name: "a", Expression: "1"}},
 			assert: func(t *testing.T, err error) {
-				var se *StageError
+				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
-				assert.Equal(t, TypeMultiExpr, se.Type)
-				assert.ErrorIs(t, se, errEmptyStageName)
+				assert.Equal(t, pipe.TypeMultiExpr, se.Type)
+				assert.ErrorIs(t, se, pipe.ErrEmptyStageName)
 			},
 		},
 		{
 			name:      "empty name is rejected",
 			stageName: "calc",
-			exprs:     []NamedExpr{{Name: "", Expression: "1"}},
+			exprs:     []pipe.NamedExpr{{Name: "", Expression: "1"}},
 			assert: func(t *testing.T, err error) {
-				var se *StageError
+				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
 			},
 		},
 		{
 			name:      "duplicate name is rejected",
 			stageName: "calc",
-			exprs: []NamedExpr{
+			exprs: []pipe.NamedExpr{
 				{Name: "a", Expression: "1"},
 				{Name: "a", Expression: "2"},
 			},
 			assert: func(t *testing.T, err error) {
-				var se *StageError
+				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
 			},
 		},
 		{
 			name:      "expression fails to compile",
 			stageName: "calc",
-			exprs:     []NamedExpr{{Name: "a", Expression: "x +"}},
+			exprs:     []pipe.NamedExpr{{Name: "a", Expression: "x +"}},
 			assert: func(t *testing.T, err error) {
-				var se *StageError
+				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
-				assert.Equal(t, TypeMultiExpr, se.Type)
+				assert.Equal(t, pipe.TypeMultiExpr, se.Type)
 			},
 		},
 	}
@@ -257,7 +258,7 @@ func TestNewMultiExprValidation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := NewMultiExpr(tc.stageName, tc.exprs)
+			_, err := pipe.NewMultiExpr(tc.stageName, tc.exprs)
 			tc.assert(t, err)
 		})
 	}
@@ -266,9 +267,9 @@ func TestNewMultiExprValidation(t *testing.T) {
 func TestMultiExprAccessors(t *testing.T) {
 	t.Parallel()
 
-	m, err := NewMultiExpr("calc", []NamedExpr{{Name: "a", Expression: "1"}}, WithDependsOn("seed"))
+	m, err := pipe.NewMultiExpr("calc", []pipe.NamedExpr{{Name: "a", Expression: "1"}}, pipe.WithDependsOn("seed"))
 	require.NoError(t, err)
 	assert.Equal(t, "calc", m.Name())
-	assert.Equal(t, TypeMultiExpr, m.Type())
+	assert.Equal(t, pipe.TypeMultiExpr, m.Type())
 	assert.Equal(t, []string{"seed"}, m.DependsOn())
 }

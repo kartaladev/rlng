@@ -1,10 +1,11 @@
-package config
+package config_test
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/kartaladev/rlng/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -26,14 +27,14 @@ func TestParseYAML(t *testing.T) {
 	type testCase struct {
 		name   string
 		yaml   string
-		assert func(t *testing.T, d *PipelineDef, err error)
+		assert func(t *testing.T, d *config.PipelineDef, err error)
 	}
 
 	cases := []testCase{
 		{
 			name: "valid preserves order and shorthand",
 			yaml: sampleYAML,
-			assert: func(t *testing.T, d *PipelineDef, err error) {
+			assert: func(t *testing.T, d *config.PipelineDef, err error) {
 				require.NoError(t, err)
 				require.Len(t, d.Stages, 2)
 				assert.Equal(t, "base", d.Stages[0].Name)
@@ -45,23 +46,23 @@ func TestParseYAML(t *testing.T) {
 		{
 			name: "malformed yaml errors",
 			yaml: "stages: [unclosed",
-			assert: func(t *testing.T, d *PipelineDef, err error) {
-				var ce *ConfigError
+			assert: func(t *testing.T, d *config.PipelineDef, err error) {
+				var ce *config.ConfigError
 				require.ErrorAs(t, err, &ce)
 			},
 		},
 		{
 			name: "unknown key is rejected",
 			yaml: "stages:\n  - name: x\n    type: single-expr\n    expr: \"1\"\n    hitpolicy: collect\n",
-			assert: func(t *testing.T, d *PipelineDef, err error) {
-				var ce *ConfigError
+			assert: func(t *testing.T, d *config.PipelineDef, err error) {
+				var ce *config.ConfigError
 				require.ErrorAs(t, err, &ce, "a misspelled key must be a clear error, not silently dropped")
 			},
 		},
 		{
 			name: "empty document is an empty def (Build rejects it)",
 			yaml: "",
-			assert: func(t *testing.T, d *PipelineDef, err error) {
+			assert: func(t *testing.T, d *config.PipelineDef, err error) {
 				require.NoError(t, err)
 				require.NotNil(t, d)
 				assert.Empty(t, d.Stages)
@@ -72,7 +73,7 @@ func TestParseYAML(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			d, err := ParseYAML([]byte(tc.yaml))
+			d, err := config.ParseYAML([]byte(tc.yaml))
 			tc.assert(t, d, err)
 		})
 	}
@@ -84,14 +85,14 @@ func TestParseJSON(t *testing.T) {
 	type testCase struct {
 		name   string
 		json   string
-		assert func(t *testing.T, d *PipelineDef, err error)
+		assert func(t *testing.T, d *config.PipelineDef, err error)
 	}
 
 	cases := []testCase{
 		{
 			name: "valid",
 			json: `{"stages":[{"name":"base","type":"single-expr","expr":"price * qty"}]}`,
-			assert: func(t *testing.T, d *PipelineDef, err error) {
+			assert: func(t *testing.T, d *config.PipelineDef, err error) {
 				require.NoError(t, err)
 				require.Len(t, d.Stages, 1)
 				require.NotNil(t, d.Stages[0].Expr)
@@ -101,23 +102,23 @@ func TestParseJSON(t *testing.T) {
 		{
 			name: "malformed",
 			json: `{"stages": [`,
-			assert: func(t *testing.T, d *PipelineDef, err error) {
-				var ce *ConfigError
+			assert: func(t *testing.T, d *config.PipelineDef, err error) {
+				var ce *config.ConfigError
 				require.ErrorAs(t, err, &ce)
 			},
 		},
 		{
 			name: "unknown key is rejected",
 			json: `{"stages":[{"name":"x","type":"single-expr","expr":"1","hitpolicy":"collect"}]}`,
-			assert: func(t *testing.T, d *PipelineDef, err error) {
-				var ce *ConfigError
+			assert: func(t *testing.T, d *config.PipelineDef, err error) {
+				var ce *config.ConfigError
 				require.ErrorAs(t, err, &ce, "a misspelled key must be a clear error, not silently dropped")
 			},
 		},
 		{
 			name: "empty document is an empty def (Build rejects it)",
 			json: "",
-			assert: func(t *testing.T, d *PipelineDef, err error) {
+			assert: func(t *testing.T, d *config.PipelineDef, err error) {
 				require.NoError(t, err)
 				require.NotNil(t, d)
 				assert.Empty(t, d.Stages)
@@ -128,7 +129,7 @@ func TestParseJSON(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			d, err := ParseJSON([]byte(tc.json))
+			d, err := config.ParseJSON([]byte(tc.json))
 			tc.assert(t, d, err)
 		})
 	}
@@ -141,7 +142,7 @@ func TestLoadFile(t *testing.T) {
 		name    string
 		file    string // basename; contents chosen by ext
 		content string
-		assert  func(t *testing.T, d *PipelineDef, err error)
+		assert  func(t *testing.T, d *config.PipelineDef, err error)
 	}
 
 	cases := []testCase{
@@ -149,7 +150,7 @@ func TestLoadFile(t *testing.T) {
 			name:    "yaml extension",
 			file:    "p.yaml",
 			content: sampleYAML,
-			assert: func(t *testing.T, d *PipelineDef, err error) {
+			assert: func(t *testing.T, d *config.PipelineDef, err error) {
 				require.NoError(t, err)
 				require.Len(t, d.Stages, 2)
 			},
@@ -158,7 +159,7 @@ func TestLoadFile(t *testing.T) {
 			name:    "yml extension",
 			file:    "p.yml",
 			content: sampleYAML,
-			assert: func(t *testing.T, d *PipelineDef, err error) {
+			assert: func(t *testing.T, d *config.PipelineDef, err error) {
 				require.NoError(t, err)
 				require.Len(t, d.Stages, 2)
 			},
@@ -167,7 +168,7 @@ func TestLoadFile(t *testing.T) {
 			name:    "json extension",
 			file:    "p.json",
 			content: `{"stages":[{"name":"a","type":"single-expr","expr":"1"}]}`,
-			assert: func(t *testing.T, d *PipelineDef, err error) {
+			assert: func(t *testing.T, d *config.PipelineDef, err error) {
 				require.NoError(t, err)
 				require.Len(t, d.Stages, 1)
 			},
@@ -176,8 +177,8 @@ func TestLoadFile(t *testing.T) {
 			name:    "unknown extension",
 			file:    "p.txt",
 			content: sampleYAML,
-			assert: func(t *testing.T, d *PipelineDef, err error) {
-				var ce *ConfigError
+			assert: func(t *testing.T, d *config.PipelineDef, err error) {
+				var ce *config.ConfigError
 				require.ErrorAs(t, err, &ce)
 			},
 		},
@@ -188,7 +189,7 @@ func TestLoadFile(t *testing.T) {
 			t.Parallel()
 			path := filepath.Join(t.TempDir(), tc.file)
 			require.NoError(t, os.WriteFile(path, []byte(tc.content), 0o600))
-			d, err := LoadFile(path)
+			d, err := config.LoadFile(path)
 			tc.assert(t, d, err)
 		})
 	}
@@ -196,7 +197,7 @@ func TestLoadFile(t *testing.T) {
 
 func TestLoadFileMissing(t *testing.T) {
 	t.Parallel()
-	_, err := LoadFile(filepath.Join(t.TempDir(), "nope.yaml"))
-	var ce *ConfigError
+	_, err := config.LoadFile(filepath.Join(t.TempDir(), "nope.yaml"))
+	var ce *config.ConfigError
 	require.ErrorAs(t, err, &ce)
 }

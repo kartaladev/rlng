@@ -1,6 +1,6 @@
 # ADR-0014 — Mapper-less BareEngine
 
-- **Status:** Accepted
+- **Status:** Accepted; naming superseded by ADR-0019 (BareEngine -> Engine)
 - **Date:** 2026-07-11
 - **Prompted by:** Spec 007 (docs/specs/007-scope-json-timing-and-bare-engine.md)
 

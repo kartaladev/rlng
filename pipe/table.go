@@ -1,4 +1,4 @@
-package stage
+package pipe
 
 import (
 	"context"
@@ -55,7 +55,7 @@ type compiledDecision struct {
 // are compiled in sorted-key order for deterministic collect output.
 func NewDecisionTable(name string, rules []Rule, opts ...Option) (*DecisionTable, error) {
 	if name == "" {
-		return nil, &StageError{Stage: name, Type: TypeDecisionTable, Cause: errEmptyStageName}
+		return nil, &StageError{Stage: name, Type: TypeDecisionTable, Cause: ErrEmptyStageName}
 	}
 	if len(rules) == 0 {
 		return nil, &StageError{Stage: name, Type: TypeDecisionTable, Cause: errors.New("decision-table requires at least one rule")}

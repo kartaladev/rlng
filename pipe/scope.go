@@ -1,4 +1,4 @@
-package stage
+package pipe
 
 import (
 	"errors"
@@ -15,8 +15,8 @@ var ErrPathConflict = errors.New("scope: path already set")
 // not a map[string]any, so the path cannot be traversed.
 var ErrPathNotMap = errors.New("scope: intermediate path is not a map")
 
-// errEmptyPath is returned when Set is given an empty path.
-var errEmptyPath = errors.New("scope: path must not be empty")
+// ErrEmptyPath is returned when Set is given an empty path.
+var ErrEmptyPath = errors.New("scope: path must not be empty")
 
 // ErrEmptyPathSegment is returned by Set when a dot-path contains an empty
 // segment (e.g. "a..b", ".x", "a."), which would create an unreachable "" key.
@@ -33,7 +33,7 @@ type Scope struct {
 	derivations map[string]Derivation // non-nil only when provenance is enabled
 	startedAt   time.Time
 	duration    time.Duration
-	clock       func() time.Time
+	clock       Clock
 }
 
 // ScopeOption configures a Scope.
@@ -54,7 +54,7 @@ func WithStrict() ScopeOption { return func(s *Scope) { s.strict = true } }
 // only addressable if a later dot-path Set nests it; flatten produces dot-free
 // keys, so this matters only for callers seeding raw dotted keys.
 func NewScope(seed map[string]any, opts ...ScopeOption) *Scope {
-	s := &Scope{data: make(map[string]any, len(seed)), clock: time.Now}
+	s := &Scope{data: make(map[string]any, len(seed)), clock: realClock{}}
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -133,7 +133,7 @@ func setPath(root map[string]any, path string, v any, strict bool) error {
 // A zero-value Scope is usable: the backing map is allocated on first Set.
 func (s *Scope) Set(path string, v any) error {
 	if path == "" {
-		return errEmptyPath
+		return ErrEmptyPath
 	}
 
 	s.mu.Lock()

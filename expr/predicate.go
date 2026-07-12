@@ -23,7 +23,7 @@ type Predicate struct {
 func NewPredicate(expression string, opts ...Option) (*Predicate, error) {
 	src := strings.TrimSpace(expression)
 	if src == "" {
-		return nil, &CompileError{Expression: expression, Cause: errEmptyExpression}
+		return nil, &CompileError{Expression: expression, Cause: ErrEmptyExpression}
 	}
 
 	cfg := newConfig(opts)

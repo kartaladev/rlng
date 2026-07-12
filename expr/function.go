@@ -27,7 +27,7 @@ type Function struct {
 func NewFunction(name, expression string, opts ...Option) (*Function, error) {
 	src := strings.TrimSpace(expression)
 	if src == "" {
-		return nil, &CompileError{Name: name, Expression: expression, Cause: errEmptyExpression}
+		return nil, &CompileError{Name: name, Expression: expression, Cause: ErrEmptyExpression}
 	}
 
 	cfg := newConfig(opts)

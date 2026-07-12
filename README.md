@@ -7,7 +7,7 @@ them against runtime input. It is the *engine* only — not a Business Rules Man
 System: no authoring UI, governance, or persistence, just fast, embeddable evaluation.
 
 > **Status: unreleased (pre-`v0.0.1`).** All five build increments are implemented and
-> merged — the `expr`, `stage`, and `config` packages and the root `rlng` facade are
+> merged — the `expr`, `pipe`, and `config` packages and the root `rlng` facade are
 > complete, tested (`-race`), and lint-clean. The exported API is stable but **not yet
 > tagged**; pin to a commit until `v0.0.1` is cut. APIs may still change before the first
 > tag. See [`CLAUDE.md`](./CLAUDE.md) for the architecture and contributor workflow.
@@ -35,6 +35,12 @@ Rules are declared as config and compiled once, then evaluated on the hot path:
 See [`CLAUDE.md`](./CLAUDE.md) for the full architecture blueprint and contributor workflow.
 
 ## Usage
+
+`rlng` exposes a typed facade (root `rlng` package) plus the building blocks
+(`expr`, `pipe`, `config`) used directly. The snippets below are distilled from
+the runnable [`examples/`](./examples) and the package `Example` tests.
+
+### Declarative pipeline → typed result
 
 Declare a pipeline as config, build it, and evaluate a typed input into a typed result:
 
@@ -74,7 +80,7 @@ func main() {
 	pipeline, _ := def.Build()                // compile + topo-sort (cycle-checked)
 
 	mapper, _ := rlng.NewMapper[Quote](rlng.MappingTemplate{"total": "taxed"})
-	engine := rlng.New[Input, Quote](pipeline, mapper)
+	engine, _ := rlng.NewTypedEngine[Input, Quote](pipeline, mapper)
 
 	q, err := engine.Evaluate(context.Background(), Input{Price: 10, Qty: 2})
 	if err != nil {
@@ -84,25 +90,102 @@ func main() {
 }
 ```
 
-The packages are also usable independently: `expr` (compile/evaluate one expression),
-`stage` (build stages and a `Pipeline` in Go), and `config` (load definitions). The root
-`rlng` package is the end-to-end facade. Every exported behavior has a runnable `Example`
-test that doubles as godoc.
+### Build a pipeline in Go (no config)
 
-## Examples
+Skip config and wire stages directly; `depends_on` still orders the DAG:
 
-Runnable, real-world usage lives in [`examples/`](./examples) — run them with:
+```go
+base, _ := pipe.NewSingleExpr("base", "price * qty")
+taxed, _ := pipe.NewSingleExpr("taxed", "base * 1.1", pipe.WithDependsOn("base"))
+pipeline, _ := pipe.NewPipeline(base, taxed)
 
-```bash
-go test ./examples/
+mapper, _ := rlng.NewMapper[Quote](rlng.MappingTemplate{"total": "taxed"})
+engine, _ := rlng.NewTypedEngine[Input, Quote](pipeline, mapper)
+
+q, _ := engine.Evaluate(context.Background(), Input{Price: 10, Qty: 2})
+fmt.Printf("%.1f\n", q.Total) // 22.0
 ```
 
-- **Pricing** — a two-stage expression pipeline, typed getters, evaluation
-  timing, and round-tripping the `Scope` through JSON (as a `jsonb` column).
-- **Eligibility** — a decision table with provenance: `Explain` renders how a
-  result was derived back to the seed inputs.
-- **Config → BareEngine** — load a pipeline from a JSON/YAML definition and run
-  it through `BareEngine`, which returns the raw `map[string]any`.
+### Raw `map[string]any` output — `Engine`
+
+When you don't need a typed result, `Engine` returns the accumulated map:
+
+```go
+pipeline, _ := def.Build() // from config, or built in Go
+engine, _ := rlng.New(pipeline)
+
+out, _ := engine.Evaluate(context.Background(), map[string]any{"price": 10, "qty": 2})
+fmt.Printf("base=%v taxed=%.1f\n", out["base"], out["taxed"]) // base=20 taxed=22.0
+```
+
+### Multi-expression stage, typed getters, timing & JSON
+
+A `multi-expr` stage computes several named results. The `Scope` offers typed
+getters, evaluation timing, and a round-trippable JSON codec (e.g. a `jsonb` column):
+
+```go
+base, _ := pipe.NewSingleExpr("base", "price * qty")
+calc, _ := pipe.NewMultiExpr("calc", []pipe.NamedExpr{
+	{Name: "taxed", Expression: "base * 1.1"},
+	{Name: "discounted", Expression: "base * 0.9"},
+}, pipe.WithDependsOn("base"))
+p, _ := pipe.NewPipeline(base, calc)
+
+sc := pipe.NewScope(map[string]any{"price": 10, "qty": 2})
+_ = p.Run(context.Background(), sc)
+
+taxed, _ := sc.GetFloat64("calc.taxed") // 22.0
+dur, _ := sc.Duration()                 // evaluation duration
+blob, _ := json.Marshal(sc)             // persist; json.Unmarshal restores it losslessly
+```
+
+### Decision tables & provenance
+
+Ordered `condition → decisions` rules, first match wins. With `WithProvenance`,
+`Explain` traces a result back through the expressions to its seed inputs:
+
+```go
+grade, _ := pipe.NewDecisionTable("grade", []pipe.Rule{
+	{Condition: "score >= 750", Decisions: map[string]string{"tier": `"prime"`, "limit": "score * 100"}},
+	{Condition: "score >= 650", Decisions: map[string]string{"tier": `"near_prime"`, "limit": "score * 50"}},
+	{Condition: "true", Decisions: map[string]string{"tier": `"subprime"`, "limit": "score * 10"}},
+})
+p, _ := pipe.NewPipeline(grade)
+
+sc := pipe.NewScope(map[string]any{"score": 700}, pipe.WithProvenance())
+_ = p.Run(context.Background(), sc)
+
+tier, _ := sc.GetString("grade.tier") // near_prime
+fmt.Print(sc.Explain("grade.limit"))
+// grade.limit = 35000 [grade decision-table] expr: score * 50
+//   score = 700 [seed]
+```
+
+`WithHitPolicy(pipe.HitPolicyCollect)` accumulates every matching rule's decisions into a slice:
+
+```go
+checks, _ := pipe.NewDecisionTable("checks", []pipe.Rule{
+	{Condition: "score < 650", Decisions: map[string]string{"flag": `"low_score"`}},
+	{Condition: "dti > 0.4", Decisions: map[string]string{"flag": `"high_dti"`}},
+}, pipe.WithHitPolicy(pipe.HitPolicyCollect))
+// ...run over {"score": 600, "dti": 0.5}...
+flags, _ := sc.GetSlice("checks.flag") // [low_score high_dti]
+```
+
+### One-off expressions — `expr`
+
+Compile and evaluate a single value expression or boolean predicate directly:
+
+```go
+f, _ := expr.NewFunction("total", "price * qty")
+v, _ := f.Apply(map[string]any{"price": 10, "qty": 3}) // 30
+
+p, _ := expr.NewPredicate("amount > threshold", expr.WithGlobals(map[string]any{"threshold": 100}))
+ok, _ := p.Test(map[string]any{"amount": 150}) // true
+```
+
+Runnable versions of every snippet live in [`examples/`](./examples) and the
+package `Example` tests — run them with `go test ./...`.
 
 ## Installation
 

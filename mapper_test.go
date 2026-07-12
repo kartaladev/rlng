@@ -1,9 +1,10 @@
-package rlng
+package rlng_test
 
 import (
 	"errors"
 	"testing"
 
+	"github.com/kartaladev/rlng"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -20,43 +21,43 @@ func TestNewMapper(t *testing.T) {
 
 	type testCase struct {
 		name   string
-		tmpl   MappingTemplate
-		assert func(t *testing.T, m *Mapper[mapResult], err error)
+		tmpl   rlng.MappingTemplate
+		assert func(t *testing.T, m *rlng.Mapper[mapResult], err error)
 	}
 
 	cases := []testCase{
 		{
 			name: "compiles fields",
-			tmpl: MappingTemplate{"total": "1 + 1"},
-			assert: func(t *testing.T, m *Mapper[mapResult], err error) {
+			tmpl: rlng.MappingTemplate{"total": "1 + 1"},
+			assert: func(t *testing.T, m *rlng.Mapper[mapResult], err error) {
 				require.NoError(t, err)
 				require.NotNil(t, m)
 			},
 		},
 		{
 			name: "empty template is valid",
-			tmpl: MappingTemplate{},
-			assert: func(t *testing.T, m *Mapper[mapResult], err error) {
+			tmpl: rlng.MappingTemplate{},
+			assert: func(t *testing.T, m *rlng.Mapper[mapResult], err error) {
 				require.NoError(t, err)
 				require.NotNil(t, m)
 			},
 		},
 		{
 			name: "bad field expression is a MappingError",
-			tmpl: MappingTemplate{"total": "1 +"},
-			assert: func(t *testing.T, m *Mapper[mapResult], err error) {
+			tmpl: rlng.MappingTemplate{"total": "1 +"},
+			assert: func(t *testing.T, m *rlng.Mapper[mapResult], err error) {
 				assert.Nil(t, m)
-				var me *MappingError
+				var me *rlng.MappingError
 				require.ErrorAs(t, err, &me)
 				assert.Equal(t, "total", me.Field)
 			},
 		},
 		{
 			name: "empty template key is rejected",
-			tmpl: MappingTemplate{"": "1"},
-			assert: func(t *testing.T, m *Mapper[mapResult], err error) {
+			tmpl: rlng.MappingTemplate{"": "1"},
+			assert: func(t *testing.T, m *rlng.Mapper[mapResult], err error) {
 				assert.Nil(t, m)
-				require.ErrorIs(t, err, errEmptyMappingKey)
+				require.ErrorIs(t, err, rlng.ErrEmptyMappingKey)
 			},
 		},
 	}
@@ -64,7 +65,7 @@ func TestNewMapper(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			m, err := NewMapper[mapResult](tc.tmpl)
+			m, err := rlng.NewMapper[mapResult](tc.tmpl)
 			tc.assert(t, m, err)
 		})
 	}
@@ -75,7 +76,7 @@ func TestMapperMapStruct(t *testing.T) {
 
 	type testCase struct {
 		name   string
-		tmpl   MappingTemplate
+		tmpl   rlng.MappingTemplate
 		scope  map[string]any
 		assert func(t *testing.T, r mapResult, err error)
 	}
@@ -83,7 +84,7 @@ func TestMapperMapStruct(t *testing.T) {
 	cases := []testCase{
 		{
 			name:  "single and nested fields",
-			tmpl:  MappingTemplate{"total": "net + tax", "info.tag": "label"},
+			tmpl:  rlng.MappingTemplate{"total": "net + tax", "info.tag": "label"},
 			scope: map[string]any{"net": 10, "tax": 2, "label": "big"},
 			assert: func(t *testing.T, r mapResult, err error) {
 				require.NoError(t, err)
@@ -93,30 +94,30 @@ func TestMapperMapStruct(t *testing.T) {
 		},
 		{
 			name:  "field eval error is a MappingError",
-			tmpl:  MappingTemplate{"total": "a % 0"},
+			tmpl:  rlng.MappingTemplate{"total": "a % 0"},
 			scope: map[string]any{"a": 1},
 			assert: func(t *testing.T, r mapResult, err error) {
-				var me *MappingError
+				var me *rlng.MappingError
 				require.ErrorAs(t, err, &me)
 				assert.Equal(t, "total", me.Field)
 			},
 		},
 		{
 			name:  "decode type mismatch is a MappingError",
-			tmpl:  MappingTemplate{"total": `"not a number"`},
+			tmpl:  rlng.MappingTemplate{"total": `"not a number"`},
 			scope: map[string]any{},
 			assert: func(t *testing.T, r mapResult, err error) {
-				var me *MappingError
+				var me *rlng.MappingError
 				require.ErrorAs(t, err, &me)
 				assert.Empty(t, me.Field) // final decode
 			},
 		},
 		{
 			name:  "colliding output paths are a MappingError, not a silent overwrite",
-			tmpl:  MappingTemplate{"info": "label", "info.tag": "label"},
+			tmpl:  rlng.MappingTemplate{"info": "label", "info.tag": "label"},
 			scope: map[string]any{"label": "x"},
 			assert: func(t *testing.T, r mapResult, err error) {
-				var me *MappingError
+				var me *rlng.MappingError
 				require.ErrorAs(t, err, &me)
 				assert.Equal(t, "info.tag", me.Field)
 			},
@@ -126,7 +127,7 @@ func TestMapperMapStruct(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			m, err := NewMapper[mapResult](tc.tmpl)
+			m, err := rlng.NewMapper[mapResult](tc.tmpl)
 			require.NoError(t, err)
 			r, err := m.Map(tc.scope)
 			tc.assert(t, r, err)
@@ -139,7 +140,7 @@ func TestMapperMapStruct(t *testing.T) {
 func TestMapperMapToMap(t *testing.T) {
 	t.Parallel()
 
-	m, err := NewMapper[map[string]any](MappingTemplate{"total": "1 + 2"})
+	m, err := rlng.NewMapper[map[string]any](rlng.MappingTemplate{"total": "1 + 2"})
 	require.NoError(t, err)
 	r, err := m.Map(map[string]any{})
 	require.NoError(t, err)
@@ -151,7 +152,7 @@ func TestMapperMapToMap(t *testing.T) {
 func TestMapperNestedSiblingPaths(t *testing.T) {
 	t.Parallel()
 
-	m, err := NewMapper[map[string]any](MappingTemplate{"info.tag": `"a"`, "info.note": `"b"`})
+	m, err := rlng.NewMapper[map[string]any](rlng.MappingTemplate{"info.tag": `"a"`, "info.note": `"b"`})
 	require.NoError(t, err)
 	r, err := m.Map(map[string]any{})
 	require.NoError(t, err)
@@ -163,23 +164,37 @@ func TestMapperNestedSiblingPaths(t *testing.T) {
 func TestMappingErrorMessage(t *testing.T) {
 	t.Parallel()
 
+	cause := errors.New("boom")
+
 	type testCase struct {
-		name string
-		err  *MappingError
-		want string
+		name   string
+		err    *rlng.MappingError
+		assert func(t *testing.T, e *rlng.MappingError)
 	}
 
-	cause := errors.New("boom")
 	cases := []testCase{
-		{name: "field", err: &MappingError{Field: "total", Cause: cause}, want: `rlng: mapping field "total": boom`},
-		{name: "final decode", err: &MappingError{Cause: cause}, want: `rlng: mapping: boom`},
+		{
+			name: "field",
+			err:  &rlng.MappingError{Field: "total", Cause: cause},
+			assert: func(t *testing.T, e *rlng.MappingError) {
+				assert.Equal(t, `rlng: mapping field "total": boom`, e.Error())
+				assert.ErrorIs(t, e, cause)
+			},
+		},
+		{
+			name: "final decode",
+			err:  &rlng.MappingError{Cause: cause},
+			assert: func(t *testing.T, e *rlng.MappingError) {
+				assert.Equal(t, `rlng: mapping: boom`, e.Error())
+				assert.ErrorIs(t, e, cause)
+			},
+		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, tc.want, tc.err.Error())
-			assert.ErrorIs(t, tc.err, cause)
+			tc.assert(t, tc.err)
 		})
 	}
 }

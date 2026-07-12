@@ -1,9 +1,10 @@
-package stage
+package pipe_test
 
 import (
 	"context"
 	"testing"
 
+	"github.com/kartaladev/rlng/pipe"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -13,23 +14,23 @@ func TestDecisionTableExecute(t *testing.T) {
 
 	type testCase struct {
 		name   string
-		build  func(t *testing.T) (*DecisionTable, *Scope)
+		build  func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope)
 		ctx    func(ctx context.Context) context.Context
-		assert func(t *testing.T, sc *Scope, err error)
+		assert func(t *testing.T, sc *pipe.Scope, err error)
 	}
 
 	cases := []testCase{
 		{
 			name: "single mode: first match wins",
-			build: func(t *testing.T) (*DecisionTable, *Scope) {
-				d, err := NewDecisionTable("tier", []Rule{
+			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
+				d, err := pipe.NewDecisionTable("tier", []pipe.Rule{
 					{Condition: "amount >= 1000", Decisions: map[string]string{"level": `"gold"`}},
 					{Condition: "amount >= 100", Decisions: map[string]string{"level": `"silver"`}},
 				})
 				require.NoError(t, err)
-				return d, NewScope(map[string]any{"amount": 5000})
+				return d, pipe.NewScope(map[string]any{"amount": 5000})
 			},
-			assert: func(t *testing.T, sc *Scope, err error) {
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
 				require.NoError(t, err)
 				level, ok := sc.Get("tier.level")
 				require.True(t, ok)
@@ -38,14 +39,14 @@ func TestDecisionTableExecute(t *testing.T) {
 		},
 		{
 			name: "single mode: no match writes nothing",
-			build: func(t *testing.T) (*DecisionTable, *Scope) {
-				d, err := NewDecisionTable("tier", []Rule{
+			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
+				d, err := pipe.NewDecisionTable("tier", []pipe.Rule{
 					{Condition: "amount >= 1000", Decisions: map[string]string{"level": `"gold"`}},
 				})
 				require.NoError(t, err)
-				return d, NewScope(map[string]any{"amount": 5})
+				return d, pipe.NewScope(map[string]any{"amount": 5})
 			},
-			assert: func(t *testing.T, sc *Scope, err error) {
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
 				require.NoError(t, err)
 				_, ok := sc.Get("tier.level")
 				assert.False(t, ok)
@@ -53,15 +54,15 @@ func TestDecisionTableExecute(t *testing.T) {
 		},
 		{
 			name: "collect mode: accumulates matches in rule order",
-			build: func(t *testing.T) (*DecisionTable, *Scope) {
-				d, err := NewDecisionTable("tags", []Rule{
+			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
+				d, err := pipe.NewDecisionTable("tags", []pipe.Rule{
 					{Condition: "amount >= 100", Decisions: map[string]string{"tag": `"big"`}},
 					{Condition: "amount >= 1000", Decisions: map[string]string{"tag": `"huge"`}},
-				}, WithHitPolicy(HitPolicyCollect))
+				}, pipe.WithHitPolicy(pipe.HitPolicyCollect))
 				require.NoError(t, err)
-				return d, NewScope(map[string]any{"amount": 5000})
+				return d, pipe.NewScope(map[string]any{"amount": 5000})
 			},
-			assert: func(t *testing.T, sc *Scope, err error) {
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
 				require.NoError(t, err)
 				tags, ok := sc.Get("tags.tag")
 				require.True(t, ok)
@@ -70,54 +71,54 @@ func TestDecisionTableExecute(t *testing.T) {
 		},
 		{
 			name: "eval error surfaces as StageError",
-			build: func(t *testing.T) (*DecisionTable, *Scope) {
-				d, err := NewDecisionTable("t", []Rule{
+			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
+				d, err := pipe.NewDecisionTable("t", []pipe.Rule{
 					{Condition: "a % b > 0", Decisions: map[string]string{"x": "1"}},
 				})
 				require.NoError(t, err)
-				return d, NewScope(map[string]any{"a": 1, "b": 0})
+				return d, pipe.NewScope(map[string]any{"a": 1, "b": 0})
 			},
-			assert: func(t *testing.T, sc *Scope, err error) {
-				var se *StageError
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
 				assert.Equal(t, "t", se.Stage)
 			},
 		},
 		{
 			name: "canceled context short-circuits",
-			build: func(t *testing.T) (*DecisionTable, *Scope) {
-				d, err := NewDecisionTable("tier", []Rule{
+			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
+				d, err := pipe.NewDecisionTable("tier", []pipe.Rule{
 					{Condition: "true", Decisions: map[string]string{"x": "1"}},
 				})
 				require.NoError(t, err)
-				return d, NewScope(nil)
+				return d, pipe.NewScope(nil)
 			},
 			ctx: func(ctx context.Context) context.Context {
 				cctx, cancel := context.WithCancel(ctx)
 				cancel()
 				return cctx
 			},
-			assert: func(t *testing.T, sc *Scope, err error) {
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
 				require.ErrorIs(t, err, context.Canceled)
 			},
 		},
 		{
 			name: "provenance on: single mode records the winning rule's derivation",
-			build: func(t *testing.T) (*DecisionTable, *Scope) {
-				d, err := NewDecisionTable("tier", []Rule{
+			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
+				d, err := pipe.NewDecisionTable("tier", []pipe.Rule{
 					{Condition: "amount >= 1000", Decisions: map[string]string{"level": `"gold"`}},
 					{Condition: "amount >= 100", Decisions: map[string]string{"level": `"silver"`}},
 				})
 				require.NoError(t, err)
-				return d, NewScope(map[string]any{"amount": 5000}, WithProvenance())
+				return d, pipe.NewScope(map[string]any{"amount": 5000}, pipe.WithProvenance())
 			},
-			assert: func(t *testing.T, sc *Scope, err error) {
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
 				require.NoError(t, err)
 
 				d, ok := sc.Derivation("tier.level")
 				require.True(t, ok)
 				assert.Equal(t, "tier", d.Stage)
-				assert.Equal(t, TypeDecisionTable, d.StageType)
+				assert.Equal(t, pipe.TypeDecisionTable, d.StageType)
 				assert.Equal(t, "decision:level", d.Operation)
 				assert.Equal(t, `"gold"`, d.Expression)
 				assert.Equal(t, "gold", d.Value)
@@ -125,15 +126,15 @@ func TestDecisionTableExecute(t *testing.T) {
 		},
 		{
 			name: "provenance on: collect mode joins expressions and unions inputs across matched rules",
-			build: func(t *testing.T) (*DecisionTable, *Scope) {
-				d, err := NewDecisionTable("tags", []Rule{
+			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
+				d, err := pipe.NewDecisionTable("tags", []pipe.Rule{
 					{Condition: "amount >= 100", Decisions: map[string]string{"tag": "label1"}},
 					{Condition: "amount >= 1000", Decisions: map[string]string{"tag": "label2"}},
-				}, WithHitPolicy(HitPolicyCollect))
+				}, pipe.WithHitPolicy(pipe.HitPolicyCollect))
 				require.NoError(t, err)
-				return d, NewScope(map[string]any{"amount": 5000, "label1": "big", "label2": "huge"}, WithProvenance())
+				return d, pipe.NewScope(map[string]any{"amount": 5000, "label1": "big", "label2": "huge"}, pipe.WithProvenance())
 			},
-			assert: func(t *testing.T, sc *Scope, err error) {
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
 				require.NoError(t, err)
 
 				tags, ok := sc.Get("tags.tag")
@@ -143,7 +144,7 @@ func TestDecisionTableExecute(t *testing.T) {
 				d, ok := sc.Derivation("tags.tag")
 				require.True(t, ok)
 				assert.Equal(t, "tags", d.Stage)
-				assert.Equal(t, TypeDecisionTable, d.StageType)
+				assert.Equal(t, pipe.TypeDecisionTable, d.StageType)
 				assert.Equal(t, "collect:tag", d.Operation)
 				assert.Equal(t, "label1; label2", d.Expression)
 				assert.Equal(t, map[string]any{"label1": "big", "label2": "huge"}, d.Inputs)
@@ -157,137 +158,137 @@ func TestDecisionTableExecute(t *testing.T) {
 		},
 		{
 			name: "provenance on: single mode write conflict surfaces as StageError",
-			build: func(t *testing.T) (*DecisionTable, *Scope) {
+			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				// The scalar seed "tier" collides with the stage namespace, so
 				// Derive's Set("tier.level", …) fails with ErrPathNotMap.
-				d, err := NewDecisionTable("tier", []Rule{
+				d, err := pipe.NewDecisionTable("tier", []pipe.Rule{
 					{Condition: "amount >= 1000", Decisions: map[string]string{"level": `"gold"`}},
 				})
 				require.NoError(t, err)
-				return d, NewScope(map[string]any{"tier": 1, "amount": 5000}, WithProvenance())
+				return d, pipe.NewScope(map[string]any{"tier": 1, "amount": 5000}, pipe.WithProvenance())
 			},
-			assert: func(t *testing.T, sc *Scope, err error) {
-				var se *StageError
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
 				assert.Equal(t, "tier", se.Stage)
-				assert.Equal(t, TypeDecisionTable, se.Type)
-				assert.ErrorIs(t, se, ErrPathNotMap)
+				assert.Equal(t, pipe.TypeDecisionTable, se.Type)
+				assert.ErrorIs(t, se, pipe.ErrPathNotMap)
 			},
 		},
 		{
 			name: "provenance on: collect mode write conflict surfaces as StageError",
-			build: func(t *testing.T) (*DecisionTable, *Scope) {
+			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				// The scalar seed "tags" collides with the stage namespace, so
 				// Derive's Set("tags.tag", …) fails with ErrPathNotMap.
-				d, err := NewDecisionTable("tags", []Rule{
+				d, err := pipe.NewDecisionTable("tags", []pipe.Rule{
 					{Condition: "amount >= 100", Decisions: map[string]string{"tag": "label1"}},
-				}, WithHitPolicy(HitPolicyCollect))
+				}, pipe.WithHitPolicy(pipe.HitPolicyCollect))
 				require.NoError(t, err)
-				return d, NewScope(map[string]any{"tags": 1, "amount": 5000, "label1": "big"}, WithProvenance())
+				return d, pipe.NewScope(map[string]any{"tags": 1, "amount": 5000, "label1": "big"}, pipe.WithProvenance())
 			},
-			assert: func(t *testing.T, sc *Scope, err error) {
-				var se *StageError
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
 				assert.Equal(t, "tags", se.Stage)
-				assert.Equal(t, TypeDecisionTable, se.Type)
-				assert.ErrorIs(t, se, ErrPathNotMap)
+				assert.Equal(t, pipe.TypeDecisionTable, se.Type)
+				assert.ErrorIs(t, se, pipe.ErrPathNotMap)
 			},
 		},
 		{
 			name: "single mode: decision eval error surfaces as StageError",
-			build: func(t *testing.T) (*DecisionTable, *Scope) {
-				d, err := NewDecisionTable("tier", []Rule{
+			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
+				d, err := pipe.NewDecisionTable("tier", []pipe.Rule{
 					{Condition: "amount >= 100", Decisions: map[string]string{"level": "a % b"}},
 				})
 				require.NoError(t, err)
-				return d, NewScope(map[string]any{"amount": 5000, "a": 1, "b": 0})
+				return d, pipe.NewScope(map[string]any{"amount": 5000, "a": 1, "b": 0})
 			},
-			assert: func(t *testing.T, sc *Scope, err error) {
-				var se *StageError
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
 				assert.Equal(t, "tier", se.Stage)
-				assert.Equal(t, TypeDecisionTable, se.Type)
+				assert.Equal(t, pipe.TypeDecisionTable, se.Type)
 			},
 		},
 		{
 			name: "single mode: write conflict surfaces as StageError",
-			build: func(t *testing.T) (*DecisionTable, *Scope) {
+			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				// Scalar seed "tier" collides with the stage namespace, so
 				// Set("tier.level", …) fails with ErrPathNotMap (provenance off).
-				d, err := NewDecisionTable("tier", []Rule{
+				d, err := pipe.NewDecisionTable("tier", []pipe.Rule{
 					{Condition: "amount >= 100", Decisions: map[string]string{"level": `"gold"`}},
 				})
 				require.NoError(t, err)
-				return d, NewScope(map[string]any{"tier": 1, "amount": 5000})
+				return d, pipe.NewScope(map[string]any{"tier": 1, "amount": 5000})
 			},
-			assert: func(t *testing.T, sc *Scope, err error) {
-				var se *StageError
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
 				assert.Equal(t, "tier", se.Stage)
-				assert.ErrorIs(t, se, ErrPathNotMap)
+				assert.ErrorIs(t, se, pipe.ErrPathNotMap)
 			},
 		},
 		{
 			name: "collect mode: condition eval error surfaces as StageError",
-			build: func(t *testing.T) (*DecisionTable, *Scope) {
-				d, err := NewDecisionTable("tags", []Rule{
+			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
+				d, err := pipe.NewDecisionTable("tags", []pipe.Rule{
 					{Condition: "a % b == 0", Decisions: map[string]string{"tag": `"x"`}},
-				}, WithHitPolicy(HitPolicyCollect))
+				}, pipe.WithHitPolicy(pipe.HitPolicyCollect))
 				require.NoError(t, err)
-				return d, NewScope(map[string]any{"a": 1, "b": 0})
+				return d, pipe.NewScope(map[string]any{"a": 1, "b": 0})
 			},
-			assert: func(t *testing.T, sc *Scope, err error) {
-				var se *StageError
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
 				assert.Equal(t, "tags", se.Stage)
-				assert.Equal(t, TypeDecisionTable, se.Type)
+				assert.Equal(t, pipe.TypeDecisionTable, se.Type)
 			},
 		},
 		{
 			name: "collect mode: decision eval error surfaces as StageError",
-			build: func(t *testing.T) (*DecisionTable, *Scope) {
-				d, err := NewDecisionTable("tags", []Rule{
+			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
+				d, err := pipe.NewDecisionTable("tags", []pipe.Rule{
 					{Condition: "amount >= 100", Decisions: map[string]string{"tag": "a % b"}},
-				}, WithHitPolicy(HitPolicyCollect))
+				}, pipe.WithHitPolicy(pipe.HitPolicyCollect))
 				require.NoError(t, err)
-				return d, NewScope(map[string]any{"amount": 5000, "a": 1, "b": 0})
+				return d, pipe.NewScope(map[string]any{"amount": 5000, "a": 1, "b": 0})
 			},
-			assert: func(t *testing.T, sc *Scope, err error) {
-				var se *StageError
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
 				assert.Equal(t, "tags", se.Stage)
-				assert.Equal(t, TypeDecisionTable, se.Type)
+				assert.Equal(t, pipe.TypeDecisionTable, se.Type)
 			},
 		},
 		{
 			name: "collect mode: write conflict surfaces as StageError",
-			build: func(t *testing.T) (*DecisionTable, *Scope) {
+			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				// Scalar seed "tags" collides with the stage namespace, so
 				// Set("tags.tag", …) fails with ErrPathNotMap (provenance off).
-				d, err := NewDecisionTable("tags", []Rule{
+				d, err := pipe.NewDecisionTable("tags", []pipe.Rule{
 					{Condition: "amount >= 100", Decisions: map[string]string{"tag": `"big"`}},
-				}, WithHitPolicy(HitPolicyCollect))
+				}, pipe.WithHitPolicy(pipe.HitPolicyCollect))
 				require.NoError(t, err)
-				return d, NewScope(map[string]any{"tags": 1, "amount": 5000})
+				return d, pipe.NewScope(map[string]any{"tags": 1, "amount": 5000})
 			},
-			assert: func(t *testing.T, sc *Scope, err error) {
-				var se *StageError
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
 				assert.Equal(t, "tags", se.Stage)
-				assert.ErrorIs(t, se, ErrPathNotMap)
+				assert.ErrorIs(t, se, pipe.ErrPathNotMap)
 			},
 		},
 		{
 			name: "collect mode: non-matching rule is skipped",
-			build: func(t *testing.T) (*DecisionTable, *Scope) {
-				d, err := NewDecisionTable("tags", []Rule{
+			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
+				d, err := pipe.NewDecisionTable("tags", []pipe.Rule{
 					{Condition: "amount >= 1000", Decisions: map[string]string{"tag": `"big"`}},
 					{Condition: "amount >= 100000", Decisions: map[string]string{"tag": `"huge"`}},
-				}, WithHitPolicy(HitPolicyCollect))
+				}, pipe.WithHitPolicy(pipe.HitPolicyCollect))
 				require.NoError(t, err)
-				return d, NewScope(map[string]any{"amount": 5000})
+				return d, pipe.NewScope(map[string]any{"amount": 5000})
 			},
-			assert: func(t *testing.T, sc *Scope, err error) {
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
 				require.NoError(t, err)
 				tags, ok := sc.Get("tags.tag")
 				require.True(t, ok)
@@ -317,7 +318,7 @@ func TestNewDecisionTableValidation(t *testing.T) {
 	type testCase struct {
 		name      string
 		stageName string
-		rules     []Rule
+		rules     []pipe.Rule
 		assert    func(t *testing.T, err error)
 	}
 
@@ -327,57 +328,57 @@ func TestNewDecisionTableValidation(t *testing.T) {
 			stageName: "t",
 			rules:     nil,
 			assert: func(t *testing.T, err error) {
-				var se *StageError
+				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
 			},
 		},
 		{
 			name:      "empty stage name is rejected",
 			stageName: "",
-			rules:     []Rule{{Condition: "true", Decisions: map[string]string{"y": "1"}}},
+			rules:     []pipe.Rule{{Condition: "true", Decisions: map[string]string{"y": "1"}}},
 			assert: func(t *testing.T, err error) {
-				var se *StageError
+				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
-				assert.Equal(t, TypeDecisionTable, se.Type)
-				assert.ErrorIs(t, se, errEmptyStageName)
+				assert.Equal(t, pipe.TypeDecisionTable, se.Type)
+				assert.ErrorIs(t, se, pipe.ErrEmptyStageName)
 			},
 		},
 		{
 			name:      "rule without decisions is rejected",
 			stageName: "t",
-			rules:     []Rule{{Condition: "true", Decisions: nil}},
+			rules:     []pipe.Rule{{Condition: "true", Decisions: nil}},
 			assert: func(t *testing.T, err error) {
-				var se *StageError
+				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
 			},
 		},
 		{
 			name:      "bad condition is a compile error",
 			stageName: "t",
-			rules:     []Rule{{Condition: "x +", Decisions: map[string]string{"y": "1"}}},
+			rules:     []pipe.Rule{{Condition: "x +", Decisions: map[string]string{"y": "1"}}},
 			assert: func(t *testing.T, err error) {
-				var se *StageError
+				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
 			},
 		},
 		{
 			name:      "empty output key is rejected",
 			stageName: "t",
-			rules:     []Rule{{Condition: "true", Decisions: map[string]string{"": "1"}}},
+			rules:     []pipe.Rule{{Condition: "true", Decisions: map[string]string{"": "1"}}},
 			assert: func(t *testing.T, err error) {
-				var se *StageError
+				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
-				assert.Equal(t, TypeDecisionTable, se.Type)
+				assert.Equal(t, pipe.TypeDecisionTable, se.Type)
 			},
 		},
 		{
 			name:      "bad decision expression is a compile error",
 			stageName: "t",
-			rules:     []Rule{{Condition: "true", Decisions: map[string]string{"y": "x +"}}},
+			rules:     []pipe.Rule{{Condition: "true", Decisions: map[string]string{"y": "x +"}}},
 			assert: func(t *testing.T, err error) {
-				var se *StageError
+				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
-				assert.Equal(t, TypeDecisionTable, se.Type)
+				assert.Equal(t, pipe.TypeDecisionTable, se.Type)
 			},
 		},
 	}
@@ -385,7 +386,7 @@ func TestNewDecisionTableValidation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := NewDecisionTable(tc.stageName, tc.rules)
+			_, err := pipe.NewDecisionTable(tc.stageName, tc.rules)
 			tc.assert(t, err)
 		})
 	}
@@ -394,11 +395,11 @@ func TestNewDecisionTableValidation(t *testing.T) {
 func TestDecisionTableAccessors(t *testing.T) {
 	t.Parallel()
 
-	d, err := NewDecisionTable("tier",
-		[]Rule{{Condition: "true", Decisions: map[string]string{"level": `"gold"`}}},
-		WithDependsOn("amount"))
+	d, err := pipe.NewDecisionTable("tier",
+		[]pipe.Rule{{Condition: "true", Decisions: map[string]string{"level": `"gold"`}}},
+		pipe.WithDependsOn("amount"))
 	require.NoError(t, err)
 	assert.Equal(t, "tier", d.Name())
-	assert.Equal(t, TypeDecisionTable, d.Type())
+	assert.Equal(t, pipe.TypeDecisionTable, d.Type())
 	assert.Equal(t, []string{"amount"}, d.DependsOn())
 }

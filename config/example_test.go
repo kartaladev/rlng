@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/kartaladev/rlng/config"
-	"github.com/kartaladev/rlng/stage"
+	"github.com/kartaladev/rlng/pipe"
 )
 
 func ExampleParseYAML() {
@@ -30,7 +30,7 @@ stages:
 		return
 	}
 
-	sc := stage.NewScope(map[string]any{"price": 10.0, "qty": 2.0})
+	sc := pipe.NewScope(map[string]any{"price": 10.0, "qty": 2.0})
 	if err := p.Run(context.Background(), sc); err != nil {
 		fmt.Println("run:", err)
 		return

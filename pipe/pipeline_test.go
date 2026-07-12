@@ -1,10 +1,11 @@
-package stage
+package pipe_test
 
 import (
 	"context"
 	"testing"
 	"time"
 
+	"github.com/kartaladev/rlng/pipe"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,7 +22,7 @@ type recordStage struct {
 func (s *recordStage) Name() string        { return s.name }
 func (s *recordStage) Type() string        { return "record" }
 func (s *recordStage) DependsOn() []string { return s.deps }
-func (s *recordStage) Execute(ctx context.Context, sc *Scope) error {
+func (s *recordStage) Execute(ctx context.Context, sc *pipe.Scope) error {
 	*s.order = append(*s.order, s.name)
 	return sc.Set(s.name, true)
 }
@@ -31,8 +32,8 @@ func TestNewPipelineValidation(t *testing.T) {
 
 	type testCase struct {
 		name   string
-		build  func() []Stage
-		assert func(t *testing.T, p *Pipeline, err error)
+		build  func() []pipe.Stage
+		assert func(t *testing.T, p *pipe.Pipeline, err error)
 	}
 
 	var order []string
@@ -43,26 +44,26 @@ func TestNewPipelineValidation(t *testing.T) {
 	cases := []testCase{
 		{
 			name:  "empty set is valid",
-			build: func() []Stage { return nil },
-			assert: func(t *testing.T, p *Pipeline, err error) {
+			build: func() []pipe.Stage { return nil },
+			assert: func(t *testing.T, p *pipe.Pipeline, err error) {
 				require.NoError(t, err)
 				require.NotNil(t, p)
 			},
 		},
 		{
 			name:  "valid acyclic set constructs",
-			build: func() []Stage { return []Stage{rs("a"), rs("b", "a")} },
-			assert: func(t *testing.T, p *Pipeline, err error) {
+			build: func() []pipe.Stage { return []pipe.Stage{rs("a"), rs("b", "a")} },
+			assert: func(t *testing.T, p *pipe.Pipeline, err error) {
 				require.NoError(t, err)
 				require.NotNil(t, p)
 			},
 		},
 		{
 			name:  "duplicate name is rejected",
-			build: func() []Stage { return []Stage{rs("a"), rs("a")} },
-			assert: func(t *testing.T, p *Pipeline, err error) {
+			build: func() []pipe.Stage { return []pipe.Stage{rs("a"), rs("a")} },
+			assert: func(t *testing.T, p *pipe.Pipeline, err error) {
 				assert.Nil(t, p)
-				var de *DuplicateStageError
+				var de *pipe.DuplicateStageError
 				require.ErrorAs(t, err, &de)
 				assert.Equal(t, "a", de.Name)
 				assert.Equal(t, `pipeline: duplicate stage "a"`, de.Error())
@@ -70,10 +71,10 @@ func TestNewPipelineValidation(t *testing.T) {
 		},
 		{
 			name:  "unknown dependency is rejected",
-			build: func() []Stage { return []Stage{rs("a", "ghost")} },
-			assert: func(t *testing.T, p *Pipeline, err error) {
+			build: func() []pipe.Stage { return []pipe.Stage{rs("a", "ghost")} },
+			assert: func(t *testing.T, p *pipe.Pipeline, err error) {
 				assert.Nil(t, p)
-				var ue *UnknownDependencyError
+				var ue *pipe.UnknownDependencyError
 				require.ErrorAs(t, err, &ue)
 				assert.Equal(t, "a", ue.Stage)
 				assert.Equal(t, "ghost", ue.Dependency)
@@ -82,20 +83,20 @@ func TestNewPipelineValidation(t *testing.T) {
 		},
 		{
 			name:  "self dependency is a cycle",
-			build: func() []Stage { return []Stage{rs("a", "a")} },
-			assert: func(t *testing.T, p *Pipeline, err error) {
+			build: func() []pipe.Stage { return []pipe.Stage{rs("a", "a")} },
+			assert: func(t *testing.T, p *pipe.Pipeline, err error) {
 				assert.Nil(t, p)
-				var ce *CycleError
+				var ce *pipe.CycleError
 				require.ErrorAs(t, err, &ce)
 				assert.Equal(t, []string{"a", "a"}, ce.Cycle)
 			},
 		},
 		{
 			name:  "two node cycle reports concrete path",
-			build: func() []Stage { return []Stage{rs("a", "b"), rs("b", "a")} },
-			assert: func(t *testing.T, p *Pipeline, err error) {
+			build: func() []pipe.Stage { return []pipe.Stage{rs("a", "b"), rs("b", "a")} },
+			assert: func(t *testing.T, p *pipe.Pipeline, err error) {
 				assert.Nil(t, p)
-				var ce *CycleError
+				var ce *pipe.CycleError
 				require.ErrorAs(t, err, &ce)
 				assert.Equal(t, []string{"a", "b", "a"}, ce.Cycle)
 				assert.Equal(t, "pipeline: dependency cycle: a -> b -> a", ce.Error())
@@ -103,10 +104,10 @@ func TestNewPipelineValidation(t *testing.T) {
 		},
 		{
 			name:  "three node cycle is detected",
-			build: func() []Stage { return []Stage{rs("a", "c"), rs("b", "a"), rs("c", "b")} },
-			assert: func(t *testing.T, p *Pipeline, err error) {
+			build: func() []pipe.Stage { return []pipe.Stage{rs("a", "c"), rs("b", "a"), rs("c", "b")} },
+			assert: func(t *testing.T, p *pipe.Pipeline, err error) {
 				assert.Nil(t, p)
-				var ce *CycleError
+				var ce *pipe.CycleError
 				require.ErrorAs(t, err, &ce)
 				// The cycle closes on the repeated node.
 				assert.Equal(t, ce.Cycle[0], ce.Cycle[len(ce.Cycle)-1])
@@ -118,7 +119,7 @@ func TestNewPipelineValidation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			p, err := NewPipeline(tc.build()...)
+			p, err := pipe.NewPipeline(tc.build()...)
 			tc.assert(t, p, err)
 		})
 	}
@@ -130,66 +131,66 @@ func TestPipelineRun(t *testing.T) {
 	type testCase struct {
 		name   string
 		seed   map[string]any
-		build  func(order *[]string) []Stage
+		build  func(order *[]string) []pipe.Stage
 		ctx    func(ctx context.Context) context.Context
-		assert func(t *testing.T, order []string, sc *Scope, err error)
+		assert func(t *testing.T, order []string, sc *pipe.Scope, err error)
 	}
 
 	cases := []testCase{
 		{
 			name: "runs in dependency order overriding declaration order",
-			build: func(order *[]string) []Stage {
+			build: func(order *[]string) []pipe.Stage {
 				// Declared b-before-a, but b depends on a, so a must run first.
-				return []Stage{
+				return []pipe.Stage{
 					&recordStage{name: "b", deps: []string{"a"}, order: order},
 					&recordStage{name: "a", order: order},
 				}
 			},
-			assert: func(t *testing.T, order []string, sc *Scope, err error) {
+			assert: func(t *testing.T, order []string, sc *pipe.Scope, err error) {
 				require.NoError(t, err)
 				assert.Equal(t, []string{"a", "b"}, order)
 			},
 		},
 		{
 			name: "independent stages preserve input order",
-			build: func(order *[]string) []Stage {
-				return []Stage{
+			build: func(order *[]string) []pipe.Stage {
+				return []pipe.Stage{
 					&recordStage{name: "x", order: order},
 					&recordStage{name: "y", order: order},
 					&recordStage{name: "z", order: order},
 				}
 			},
-			assert: func(t *testing.T, order []string, sc *Scope, err error) {
+			assert: func(t *testing.T, order []string, sc *pipe.Scope, err error) {
 				require.NoError(t, err)
 				assert.Equal(t, []string{"x", "y", "z"}, order)
 			},
 		},
 		{
 			name: "diamond runs dependencies before dependents",
-			build: func(order *[]string) []Stage {
+			build: func(order *[]string) []pipe.Stage {
 				// a -> {b, c} -> d
-				return []Stage{
+				return []pipe.Stage{
 					&recordStage{name: "a", order: order},
 					&recordStage{name: "b", deps: []string{"a"}, order: order},
 					&recordStage{name: "c", deps: []string{"a"}, order: order},
 					&recordStage{name: "d", deps: []string{"b", "c"}, order: order},
 				}
 			},
-			assert: func(t *testing.T, order []string, sc *Scope, err error) {
+			assert: func(t *testing.T, order []string, sc *pipe.Scope, err error) {
 				require.NoError(t, err)
 				assert.Equal(t, []string{"a", "b", "c", "d"}, order)
 			},
 		},
 		{
 			name: "dependent reads dependency output from scope",
-			build: func(order *[]string) []Stage {
-				a, err := NewSingleExpr("a", "21")
+			build: func(order *[]string) []pipe.Stage {
+				a, err := pipe.NewSingleExpr("a", "21")
 				require.NoError(t, err)
-				b, err := NewSingleExpr("b", "a * 2", WithDependsOn("a"))
+				b, err := pipe.NewSingleExpr("b", "a * 2", pipe.WithDependsOn("a"))
 				require.NoError(t, err)
-				return []Stage{b, a} // declared out of order on purpose
+				return []pipe.Stage{b, a} // declared out of order on purpose
 			},
-			assert: func(t *testing.T, order []string, sc *Scope, err error) {
+			assert: func(t *testing.T, order []string, sc *pipe.Scope, err error) {
 				require.NoError(t, err)
 				v, ok := sc.Get("b")
 				require.True(t, ok)
@@ -198,10 +199,10 @@ func TestPipelineRun(t *testing.T) {
 		},
 		{
 			name: "empty pipeline run is a no-op",
-			build: func(order *[]string) []Stage {
+			build: func(order *[]string) []pipe.Stage {
 				return nil
 			},
-			assert: func(t *testing.T, order []string, sc *Scope, err error) {
+			assert: func(t *testing.T, order []string, sc *pipe.Scope, err error) {
 				require.NoError(t, err)
 				assert.Empty(t, order)
 			},
@@ -212,16 +213,16 @@ func TestPipelineRun(t *testing.T) {
 			// it fails at eval with an integer divide by zero (expr does float
 			// division, so `/` would yield +Inf — modulo forces a real error).
 			seed: map[string]any{"x": 1},
-			build: func(order *[]string) []Stage {
-				boom, err := NewSingleExpr("boom", "x % 0")
+			build: func(order *[]string) []pipe.Stage {
+				boom, err := pipe.NewSingleExpr("boom", "x % 0")
 				require.NoError(t, err)
-				return []Stage{
+				return []pipe.Stage{
 					boom,
 					&recordStage{name: "after", deps: []string{"boom"}, order: order},
 				}
 			},
-			assert: func(t *testing.T, order []string, sc *Scope, err error) {
-				var se *StageError
+			assert: func(t *testing.T, order []string, sc *pipe.Scope, err error) {
+				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
 				assert.Equal(t, "boom", se.Stage)
 				assert.Empty(t, order) // "after" never ran
@@ -229,15 +230,15 @@ func TestPipelineRun(t *testing.T) {
 		},
 		{
 			name: "canceled context short-circuits before any stage",
-			build: func(order *[]string) []Stage {
-				return []Stage{&recordStage{name: "a", order: order}}
+			build: func(order *[]string) []pipe.Stage {
+				return []pipe.Stage{&recordStage{name: "a", order: order}}
 			},
 			ctx: func(ctx context.Context) context.Context {
 				cctx, cancel := context.WithCancel(ctx)
 				cancel()
 				return cctx
 			},
-			assert: func(t *testing.T, order []string, sc *Scope, err error) {
+			assert: func(t *testing.T, order []string, sc *pipe.Scope, err error) {
 				require.ErrorIs(t, err, context.Canceled)
 				assert.Empty(t, order)
 			},
@@ -245,12 +246,12 @@ func TestPipelineRun(t *testing.T) {
 		{
 			name: "successful run stamps timing on scope",
 			seed: map[string]any{"price": 10, "qty": 2},
-			build: func(order *[]string) []Stage {
-				base, err := NewSingleExpr("base", "price * qty")
+			build: func(order *[]string) []pipe.Stage {
+				base, err := pipe.NewSingleExpr("base", "price * qty")
 				require.NoError(t, err)
-				return []Stage{base}
+				return []pipe.Stage{base}
 			},
-			assert: func(t *testing.T, order []string, sc *Scope, err error) {
+			assert: func(t *testing.T, order []string, sc *pipe.Scope, err error) {
 				require.NoError(t, err)
 				_, ok := sc.StartedAt()
 				assert.True(t, ok)
@@ -266,14 +267,14 @@ func TestPipelineRun(t *testing.T) {
 			t.Parallel()
 
 			var order []string
-			p, err := NewPipeline(tc.build(&order)...)
+			p, err := pipe.NewPipeline(tc.build(&order)...)
 			require.NoError(t, err)
 
 			ctx := t.Context()
 			if tc.ctx != nil {
 				ctx = tc.ctx(ctx)
 			}
-			sc := NewScope(tc.seed)
+			sc := pipe.NewScope(tc.seed)
 			runErr := p.Run(ctx, sc)
 			tc.assert(t, order, sc, runErr)
 		})

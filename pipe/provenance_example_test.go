@@ -1,20 +1,20 @@
-package stage_test
+package pipe_test
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/kartaladev/rlng/stage"
+	"github.com/kartaladev/rlng/pipe"
 )
 
 // ExampleScope_explain shows the derivation tree for a value computed by a
 // two-stage pipeline, tracing "taxed" back through "base" to the seed inputs.
 func ExampleScope_explain() {
-	base, _ := stage.NewSingleExpr("base", "price * qty")
-	taxed, _ := stage.NewSingleExpr("taxed", "base * 1.1", stage.WithDependsOn("base"))
-	p, _ := stage.NewPipeline(base, taxed)
+	base, _ := pipe.NewSingleExpr("base", "price * qty")
+	taxed, _ := pipe.NewSingleExpr("taxed", "base * 1.1", pipe.WithDependsOn("base"))
+	p, _ := pipe.NewPipeline(base, taxed)
 
-	sc := stage.NewScope(map[string]any{"price": 10, "qty": 2}, stage.WithProvenance())
+	sc := pipe.NewScope(map[string]any{"price": 10, "qty": 2}, pipe.WithProvenance())
 	if err := p.Run(context.Background(), sc); err != nil {
 		fmt.Println("error:", err)
 		return
@@ -31,7 +31,7 @@ func ExampleScope_explain() {
 // ExampleScope_getInt shows a strict typed getter returning a stored int and
 // the error-nil path when the value is present with the expected type.
 func ExampleScope_getInt() {
-	sc := stage.NewScope(map[string]any{"qty": 2})
+	sc := pipe.NewScope(map[string]any{"qty": 2})
 
 	qty, err := sc.GetInt("qty")
 	if err != nil {

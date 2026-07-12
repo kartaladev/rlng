@@ -1,6 +1,6 @@
 # ADR-0009 — `Engine[I, R]` facade, `Mapper[R]`, and root-package placement
 
-- **Status:** Accepted
+- **Status:** Accepted; naming superseded by ADR-0019 (Engine[I,R] -> TypedEngine[I,R])
 - **Date:** 2026-07-11
 - **Prompted by:** Spec 005 (docs/specs/005-engine-facade.md)
 

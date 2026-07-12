@@ -4,7 +4,7 @@ import "fmt"
 
 // ConfigError reports a failure loading or building a pipeline definition. It
 // names the stage and field where known, and unwraps to the underlying cause
-// (a decode error, a *stage.StageError, or a pipeline construction error).
+// (a decode error, a *pipe.StageError, or a pipeline construction error).
 type ConfigError struct {
 	Stage string // "" when not stage-scoped (e.g. a decode error)
 	Field string // "" when not field-scoped

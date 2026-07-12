@@ -4,21 +4,21 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/kartaladev/rlng/stage"
+	"github.com/kartaladev/rlng/pipe"
 )
 
 // Example_eligibility grades a loan application with a decision table (first
 // match wins) and explains how the winning decision was derived, recursing
 // through the decision expression back to the seed input it reads from.
 func Example_eligibility() {
-	grade, _ := stage.NewDecisionTable("grade", []stage.Rule{
+	grade, _ := pipe.NewDecisionTable("grade", []pipe.Rule{
 		{Condition: "score >= 750", Decisions: map[string]string{"tier": `"prime"`, "limit": "score * 100"}},
 		{Condition: "score >= 650", Decisions: map[string]string{"tier": `"near_prime"`, "limit": "score * 50"}},
 		{Condition: "true", Decisions: map[string]string{"tier": `"subprime"`, "limit": "score * 10"}},
 	})
-	p, _ := stage.NewPipeline(grade)
+	p, _ := pipe.NewPipeline(grade)
 
-	sc := stage.NewScope(map[string]any{"score": 700}, stage.WithProvenance())
+	sc := pipe.NewScope(map[string]any{"score": 700}, pipe.WithProvenance())
 	_ = p.Run(context.Background(), sc)
 
 	tier, _ := sc.GetString("grade.tier")
@@ -34,13 +34,13 @@ func Example_eligibility() {
 // Example_eligibility_flags shows a collect-mode decision table: every matching
 // rule contributes to a slice of risk flags.
 func Example_eligibility_flags() {
-	checks, _ := stage.NewDecisionTable("checks", []stage.Rule{
+	checks, _ := pipe.NewDecisionTable("checks", []pipe.Rule{
 		{Condition: "score < 650", Decisions: map[string]string{"flag": `"low_score"`}},
 		{Condition: "dti > 0.4", Decisions: map[string]string{"flag": `"high_dti"`}},
-	}, stage.WithHitPolicy(stage.HitPolicyCollect))
-	p, _ := stage.NewPipeline(checks)
+	}, pipe.WithHitPolicy(pipe.HitPolicyCollect))
+	p, _ := pipe.NewPipeline(checks)
 
-	sc := stage.NewScope(map[string]any{"score": 600, "dti": 0.5})
+	sc := pipe.NewScope(map[string]any{"score": 600, "dti": 0.5})
 	_ = p.Run(context.Background(), sc)
 
 	flags, _ := sc.GetSlice("checks.flag")

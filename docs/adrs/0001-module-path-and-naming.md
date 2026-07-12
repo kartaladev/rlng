@@ -1,6 +1,6 @@
 # ADR-0001 — Module path and rule-vs-calc naming
 
-- **Status:** Accepted
+- **Status:** Accepted; engine/package naming revised by ADR-0019 (module path stands)
 - **Date:** 2026-07-10
 - **Prompted by:** Spec 001 (docs/specs/001-expression-core.md)
 

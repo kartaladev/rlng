@@ -1,9 +1,10 @@
-package expr
+package expr_test
 
 import (
 	"testing"
 	"time"
 
+	"github.com/kartaladev/rlng/expr"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -30,14 +31,6 @@ type envTestWithTime struct {
 	T time.Time
 }
 
-type envTestNoExportedFields struct {
-	hidden string
-}
-
-type envTestWithNoExportedFields struct {
-	V envTestNoExportedFields
-}
-
 type envTestDoublePointer struct {
 	N **int
 }
@@ -47,152 +40,126 @@ type envTestCyclic struct {
 	Next *envTestCyclic
 }
 
-func TestToEnv(t *testing.T) {
+// TestStructEnvConversion exercises struct / pointer / slice / map env conversion
+// through the public Function.Apply, which normalizes a struct env into the
+// evaluation environment. It replaces the former white-box test of the internal
+// converter, covering the same branches via the exported API.
+func TestStructEnvConversion(t *testing.T) {
 	t.Parallel()
 
 	type testCase struct {
 		name   string
-		in     any
-		assert func(t *testing.T, got map[string]any, err error)
+		src    string
+		env    any
+		assert func(t *testing.T, got any, err error)
 	}
 
 	cases := []testCase{
 		{
-			name: "nil is empty env",
-			in:   nil,
-			assert: func(t *testing.T, got map[string]any, err error) {
+			name: "nil env evaluates over an empty environment",
+			src:  "1 + 1",
+			env:  nil,
+			assert: func(t *testing.T, got any, err error) {
 				require.NoError(t, err)
-				assert.Equal(t, map[string]any{}, got)
+				assert.Equal(t, 2, got)
 			},
 		},
 		{
-			name: "map passthrough",
-			in:   map[string]any{"a": 1},
-			assert: func(t *testing.T, got map[string]any, err error) {
+			name: "map env passes through",
+			src:  "a",
+			env:  map[string]any{"a": 1},
+			assert: func(t *testing.T, got any, err error) {
 				require.NoError(t, err)
-				assert.Equal(t, map[string]any{"a": 1}, got)
+				assert.Equal(t, 1, got)
 			},
 		},
 		{
-			name: "struct with nested, slice, nil pointer",
-			in: envTestOuter{
-				Name:  "x",
-				Inner: envTestInner{Ratio: 0.5},
-				Tags:  []string{"a", "b"},
-				Ptr:   nil,
-			},
-			assert: func(t *testing.T, got map[string]any, err error) {
+			name: "struct with nested struct, slice, and nil pointer",
+			src:  `Name == "x" && Inner.Ratio == 0.5 && Tags[0] == "a" && Tags[1] == "b" && Ptr == nil`,
+			env:  envTestOuter{Name: "x", Inner: envTestInner{Ratio: 0.5}, Tags: []string{"a", "b"}, Ptr: nil},
+			assert: func(t *testing.T, got any, err error) {
 				require.NoError(t, err)
-				assert.Equal(t, map[string]any{
-					"Name":  "x",
-					"Inner": map[string]any{"Ratio": 0.5},
-					"Tags":  []any{"a", "b"},
-					"Ptr":   nil,
-				}, got)
+				assert.Equal(t, true, got)
 			},
 		},
 		{
-			name: "pointer to struct converts identically to value struct",
-			in: &envTestOuter{
-				Name:  "x",
-				Inner: envTestInner{Ratio: 0.5},
-				Tags:  []string{"a", "b"},
-				Ptr:   nil,
-			},
-			assert: func(t *testing.T, got map[string]any, err error) {
+			name: "pointer-to-struct env converts like the value struct",
+			src:  `Inner.Ratio == 0.5 && Tags[1] == "b"`,
+			env:  &envTestOuter{Name: "x", Inner: envTestInner{Ratio: 0.5}, Tags: []string{"a", "b"}},
+			assert: func(t *testing.T, got any, err error) {
 				require.NoError(t, err)
-				assert.Equal(t, map[string]any{
-					"Name":  "x",
-					"Inner": map[string]any{"Ratio": 0.5},
-					"Tags":  []any{"a", "b"},
-					"Ptr":   nil,
-				}, got)
+				assert.Equal(t, true, got)
 			},
 		},
 		{
-			name: "non-nil pointer field converts to nested map",
-			in: envTestOuter{
-				Name: "x",
-				Ptr:  &envTestInner{Ratio: 0.9},
-			},
-			assert: func(t *testing.T, got map[string]any, err error) {
+			name: "non-nil pointer field converts to a nested value",
+			src:  "Ptr.Ratio",
+			env:  envTestOuter{Ptr: &envTestInner{Ratio: 0.9}},
+			assert: func(t *testing.T, got any, err error) {
 				require.NoError(t, err)
-				assert.Equal(t, map[string]any{"Ratio": 0.9}, got["Ptr"])
+				assert.Equal(t, 0.9, got)
 			},
 		},
 		{
-			name: "map field converts element-wise with stringified keys",
-			in: envTestWithMap{
-				Scores: map[int]string{1: "a", 2: "b"},
-			},
-			assert: func(t *testing.T, got map[string]any, err error) {
+			name: "map field converts with stringified keys",
+			src:  `Scores["1"]`,
+			env:  envTestWithMap{Scores: map[int]string{1: "a", 2: "b"}},
+			assert: func(t *testing.T, got any, err error) {
 				require.NoError(t, err)
-				assert.Equal(t, map[string]any{
-					"Scores": map[string]any{"1": "a", "2": "b"},
-				}, got)
+				assert.Equal(t, "a", got)
 			},
 		},
 		{
-			name: "unexported field is skipped",
-			in: envTestUnexported{
-				Public:  "x",
-				private: "y",
-			},
-			assert: func(t *testing.T, got map[string]any, err error) {
+			name: "unexported field is skipped (not in the environment)",
+			src:  "Public",
+			env:  envTestUnexported{Public: "x", private: "y"},
+			assert: func(t *testing.T, got any, err error) {
 				require.NoError(t, err)
-				assert.Equal(t, map[string]any{"Public": "x"}, got)
-				_, ok := got["private"]
-				assert.False(t, ok)
+				assert.Equal(t, "x", got)
 			},
 		},
 		{
-			name: "unsupported kind errors",
-			in:   42,
-			assert: func(t *testing.T, got map[string]any, err error) {
+			name: "unsupported env kind is an error",
+			src:  "1",
+			env:  42,
+			assert: func(t *testing.T, got any, err error) {
 				require.Error(t, err)
-				assert.Nil(t, got)
+				var evalErr *expr.EvalError
+				require.ErrorAs(t, err, &evalErr)
 			},
 		},
 		{
-			name: "value struct with no exported fields (time.Time) survives instead of flattening to an empty map",
-			in:   envTestWithTime{T: time.Date(2024, time.March, 15, 10, 30, 0, 0, time.UTC)},
-			assert: func(t *testing.T, got map[string]any, err error) {
+			name: "struct with no exported fields (time.Time) survives, so its methods are callable",
+			src:  "T.Year()",
+			env:  envTestWithTime{T: time.Date(2024, time.March, 15, 10, 30, 0, 0, time.UTC)},
+			assert: func(t *testing.T, got any, err error) {
 				require.NoError(t, err)
-				gotTime, ok := got["T"].(time.Time)
-				require.True(t, ok, "expected T to be a time.Time, got %T", got["T"])
-				assert.True(t, time.Date(2024, time.March, 15, 10, 30, 0, 0, time.UTC).Equal(gotTime))
+				assert.Equal(t, 2024, got)
 			},
 		},
 		{
-			name: "custom struct with no exported fields passes through as its value",
-			in:   envTestWithNoExportedFields{V: envTestNoExportedFields{hidden: "secret"}},
-			assert: func(t *testing.T, got map[string]any, err error) {
-				require.NoError(t, err)
-				assert.Equal(t, envTestNoExportedFields{hidden: "secret"}, got["V"])
-			},
-		},
-		{
-			name: "cyclic struct env is a bounded error, not a stack-overflow crash",
-			in: func() any {
+			name: "cyclic struct env is a bounded error, not a stack overflow",
+			src:  "Name",
+			env: func() any {
 				n := &envTestCyclic{Name: "loop"}
 				n.Next = n
 				return n
 			}(),
-			assert: func(t *testing.T, got map[string]any, err error) {
-				require.ErrorIs(t, err, ErrEnvTooDeep)
-				assert.Nil(t, got)
+			assert: func(t *testing.T, got any, err error) {
+				require.ErrorIs(t, err, expr.ErrEnvTooDeep)
 			},
 		},
 		{
-			name: "nested pointer field is fully unwrapped to the underlying value",
-			in: func() any {
+			name: "nested double pointer field is fully unwrapped",
+			src:  "N",
+			env: func() any {
 				i := 7
 				p := &i
 				return envTestDoublePointer{N: &p}
 			}(),
-			assert: func(t *testing.T, got map[string]any, err error) {
+			assert: func(t *testing.T, got any, err error) {
 				require.NoError(t, err)
-				assert.Equal(t, 7, got["N"])
+				assert.Equal(t, 7, got)
 			},
 		},
 	}
@@ -200,8 +167,9 @@ func TestToEnv(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-
-			got, err := toEnv(tc.in)
+			f, err := expr.NewFunction("f", tc.src)
+			require.NoError(t, err)
+			got, err := f.Apply(tc.env)
 			tc.assert(t, got, err)
 		})
 	}

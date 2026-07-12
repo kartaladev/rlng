@@ -1,10 +1,13 @@
-package config
+package config_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"testing"
 
+	"github.com/kartaladev/rlng/config"
+	"github.com/kartaladev/rlng/pipe"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
@@ -16,14 +19,14 @@ func TestExprDefUnmarshalYAML(t *testing.T) {
 	type testCase struct {
 		name   string
 		yaml   string
-		assert func(t *testing.T, e ExprDef, err error)
+		assert func(t *testing.T, e config.ExprDef, err error)
 	}
 
 	cases := []testCase{
 		{
 			name: "scalar shorthand sets Expr",
 			yaml: `price * qty`,
-			assert: func(t *testing.T, e ExprDef, err error) {
+			assert: func(t *testing.T, e config.ExprDef, err error) {
 				require.NoError(t, err)
 				assert.Equal(t, "price * qty", e.Expr)
 			},
@@ -31,7 +34,7 @@ func TestExprDefUnmarshalYAML(t *testing.T) {
 		{
 			name: "mapping decodes fields",
 			yaml: "expr: base * 1.1\nfallback: \"0\"\ncoerce: true",
-			assert: func(t *testing.T, e ExprDef, err error) {
+			assert: func(t *testing.T, e config.ExprDef, err error) {
 				require.NoError(t, err)
 				assert.Equal(t, "base * 1.1", e.Expr)
 				assert.Equal(t, "0", e.Fallback)
@@ -41,15 +44,15 @@ func TestExprDefUnmarshalYAML(t *testing.T) {
 		{
 			name: "sequence node is rejected",
 			yaml: `[1, 2, 3]`,
-			assert: func(t *testing.T, e ExprDef, err error) {
-				var ce *ConfigError
+			assert: func(t *testing.T, e config.ExprDef, err error) {
+				var ce *config.ConfigError
 				require.ErrorAs(t, err, &ce)
 			},
 		},
 		{
 			name: "mapping with bad field type errors",
 			yaml: "expr: base\ncoerce: notabool",
-			assert: func(t *testing.T, e ExprDef, err error) {
+			assert: func(t *testing.T, e config.ExprDef, err error) {
 				require.Error(t, err)
 			},
 		},
@@ -58,7 +61,7 @@ func TestExprDefUnmarshalYAML(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			var e ExprDef
+			var e config.ExprDef
 			err := yaml.Unmarshal([]byte(tc.yaml), &e)
 			tc.assert(t, e, err)
 		})
@@ -71,14 +74,14 @@ func TestExprDefUnmarshalJSON(t *testing.T) {
 	type testCase struct {
 		name   string
 		json   string
-		assert func(t *testing.T, e ExprDef, err error)
+		assert func(t *testing.T, e config.ExprDef, err error)
 	}
 
 	cases := []testCase{
 		{
 			name: "string shorthand sets Expr",
 			json: `"price * qty"`,
-			assert: func(t *testing.T, e ExprDef, err error) {
+			assert: func(t *testing.T, e config.ExprDef, err error) {
 				require.NoError(t, err)
 				assert.Equal(t, "price * qty", e.Expr)
 			},
@@ -86,7 +89,7 @@ func TestExprDefUnmarshalJSON(t *testing.T) {
 		{
 			name: "object decodes fields",
 			json: `{"expr": "base * 1.1", "fallback": "0", "coerce": true}`,
-			assert: func(t *testing.T, e ExprDef, err error) {
+			assert: func(t *testing.T, e config.ExprDef, err error) {
 				require.NoError(t, err)
 				assert.Equal(t, "base * 1.1", e.Expr)
 				assert.Equal(t, "0", e.Fallback)
@@ -96,14 +99,14 @@ func TestExprDefUnmarshalJSON(t *testing.T) {
 		{
 			name: "malformed json object errors",
 			json: `{bad`,
-			assert: func(t *testing.T, e ExprDef, err error) {
+			assert: func(t *testing.T, e config.ExprDef, err error) {
 				require.Error(t, err)
 			},
 		},
 		{
 			name: "well-formed non-object non-string errors",
 			json: `[1, 2, 3]`,
-			assert: func(t *testing.T, e ExprDef, err error) {
+			assert: func(t *testing.T, e config.ExprDef, err error) {
 				require.Error(t, err)
 			},
 		},
@@ -112,60 +115,97 @@ func TestExprDefUnmarshalJSON(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			var e ExprDef
+			var e config.ExprDef
 			err := json.Unmarshal([]byte(tc.json), &e)
 			tc.assert(t, e, err)
 		})
 	}
 }
 
-func TestExprDefOptions(t *testing.T) {
+// TestExprDefOptionsWiring verifies that an ExprDef's Fallback, Globals, and
+// Coerce options are wired through Build into the compiled stage — observably,
+// through the exported API (replacing the former white-box test of the internal
+// options() mapping). A single stage exercises all three: Globals patches the
+// value expression's default, that expression then errors (modulo by zero) so
+// the Fallback value is used, and the non-bool Condition relies on Coerce to
+// gate the stage on.
+func TestExprDefOptionsWiring(t *testing.T) {
 	t.Parallel()
 
-	type testCase struct {
-		name string
-		def  ExprDef
-		want int // number of options produced
-	}
+	def := config.PipelineDef{Stages: []config.StageDef{
+		{
+			Name: "s",
+			Type: "single-expr",
+			Expr: &config.ExprDef{
+				Expr:     "missing % 0", // Globals default -> 1 % 0 -> runtime error -> Fallback
+				Fallback: "42",
+				Globals:  map[string]any{"missing": 1},
+			},
+			Condition: &config.ExprDef{Expr: "1", Coerce: true}, // non-bool 1, coerced truthy -> stage runs
+		},
+	}}
 
-	cases := []testCase{
-		{name: "none", def: ExprDef{Expr: "1"}, want: 0},
-		{name: "fallback only", def: ExprDef{Expr: "1", Fallback: "0"}, want: 1},
-		{name: "globals only", def: ExprDef{Expr: "1", Globals: map[string]any{"k": 1}}, want: 1},
-		{name: "coerce only", def: ExprDef{Expr: "1", Coerce: true}, want: 1},
-		{name: "all three", def: ExprDef{Expr: "1", Fallback: "0", Globals: map[string]any{"k": 1}, Coerce: true}, want: 3},
-	}
+	p, err := def.Build()
+	require.NoError(t, err)
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			assert.Len(t, tc.def.options(), tc.want)
-		})
-	}
+	sc := pipe.NewScope(nil)
+	require.NoError(t, p.Run(context.Background(), sc))
+
+	got, ok := sc.Get("s")
+	require.True(t, ok, "coerced condition must gate the stage on")
+	assert.Equal(t, 42, got, "Globals default + Fallback must be wired through Build")
 }
 
 func TestConfigErrorMessage(t *testing.T) {
 	t.Parallel()
 
+	cause := errors.New("boom")
+
 	type testCase struct {
-		name string
-		err  *ConfigError
-		want string
+		name   string
+		err    *config.ConfigError
+		assert func(t *testing.T, e *config.ConfigError)
 	}
 
-	cause := errors.New("boom")
 	cases := []testCase{
-		{name: "stage and field", err: &ConfigError{Stage: "s", Field: "f", Cause: cause}, want: `config: stage "s" field "f": boom`},
-		{name: "stage only", err: &ConfigError{Stage: "s", Cause: cause}, want: `config: stage "s": boom`},
-		{name: "field only", err: &ConfigError{Field: "f", Cause: cause}, want: `config: field "f": boom`},
-		{name: "neither", err: &ConfigError{Cause: cause}, want: `config: boom`},
+		{
+			name: "stage and field",
+			err:  &config.ConfigError{Stage: "s", Field: "f", Cause: cause},
+			assert: func(t *testing.T, e *config.ConfigError) {
+				assert.Equal(t, `config: stage "s" field "f": boom`, e.Error())
+				assert.ErrorIs(t, e, cause)
+			},
+		},
+		{
+			name: "stage only",
+			err:  &config.ConfigError{Stage: "s", Cause: cause},
+			assert: func(t *testing.T, e *config.ConfigError) {
+				assert.Equal(t, `config: stage "s": boom`, e.Error())
+				assert.ErrorIs(t, e, cause)
+			},
+		},
+		{
+			name: "field only",
+			err:  &config.ConfigError{Field: "f", Cause: cause},
+			assert: func(t *testing.T, e *config.ConfigError) {
+				assert.Equal(t, `config: field "f": boom`, e.Error())
+				assert.ErrorIs(t, e, cause)
+			},
+		},
+		{
+			name: "neither",
+			err:  &config.ConfigError{Cause: cause},
+			assert: func(t *testing.T, e *config.ConfigError) {
+				assert.Equal(t, `config: boom`, e.Error())
+				assert.ErrorIs(t, e, cause)
+			},
+		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, tc.want, tc.err.Error())
-			assert.ErrorIs(t, tc.err, cause)
+			tc.assert(t, tc.err)
 		})
 	}
 }

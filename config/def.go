@@ -1,7 +1,7 @@
 package config
 
 // PipelineDef is a declarative pipeline: an ordered list of stages. List order
-// is authoring order, which Build preserves into stage.NewPipeline so the
+// is authoring order, which Build preserves into pipe.NewPipeline so the
 // pipeline's deterministic tie-break ordering is reproducible.
 type PipelineDef struct {
 	Stages []StageDef `yaml:"stages" json:"stages"`

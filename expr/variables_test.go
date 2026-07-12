@@ -1,14 +1,21 @@
-package expr
+package expr_test
 
 import (
 	"math"
 	"testing"
 
-	exprlang "github.com/expr-lang/expr"
+	"github.com/kartaladev/rlng/expr"
 	"github.com/stretchr/testify/require"
 )
 
-func TestVariablePatcher(t *testing.T) {
+// TestVariableDefaults exercises the variable-default patcher (declared
+// globals/locals injected as `identifier ?? default` at compile time, overridable
+// by the runtime env) through the public NewFunction + Apply. It replaces the
+// former white-box test of the internal patcher, covering the same branches:
+// scalar default applied, runtime override, local-over-global precedence, the
+// no-variables (nil patcher) path, and the non-scalar / nil-pointer / overflow
+// skips.
+func TestVariableDefaults(t *testing.T) {
 	t.Parallel()
 
 	type testCase struct {
@@ -52,7 +59,7 @@ func TestVariablePatcher(t *testing.T) {
 			},
 		},
 		{
-			name: "nil patcher when no variables declared",
+			name: "no variables declared: nil patcher, plain evaluation",
 			src:  "1 + 1",
 			env:  map[string]any{},
 			assert: func(t *testing.T, got any, err error) {
@@ -126,51 +133,19 @@ func TestVariablePatcher(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			opts := []exprlang.Option{exprlang.AllowUndefinedVariables()}
-			if p := newPatcher(tc.globals, tc.locals); p != nil {
-				opts = append(opts, exprlang.Patch(p))
+			var opts []expr.Option
+			if tc.globals != nil {
+				opts = append(opts, expr.WithGlobals(tc.globals))
+			}
+			if tc.locals != nil {
+				opts = append(opts, expr.WithLocals(tc.locals))
 			}
 
-			program, err := exprlang.Compile(tc.src, opts...)
+			f, err := expr.NewFunction("f", tc.src, opts...)
 			require.NoError(t, err)
 
-			got, err := exprlang.Run(program, tc.env)
+			got, err := f.Apply(tc.env)
 			tc.assert(t, got, err)
-		})
-	}
-}
-
-func TestNewPatcher(t *testing.T) {
-	t.Parallel()
-
-	type testCase struct {
-		name            string
-		globals, locals map[string]any
-		assert          func(t *testing.T, p *variablePatcher)
-	}
-
-	cases := []testCase{
-		{
-			name: "nil when both maps are empty",
-			assert: func(t *testing.T, p *variablePatcher) {
-				require.Nil(t, p)
-			},
-		},
-		{
-			name:    "non-nil when globals declared",
-			globals: map[string]any{"rate": 0.15},
-			assert: func(t *testing.T, p *variablePatcher) {
-				require.NotNil(t, p)
-			},
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			p := newPatcher(tc.globals, tc.locals)
-			tc.assert(t, p)
 		})
 	}
 }

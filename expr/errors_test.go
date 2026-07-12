@@ -1,7 +1,8 @@
-package expr
+package expr_test
 
 import (
 	"errors"
+	"github.com/kartaladev/rlng/expr"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -22,7 +23,7 @@ func TestErrors(t *testing.T) {
 	cases := []testCase{
 		{
 			name: "compile error names field and expression",
-			err:  &CompileError{Name: "discount", Expression: "x >", Cause: inner},
+			err:  &expr.CompileError{Name: "discount", Expression: "x >", Cause: inner},
 			assert: func(t *testing.T, err error) {
 				assert.Equal(t, `compile "discount" (x >): boom`, err.Error())
 				require.ErrorIs(t, err, inner)
@@ -30,23 +31,23 @@ func TestErrors(t *testing.T) {
 		},
 		{
 			name: "eval error names field and expression",
-			err:  &EvalError{Name: "discount", Expression: "x + y", Cause: inner},
+			err:  &expr.EvalError{Name: "discount", Expression: "x + y", Cause: inner},
 			assert: func(t *testing.T, err error) {
 				assert.Equal(t, `eval "discount" (x + y): boom`, err.Error())
 				require.ErrorIs(t, err, inner)
 			},
 		},
 		{
-			name: "eval error wraps ErrNotBool",
-			err:  &EvalError{Expression: "x + 1", Cause: ErrNotBool},
+			name: "eval error wraps expr.ErrNotBool",
+			err:  &expr.EvalError{Expression: "x + 1", Cause: expr.ErrNotBool},
 			assert: func(t *testing.T, err error) {
 				assert.Equal(t, `eval (x + 1): expression did not evaluate to bool`, err.Error())
-				require.ErrorIs(t, err, ErrNotBool)
+				require.ErrorIs(t, err, expr.ErrNotBool)
 			},
 		},
 		{
 			name: "compile error with nil Cause does not panic and omits the cause",
-			err:  &CompileError{Name: "discount", Expression: "x >"},
+			err:  &expr.CompileError{Name: "discount", Expression: "x >"},
 			assert: func(t *testing.T, err error) {
 				var got string
 				assert.NotPanics(t, func() { got = err.Error() })
@@ -56,7 +57,7 @@ func TestErrors(t *testing.T) {
 		},
 		{
 			name: "eval error with nil Cause does not panic and omits the cause",
-			err:  &EvalError{Expression: "x + 1"},
+			err:  &expr.EvalError{Expression: "x + 1"},
 			assert: func(t *testing.T, err error) {
 				var got string
 				assert.NotPanics(t, func() { got = err.Error() })

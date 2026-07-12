@@ -2,41 +2,33 @@ package rlng
 
 import (
 	"context"
-	"fmt"
-	"reflect"
 
-	"github.com/go-viper/mapstructure/v2"
-	"github.com/kartaladev/rlng/stage"
+	"github.com/kartaladev/rlng/pipe"
 )
 
-// Engine evaluates a typed input I against a compiled pipeline and maps the
+// TypedEngine evaluates a typed input I against a compiled pipeline and maps the
 // result into a typed R. It is safe for concurrent use after construction.
-type Engine[I any, R any] struct {
-	pipeline  *stage.Pipeline
+type TypedEngine[I any, R any] struct {
+	pipeline  *pipe.Pipeline
 	mapper    *Mapper[R]
-	scopeOpts []stage.ScopeOption
+	scopeOpts []pipe.ScopeOption
 }
 
-type engineConfig struct {
-	scopeOpts []stage.ScopeOption
-}
-
-// Option configures an Engine.
-type Option func(*engineConfig)
-
-// WithScopeOptions passes stage.ScopeOption values (e.g. stage.WithStrict) to the
-// Scope seeded for each Evaluate.
-func WithScopeOptions(opts ...stage.ScopeOption) Option {
-	return func(c *engineConfig) { c.scopeOpts = append(c.scopeOpts, opts...) }
-}
-
-// New constructs an Engine from a compiled pipeline and a result mapper.
-func New[I any, R any](pipeline *stage.Pipeline, mapper *Mapper[R], opts ...Option) *Engine[I, R] {
+// NewTypedEngine constructs a TypedEngine from a compiled pipeline and a result
+// mapper. It returns ErrNilPipeline or ErrNilMapper if either required argument
+// is nil, failing fast at construction rather than on the first Evaluate.
+func NewTypedEngine[I any, R any](pipeline *pipe.Pipeline, mapper *Mapper[R], opts ...Option) (*TypedEngine[I, R], error) {
+	if pipeline == nil {
+		return nil, ErrNilPipeline
+	}
+	if mapper == nil {
+		return nil, ErrNilMapper
+	}
 	cfg := &engineConfig{}
 	for _, o := range opts {
 		o(cfg)
 	}
-	return &Engine[I, R]{pipeline: pipeline, mapper: mapper, scopeOpts: cfg.scopeOpts}
+	return &TypedEngine[I, R]{pipeline: pipeline, mapper: mapper, scopeOpts: cfg.scopeOpts}, nil
 }
 
 // Evaluate seeds a Scope from input, runs the pipeline, and maps the final Scope
@@ -44,10 +36,9 @@ func New[I any, R any](pipeline *stage.Pipeline, mapper *Mapper[R], opts ...Opti
 // *MappingError; an input that cannot be flattened is a wrapped error.
 //
 // When input is a map[string]any it seeds the Scope directly: the top level is
-// copied, but nested maps are referenced, not deep-copied (as in
-// stage.NewScope). A struct input is flattened into fresh maps and never shares
-// structure with the caller.
-func (e *Engine[I, R]) Evaluate(ctx context.Context, input I) (R, error) {
+// copied and nested maps are deep-copied (as in pipe.NewScope), so the caller's
+// map is never mutated. A struct input is flattened into fresh maps.
+func (e *TypedEngine[I, R]) Evaluate(ctx context.Context, input I) (R, error) {
 	var zero R
 
 	seed, err := flatten(input)
@@ -55,29 +46,9 @@ func (e *Engine[I, R]) Evaluate(ctx context.Context, input I) (R, error) {
 		return zero, err
 	}
 
-	sc := stage.NewScope(seed, e.scopeOpts...)
+	sc := pipe.NewScope(seed, e.scopeOpts...)
 	if err := e.pipeline.Run(ctx, sc); err != nil {
 		return zero, err
 	}
 	return e.mapper.Map(sc.Snapshot())
-}
-
-// flatten converts input into a map[string]any Scope seed. A map[string]any is
-// used directly; any other value (typically a struct) is decoded via
-// mapstructure, preserving field types. A nil pointer or untyped-nil input is
-// errNilInput (it would otherwise seed an empty Scope and yield a bogus zero
-// result); a non-nil empty map is a valid empty seed.
-func flatten[I any](input I) (map[string]any, error) {
-	if m, ok := any(input).(map[string]any); ok {
-		return m, nil
-	}
-	rv := reflect.ValueOf(input)
-	if !rv.IsValid() || (rv.Kind() == reflect.Pointer && rv.IsNil()) {
-		return nil, errNilInput
-	}
-	var m map[string]any
-	if err := mapstructure.Decode(input, &m); err != nil {
-		return nil, fmt.Errorf("rlng: seed input: %w", err)
-	}
-	return m, nil
 }

@@ -1,13 +1,13 @@
-package stage_test
+package pipe_test
 
 import (
 	"fmt"
 
-	"github.com/kartaladev/rlng/stage"
+	"github.com/kartaladev/rlng/pipe"
 )
 
 func ExampleScope() {
-	s := stage.NewScope(map[string]any{"amount": 150})
+	s := pipe.NewScope(map[string]any{"amount": 150})
 	_ = s.Set("discount.rate", 0.1)
 
 	rate, _ := s.Get("discount.rate")
