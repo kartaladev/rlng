@@ -231,6 +231,17 @@ func TestBuildSingleExprAttributeErrors(t *testing.T) {
 				assert.Equal(t, "condition", ce.Field)
 			},
 		},
+		{
+			name: "empty stage name with valid expr and condition is not misattributed to condition",
+			doc:  []byte(`{"stages":[{"name":"","type":"single-expr","expr":"1","condition":"true"}]}`),
+			assert: func(t *testing.T, err error) {
+				require.Error(t, err)
+				var ce *config.ConfigError
+				require.ErrorAs(t, err, &ce)
+				assert.NotEqual(t, "condition", ce.Field)
+				assert.Empty(t, ce.Field) // stage-level error, not attributed to a sub-expression
+			},
+		},
 	}
 
 	for _, tc := range cases {

@@ -115,13 +115,17 @@ func (sd StageDef) buildSingle(base []pipe.Option, constants, schema map[string]
 	if err != nil {
 		// Attribute to the field that actually failed to compile. The value
 		// expression is compiled first, so a value error is the true first
-		// failure; only a value expression that compiles cleanly leaves the
-		// condition as the culprit.
+		// failure; only when the value expression compiles cleanly do we check
+		// whether the condition genuinely failed before blaming it — otherwise
+		// the failure is stage-level (e.g. an empty stage name) and must not be
+		// misattributed to a sub-expression field.
 		if _, verr := expr.NewFunction(sd.Name, sd.Expr.Expr, withStrictEnv(strict, schema, withConstants(constants, sd.Expr.options()))...); verr != nil {
 			return nil, &ConfigError{Stage: sd.Name, Field: "expr", Cause: err}
 		}
 		if sd.Condition != nil {
-			return nil, &ConfigError{Stage: sd.Name, Field: "condition", Cause: err}
+			if _, cerr := expr.NewPredicate(sd.Condition.Expr, condOpts...); cerr != nil {
+				return nil, &ConfigError{Stage: sd.Name, Field: "condition", Cause: err}
+			}
 		}
 		return nil, &ConfigError{Cause: err}
 	}
