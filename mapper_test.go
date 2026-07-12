@@ -268,3 +268,21 @@ func TestMappingErrorMessage(t *testing.T) {
 		})
 	}
 }
+
+// TestMapperDecimalOverflowNarrowing guards the whole-branch review finding: an
+// integer-valued decimal that exceeds int64 range must not be silently
+// truncated by IntPart when mapped into an integer field — it is a lossy
+// narrowing.
+func TestMapperDecimalOverflowNarrowing(t *testing.T) {
+	t.Parallel()
+
+	type result struct {
+		N int64 `mapstructure:"n"`
+	}
+	mapper, err := rlng.NewMapper[result](rlng.MappingTemplate{"n": "big"})
+	require.NoError(t, err)
+
+	_, err = mapper.Map(map[string]any{"big": decimal.RequireFromString("99999999999999999999")})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, rlng.ErrLossyResultNarrowing)
+}

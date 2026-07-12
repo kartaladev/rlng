@@ -98,7 +98,14 @@ func encodeValue(v any) (any, error) {
 		return encodeTagged(kindTagFloat64, val)
 
 	case decimal.Decimal:
-		return encodeTagged(kindTagDecimal, val.String())
+		// Decimal.String trims trailing zeros, dropping scale (18125.00 ->
+		// "18125"). StringFixed with the decimal's own fractional digit count
+		// preserves the exponent so the round-trip is lossless including scale.
+		text := val.String()
+		if e := val.Exponent(); e < 0 {
+			text = val.StringFixed(-e)
+		}
+		return encodeTagged(kindTagDecimal, text)
 
 	case time.Time:
 		return encodeTagged(kindTagTime, val.Format(time.RFC3339Nano))

@@ -105,7 +105,13 @@ func decimalNarrowHook(from, to reflect.Type, data any) (any, error) {
 		if !d.IsInteger() {
 			return nil, fmt.Errorf("%w: %s", ErrLossyResultNarrowing, d.String())
 		}
-		return d.IntPart(), nil
+		// An integer-valued decimal can still exceed int64 range; IntPart would
+		// silently wrap it. Guard the magnitude and error rather than corrupt.
+		bi := d.BigInt()
+		if !bi.IsInt64() {
+			return nil, fmt.Errorf("%w: %s exceeds int64 range", ErrLossyResultNarrowing, d.String())
+		}
+		return bi.Int64(), nil
 	case reflect.Float32, reflect.Float64:
 		return d.InexactFloat64(), nil
 	case reflect.String:

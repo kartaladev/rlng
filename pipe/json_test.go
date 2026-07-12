@@ -881,3 +881,24 @@ func TestScopeJSONEncodeNonFiniteFloatErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestScopeJSONDecimalScalePreserved guards the whole-branch review finding: a
+// decimal's scale (trailing zeros / exponent) must survive the round-trip, so a
+// money value of 18125.00 does not silently reload as 18125.
+func TestScopeJSONDecimalScalePreserved(t *testing.T) {
+	t.Parallel()
+
+	sc := pipe.NewScope(nil)
+	require.NoError(t, sc.Set("fee", decimal.RequireFromString("18125.00")))
+
+	blob, err := json.Marshal(sc)
+	require.NoError(t, err)
+	assert.Contains(t, string(blob), "18125.00") // scale present in the wire form
+
+	var back pipe.Scope
+	require.NoError(t, json.Unmarshal(blob, &back))
+	d, err := pipe.GetAs[decimal.Decimal](&back, "fee")
+	require.NoError(t, err)
+	assert.Equal(t, int32(-2), d.Exponent(), "scale (exponent) must be preserved")
+	assert.Equal(t, "18125.00", d.StringFixed(2))
+}
