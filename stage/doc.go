@@ -2,9 +2,14 @@
 // compose the expr evaluators (github.com/kartaladev/rlng/expr) into reusable
 // rule and calculation units.
 //
-// Scope is a concurrency-safe map[string]any accumulator addressed by
-// dot-separated paths (Set/Get), with a decoupled Snapshot that serves as the
-// expression evaluation environment.
+// Scope is a mutex-guarded map[string]any accumulator addressed by dot-separated
+// paths (Set/Get), with a decoupled Snapshot that serves as the expression
+// evaluation environment. Its Set/Get/Snapshot operations are safe for
+// concurrent use; note, however, that Get and Snapshot return live references to
+// nested maps/slices, so a caller that shares one Scope across goroutines must
+// not read a returned nested value concurrently with a Set that writes into it
+// (see the Get/Snapshot docs). Engines give each evaluation its own Scope, so
+// concurrent Engine use is safe.
 //
 // A Stage is Name/Type/DependsOn/Execute. Three implementations are provided:
 // SingleExpr (one value expression with an optional condition gate), MultiExpr

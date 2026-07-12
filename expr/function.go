@@ -1,6 +1,7 @@
 package expr
 
 import (
+	"errors"
 	"strings"
 
 	exprlang "github.com/expr-lang/expr"
@@ -45,7 +46,10 @@ func NewFunction(name, expression string, opts ...Option) (*Function, error) {
 	fn := &Function{name: name, expression: expression, program: program, refs: references(src)}
 
 	if fb := strings.TrimSpace(cfg.fallback); fb != "" {
-		fbProgram, err := exprlang.Compile(fb, exprOpts...)
+		// Compile the fallback with the same options as the main program
+		// (including WithReturnKind's AsKind coercion) so both paths honor the
+		// declared return kind.
+		fbProgram, err := exprlang.Compile(fb, mainOpts...)
 		if err != nil {
 			return nil, &CompileError{Name: name, Expression: cfg.fallback, Cause: err}
 		}
@@ -68,12 +72,13 @@ func (f *Function) Apply(env any) (any, error) {
 	result, err := exprlang.Run(f.program, m)
 	if err != nil {
 		if f.fallback != nil {
-			return f.runFallback()
+			// Pass the triggering error so it survives if the fallback also fails.
+			return f.runFallback(err)
 		}
 		return nil, &EvalError{Name: f.name, Expression: f.expression, Cause: err}
 	}
 	if result == nil && f.fallback != nil {
-		return f.runFallback()
+		return f.runFallback(nil)
 	}
 	return result, nil
 }
@@ -85,10 +90,18 @@ func (f *Function) References() []string { return f.refs }
 // Source returns the Function's original (untrimmed) expression string.
 func (f *Function) Source() string { return f.expression }
 
-func (f *Function) runFallback() (any, error) {
+// runFallback evaluates the fallback over an empty env. mainErr is the error
+// that triggered the fallback (nil when the fallback ran because the main
+// expression yielded nil); when the fallback itself fails, mainErr is joined
+// into the returned error so the original cause is not lost.
+func (f *Function) runFallback(mainErr error) (any, error) {
 	result, err := exprlang.Run(f.fallback, map[string]any{})
 	if err != nil {
-		return nil, &EvalError{Name: f.name, Expression: f.fallbackSrc, Cause: err}
+		cause := err
+		if mainErr != nil {
+			cause = errors.Join(mainErr, err)
+		}
+		return nil, &EvalError{Name: f.name, Expression: f.fallbackSrc, Cause: cause}
 	}
 	return result, nil
 }

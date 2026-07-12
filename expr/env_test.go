@@ -42,6 +42,11 @@ type envTestDoublePointer struct {
 	N **int
 }
 
+type envTestCyclic struct {
+	Name string
+	Next *envTestCyclic
+}
+
 func TestToEnv(t *testing.T) {
 	t.Parallel()
 
@@ -164,6 +169,18 @@ func TestToEnv(t *testing.T) {
 			assert: func(t *testing.T, got map[string]any, err error) {
 				require.NoError(t, err)
 				assert.Equal(t, envTestNoExportedFields{hidden: "secret"}, got["V"])
+			},
+		},
+		{
+			name: "cyclic struct env is a bounded error, not a stack-overflow crash",
+			in: func() any {
+				n := &envTestCyclic{Name: "loop"}
+				n.Next = n
+				return n
+			}(),
+			assert: func(t *testing.T, got map[string]any, err error) {
+				require.ErrorIs(t, err, ErrEnvTooDeep)
+				assert.Nil(t, got)
 			},
 		},
 		{

@@ -50,6 +50,23 @@ func TestParseYAML(t *testing.T) {
 				require.ErrorAs(t, err, &ce)
 			},
 		},
+		{
+			name: "unknown key is rejected",
+			yaml: "stages:\n  - name: x\n    type: single-expr\n    expr: \"1\"\n    hitpolicy: collect\n",
+			assert: func(t *testing.T, d *PipelineDef, err error) {
+				var ce *ConfigError
+				require.ErrorAs(t, err, &ce, "a misspelled key must be a clear error, not silently dropped")
+			},
+		},
+		{
+			name: "empty document is an empty def (Build rejects it)",
+			yaml: "",
+			assert: func(t *testing.T, d *PipelineDef, err error) {
+				require.NoError(t, err)
+				require.NotNil(t, d)
+				assert.Empty(t, d.Stages)
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -87,6 +104,23 @@ func TestParseJSON(t *testing.T) {
 			assert: func(t *testing.T, d *PipelineDef, err error) {
 				var ce *ConfigError
 				require.ErrorAs(t, err, &ce)
+			},
+		},
+		{
+			name: "unknown key is rejected",
+			json: `{"stages":[{"name":"x","type":"single-expr","expr":"1","hitpolicy":"collect"}]}`,
+			assert: func(t *testing.T, d *PipelineDef, err error) {
+				var ce *ConfigError
+				require.ErrorAs(t, err, &ce, "a misspelled key must be a clear error, not silently dropped")
+			},
+		},
+		{
+			name: "empty document is an empty def (Build rejects it)",
+			json: "",
+			assert: func(t *testing.T, d *PipelineDef, err error) {
+				require.NoError(t, err)
+				require.NotNil(t, d)
+				assert.Empty(t, d.Stages)
 			},
 		},
 	}

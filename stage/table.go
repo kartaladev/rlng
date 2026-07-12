@@ -97,10 +97,15 @@ func (d *DecisionTable) Type() string { return TypeDecisionTable }
 // DependsOn returns the names of the stages this stage depends on.
 func (d *DecisionTable) DependsOn() []string { return d.deps }
 
+// stageErr wraps cause in a StageError naming this decision table.
+func (d *DecisionTable) stageErr(cause error) error {
+	return &StageError{Stage: d.name, Type: TypeDecisionTable, Cause: cause}
+}
+
 // Execute evaluates the rules against a Scope snapshot per the hit policy.
 func (d *DecisionTable) Execute(ctx context.Context, sc *Scope) error {
 	if err := ctx.Err(); err != nil {
-		return &StageError{Stage: d.name, Type: TypeDecisionTable, Cause: err}
+		return d.stageErr(err)
 	}
 
 	env := sc.Snapshot()
@@ -115,7 +120,7 @@ func (d *DecisionTable) executeSingle(env map[string]any, sc *Scope) error {
 	for _, r := range d.rules {
 		ok, err := r.cond.Test(env)
 		if err != nil {
-			return &StageError{Stage: d.name, Type: TypeDecisionTable, Cause: err}
+			return d.stageErr(err)
 		}
 		if !ok {
 			continue
@@ -123,7 +128,7 @@ func (d *DecisionTable) executeSingle(env map[string]any, sc *Scope) error {
 		for _, dec := range r.decisions {
 			v, err := dec.fn.Apply(env)
 			if err != nil {
-				return &StageError{Stage: d.name, Type: TypeDecisionTable, Cause: err}
+				return d.stageErr(err)
 			}
 			if tracking {
 				derivation := Derivation{
@@ -134,12 +139,12 @@ func (d *DecisionTable) executeSingle(env map[string]any, sc *Scope) error {
 					Inputs:     snapshotRefs(env, dec.fn.References()),
 				}
 				if err := sc.Derive(d.name+"."+dec.key, v, derivation); err != nil {
-					return &StageError{Stage: d.name, Type: TypeDecisionTable, Cause: err}
+					return d.stageErr(err)
 				}
 				continue
 			}
 			if err := sc.Set(d.name+"."+dec.key, v); err != nil {
-				return &StageError{Stage: d.name, Type: TypeDecisionTable, Cause: err}
+				return d.stageErr(err)
 			}
 		}
 		return nil // first match wins
@@ -160,7 +165,7 @@ func (d *DecisionTable) executeCollect(env map[string]any, sc *Scope) error {
 	for _, r := range d.rules {
 		ok, err := r.cond.Test(env)
 		if err != nil {
-			return &StageError{Stage: d.name, Type: TypeDecisionTable, Cause: err}
+			return d.stageErr(err)
 		}
 		if !ok {
 			continue
@@ -168,7 +173,7 @@ func (d *DecisionTable) executeCollect(env map[string]any, sc *Scope) error {
 		for _, dec := range r.decisions {
 			v, err := dec.fn.Apply(env)
 			if err != nil {
-				return &StageError{Stage: d.name, Type: TypeDecisionTable, Cause: err}
+				return d.stageErr(err)
 			}
 			if _, seen := collected[dec.key]; !seen {
 				order = append(order, dec.key)
@@ -198,12 +203,12 @@ func (d *DecisionTable) executeCollect(env map[string]any, sc *Scope) error {
 				Inputs:     inputs[key],
 			}
 			if err := sc.Derive(d.name+"."+key, collected[key], derivation); err != nil {
-				return &StageError{Stage: d.name, Type: TypeDecisionTable, Cause: err}
+				return d.stageErr(err)
 			}
 			continue
 		}
 		if err := sc.Set(d.name+"."+key, collected[key]); err != nil {
-			return &StageError{Stage: d.name, Type: TypeDecisionTable, Cause: err}
+			return d.stageErr(err)
 		}
 	}
 	return nil

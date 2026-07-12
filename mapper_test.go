@@ -51,6 +51,14 @@ func TestNewMapper(t *testing.T) {
 				assert.Equal(t, "total", me.Field)
 			},
 		},
+		{
+			name: "empty template key is rejected",
+			tmpl: MappingTemplate{"": "1"},
+			assert: func(t *testing.T, m *Mapper[mapResult], err error) {
+				assert.Nil(t, m)
+				require.ErrorIs(t, err, errEmptyMappingKey)
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -103,6 +111,16 @@ func TestMapperMapStruct(t *testing.T) {
 				assert.Empty(t, me.Field) // final decode
 			},
 		},
+		{
+			name:  "colliding output paths are a MappingError, not a silent overwrite",
+			tmpl:  MappingTemplate{"info": "label", "info.tag": "label"},
+			scope: map[string]any{"label": "x"},
+			assert: func(t *testing.T, r mapResult, err error) {
+				var me *MappingError
+				require.ErrorAs(t, err, &me)
+				assert.Equal(t, "info.tag", me.Field)
+			},
+		},
 	}
 
 	for _, tc := range cases {
@@ -126,6 +144,20 @@ func TestMapperMapToMap(t *testing.T) {
 	r, err := m.Map(map[string]any{})
 	require.NoError(t, err)
 	assert.Equal(t, 3, r["total"])
+}
+
+// TestMapperNestedSiblingPaths covers two output paths sharing a nested prefix:
+// the second reuses the intermediate map created by the first (no collision).
+func TestMapperNestedSiblingPaths(t *testing.T) {
+	t.Parallel()
+
+	m, err := NewMapper[map[string]any](MappingTemplate{"info.tag": `"a"`, "info.note": `"b"`})
+	require.NoError(t, err)
+	r, err := m.Map(map[string]any{})
+	require.NoError(t, err)
+	info := r["info"].(map[string]any)
+	assert.Equal(t, "a", info["tag"])
+	assert.Equal(t, "b", info["note"])
 }
 
 func TestMappingErrorMessage(t *testing.T) {

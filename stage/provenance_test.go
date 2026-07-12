@@ -195,7 +195,7 @@ func TestScopeLineageDepthCapped(t *testing.T) {
 	t.Parallel()
 	sc := NewScope(map[string]any{}, WithProvenance())
 	// chain: n0 <- n1 <- ... each derivation's input references the next path.
-	const chain = maxLineageDepth + 50
+	const chain = MaxLineageDepth + 50
 	for i := 0; i < chain; i++ {
 		next := fmt.Sprintf("n%d", i+1)
 		require.NoError(t, sc.Derive(fmt.Sprintf("n%d", i), i, Derivation{
@@ -205,6 +205,9 @@ func TestScopeLineageDepthCapped(t *testing.T) {
 	}
 	// Must return (not stack-overflow) and be bounded by the depth cap.
 	lin := sc.Lineage("n0")
-	assert.LessOrEqual(t, len(lin), maxLineageDepth)
-	assert.NotEmpty(t, sc.Explain("n0")) // terminates
+	assert.LessOrEqual(t, len(lin), MaxLineageDepth)
+	// Explain terminates and marks the truncation point rather than dropping it silently.
+	explained := sc.Explain("n0")
+	assert.NotEmpty(t, explained)
+	assert.Contains(t, explained, "truncated: max lineage depth")
 }

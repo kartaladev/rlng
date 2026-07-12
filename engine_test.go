@@ -2,6 +2,7 @@ package rlng
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/kartaladev/rlng/stage"
@@ -180,4 +181,52 @@ func TestEngineEvaluateFlattenError(t *testing.T) {
 
 	_, err = e.Evaluate(t.Context(), 42)
 	require.Error(t, err)
+}
+
+// TestEngineEvaluateNilInput covers a nil pointer input, which must be a typed
+// error rather than a bogus zero result over an empty scope.
+func TestEngineEvaluateNilInput(t *testing.T) {
+	t.Parallel()
+
+	base, err := stage.NewSingleExpr("base", "1")
+	require.NoError(t, err)
+	p, err := stage.NewPipeline(base)
+	require.NoError(t, err)
+	m, err := NewMapper[quote](MappingTemplate{"total": "base"})
+	require.NoError(t, err)
+	e := New[*order, quote](p, m)
+
+	_, err = e.Evaluate(t.Context(), nil)
+	require.ErrorIs(t, err, errNilInput)
+}
+
+// TestEngineConcurrentEvaluateMapInputIsolation reproduces the aliasing/data-race
+// (a stage writing a nested path of a shared map[string]any input) and confirms
+// the deep-copy seed fix: concurrent Evaluate is race-free (under -race) and the
+// caller's nested input map is never mutated.
+func TestEngineConcurrentEvaluateMapInputIsolation(t *testing.T) {
+	t.Parallel()
+
+	s, err := stage.NewSingleExpr("rate", "price * 2", stage.WithOutput("cfg.rate"))
+	require.NoError(t, err)
+	p, err := stage.NewPipeline(s)
+	require.NoError(t, err)
+	eng := NewBareEngine(p)
+
+	input := map[string]any{"price": 10, "cfg": map[string]any{"existing": 1}}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := eng.Evaluate(context.Background(), input)
+			assert.NoError(t, err)
+		}()
+	}
+	wg.Wait()
+
+	cfg := input["cfg"].(map[string]any)
+	_, rateWritten := cfg["rate"]
+	assert.False(t, rateWritten, "engine must not mutate the caller's nested input map")
 }

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/kartaladev/rlng/stage"
@@ -144,6 +145,33 @@ func TestBuild(t *testing.T) {
 				require.ErrorAs(t, err, &ce)
 				var se *stage.StageError
 				require.ErrorAs(t, err, &se)
+			},
+		},
+		{
+			name: "empty pipeline is rejected",
+			def:  PipelineDef{},
+			assert: func(t *testing.T, p *stage.Pipeline, err error) {
+				assert.Nil(t, p)
+				require.ErrorIs(t, err, errNoStages)
+			},
+		},
+		{
+			name: "bad condition is attributed to the condition field",
+			def:  sd(StageDef{Name: "x", Type: "single-expr", Expr: &ExprDef{Expr: "1"}, Condition: &ExprDef{Expr: "1 +"}}),
+			assert: func(t *testing.T, p *stage.Pipeline, err error) {
+				assert.Nil(t, p)
+				var ce *ConfigError
+				require.ErrorAs(t, err, &ce)
+				assert.Equal(t, "condition", ce.Field)
+			},
+		},
+		{
+			name: "stage error is not double-prefixed with the stage name",
+			def: sd(StageDef{Name: "t", Type: "decision-table",
+				Rules: []RuleDef{{Condition: ExprDef{Expr: "true"}, Decisions: map[string]ExprDef{"k": {Expr: "1 +"}}}}}),
+			assert: func(t *testing.T, p *stage.Pipeline, err error) {
+				assert.Nil(t, p)
+				assert.Equal(t, 1, strings.Count(err.Error(), `stage "t"`), "stage name must appear exactly once")
 			},
 		},
 		{

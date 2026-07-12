@@ -3,6 +3,7 @@ package rlng
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/kartaladev/rlng/stage"
@@ -63,10 +64,16 @@ func (e *Engine[I, R]) Evaluate(ctx context.Context, input I) (R, error) {
 
 // flatten converts input into a map[string]any Scope seed. A map[string]any is
 // used directly; any other value (typically a struct) is decoded via
-// mapstructure, preserving field types.
+// mapstructure, preserving field types. A nil pointer or untyped-nil input is
+// errNilInput (it would otherwise seed an empty Scope and yield a bogus zero
+// result); a non-nil empty map is a valid empty seed.
 func flatten[I any](input I) (map[string]any, error) {
 	if m, ok := any(input).(map[string]any); ok {
 		return m, nil
+	}
+	rv := reflect.ValueOf(input)
+	if !rv.IsValid() || (rv.Kind() == reflect.Pointer && rv.IsNil()) {
+		return nil, errNilInput
 	}
 	var m map[string]any
 	if err := mapstructure.Decode(input, &m); err != nil {

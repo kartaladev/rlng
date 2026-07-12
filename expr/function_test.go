@@ -138,6 +138,34 @@ func TestFunction_Apply(t *testing.T) {
 			},
 		},
 		{
+			name:   "fallback honors WithReturnKind coercion",
+			fnName: "x",
+			expr:   "a % b", // main errors: modulo by zero -> fallback runs
+			opts:   []Option{WithFallback("0"), WithReturnKind(reflect.Float64)},
+			env:    map[string]any{"a": 1, "b": 0},
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, 0.0, got)
+				_, isFloat := got.(float64)
+				assert.True(t, isFloat, "fallback result should be coerced to float64, got %T", got)
+			},
+		},
+		{
+			name:   "fallback failure preserves the triggering main error",
+			fnName: "ratio",
+			expr:   "a % b",                         // main errors: modulo by zero
+			opts:   []Option{WithFallback("1 % z")}, // fallback also errors over empty env
+			env:    map[string]any{"a": 1, "b": 0},
+			assert: func(t *testing.T, got any, err error) {
+				require.Error(t, err)
+				var evalErr *EvalError
+				require.ErrorAs(t, err, &evalErr)
+				joined, ok := evalErr.Cause.(interface{ Unwrap() []error })
+				require.True(t, ok, "a fallback failure should join the main error into the cause")
+				assert.Len(t, joined.Unwrap(), 2, "both the main and fallback errors should survive")
+			},
+		},
+		{
 			name:   "fallback used on nil result",
 			fnName: "x",
 			expr:   "nil",

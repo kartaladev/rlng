@@ -20,6 +20,8 @@ func TestFunctionReferences(t *testing.T) {
 		{name: "identifiers deduped and sorted", expr: "price * qty + price", want: []string{"price", "qty"}},
 		{name: "member access uses top-level", expr: "tiers.tag + base", want: []string{"base", "tiers"}},
 		{name: "literal only has no refs", expr: "1 + 2", want: nil},
+		{name: "call callee is not a data reference", expr: "discount(price) + len(items)", want: []string{"items", "price"}},
+		{name: "expression of only a callee and literal has no data refs", expr: "discount(1)", want: nil},
 	}
 
 	for _, tc := range cases {

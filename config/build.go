@@ -4,14 +4,24 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/kartaladev/rlng/expr"
 	"github.com/kartaladev/rlng/stage"
 )
+
+// errNoStages is the Cause of the ConfigError returned when a definition has no
+// stages (e.g. an empty or truncated config document).
+var errNoStages = errors.New("pipeline has no stages")
 
 // Build compiles the definition into a *stage.Pipeline, mapping each StageDef to
 // the matching stage constructor in list order. Expression and name validation
 // is delegated to the stage/expr constructors; Build adds config-shape checks
-// and wraps failures in a ConfigError naming the stage.
+// and wraps failures in a ConfigError. A definition with no stages is a
+// ConfigError (errNoStages), so an empty/truncated document fails consistently
+// across YAML and JSON rather than building a silent no-op pipeline.
 func (d *PipelineDef) Build() (*stage.Pipeline, error) {
+	if len(d.Stages) == 0 {
+		return nil, &ConfigError{Cause: errNoStages}
+	}
 	stages := make([]stage.Stage, 0, len(d.Stages))
 	for _, sd := range d.Stages {
 		st, err := sd.build()
@@ -58,7 +68,14 @@ func (sd StageDef) buildSingle(base []stage.Option) (stage.Stage, error) {
 	}
 	s, err := stage.NewSingleExpr(sd.Name, sd.Expr.Expr, opts...)
 	if err != nil {
-		return nil, &ConfigError{Stage: sd.Name, Cause: err}
+		// The stage error already names the stage; don't re-prefix it. If the
+		// culprit is the condition sub-expression, attribute it to that field.
+		if sd.Condition != nil {
+			if _, cerr := expr.NewPredicate(sd.Condition.Expr, sd.Condition.options()...); cerr != nil {
+				return nil, &ConfigError{Stage: sd.Name, Field: "condition", Cause: cerr}
+			}
+		}
+		return nil, &ConfigError{Cause: err}
 	}
 	return s, nil
 }
@@ -78,7 +95,7 @@ func (sd StageDef) buildMulti(base []stage.Option) (stage.Stage, error) {
 	}
 	s, err := stage.NewMultiExpr(sd.Name, named, base...)
 	if err != nil {
-		return nil, &ConfigError{Stage: sd.Name, Cause: err}
+		return nil, &ConfigError{Cause: err} // stage error already names the stage
 	}
 	return s, nil
 }
@@ -95,7 +112,7 @@ func (sd StageDef) buildTable(base []stage.Option) (stage.Stage, error) {
 	for i, r := range sd.Rules {
 		decisions := make(map[string]string, len(r.Decisions))
 		for key, ed := range r.Decisions {
-			if len(ed.options()) > 0 {
+			if ed.hasOptions() {
 				return nil, &ConfigError{
 					Stage: sd.Name,
 					Field: fmt.Sprintf("rules[%d].decisions.%s", i, key),
@@ -114,7 +131,7 @@ func (sd StageDef) buildTable(base []stage.Option) (stage.Stage, error) {
 	opts = append(opts, stage.WithHitPolicy(hp))
 	s, err := stage.NewDecisionTable(sd.Name, rules, opts...)
 	if err != nil {
-		return nil, &ConfigError{Stage: sd.Name, Cause: err}
+		return nil, &ConfigError{Cause: err} // stage error already names the stage
 	}
 	return s, nil
 }

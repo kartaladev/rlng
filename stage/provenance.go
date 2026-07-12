@@ -11,20 +11,25 @@ const seedStageType = "seed"
 
 const opSeed = "seed"
 
-// maxLineageDepth bounds Lineage/Explain recursion against a maliciously deep
-// restored derivation graph.
-const maxLineageDepth = 1000
+// MaxLineageDepth bounds Lineage/Explain recursion against a maliciously deep
+// restored derivation graph. A derivation chain deeper than this is truncated;
+// Explain marks the truncation point in its output.
+const MaxLineageDepth = 1000
 
 // Derivation records how one value in a Scope was produced. It is populated only
 // when the Scope was created WithProvenance.
 type Derivation struct {
-	Path       string         `json:"path"`                 // scope dot-path written
-	Stage      string         `json:"stage,omitempty"`      // producing stage name ("" for a seed input)
-	StageType  string         `json:"stage_type"`           // TypeSingleExpr / TypeMultiExpr / TypeDecisionTable, or "seed"
-	Operation  string         `json:"operation"`            // "seed", "eval", "expr:<name>", "decision:<key>", "collect:<key>"
-	Expression string         `json:"expression,omitempty"` // source expression ("" for a seed)
-	Inputs     map[string]any `json:"inputs,omitempty"`     // referenced identifier -> value at eval time (nil for a seed)
-	Value      any            `json:"value"`                // the derived value
+	Path       string `json:"path"`                 // scope dot-path written
+	Stage      string `json:"stage,omitempty"`      // producing stage name ("" for a seed input)
+	StageType  string `json:"stage_type"`           // TypeSingleExpr / TypeMultiExpr / TypeDecisionTable, or "seed"
+	Operation  string `json:"operation"`            // "seed", "eval", "expr:<name>", "decision:<key>", "collect:<key>"
+	Expression string `json:"expression,omitempty"` // source expression ("" for a seed)
+	// Inputs maps each referenced identifier to its value at eval time (nil for
+	// a seed). For a collect-mode decision that matched multiple rules, Inputs
+	// holds each identifier's value from the last matching rule (the Value slice
+	// is the authoritative per-rule record); single/multi stages record one value.
+	Inputs map[string]any `json:"inputs,omitempty"`
+	Value  any            `json:"value"` // the derived value
 }
 
 // WithProvenance makes the Scope record a Derivation for every value (seed inputs
@@ -91,21 +96,21 @@ func (s *Scope) Lineage(path string) []Derivation {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var out []Derivation
-	s.collectLineage(path, 0, map[string]struct{}{}, &out)
+	s.collectLineage(path, 0, map[string]struct{}{}, s.lineageIndex(), &out)
 	return out
 }
 
-func (s *Scope) collectLineage(key string, depth int, visited map[string]struct{}, out *[]Derivation) {
-	if depth >= maxLineageDepth {
+func (s *Scope) collectLineage(key string, depth int, visited map[string]struct{}, idx map[string][]Derivation, out *[]Derivation) {
+	if depth >= MaxLineageDepth {
 		return
 	}
-	for _, d := range s.derivationsFor(key) {
+	for _, d := range derivationsFor(s.derivations, idx, key) {
 		if _, seen := visited[d.Path]; seen {
 			continue
 		}
 		visited[d.Path] = struct{}{}
 		for _, id := range sortedInputs(d.Inputs) {
-			s.collectLineage(id, depth+1, visited, out)
+			s.collectLineage(id, depth+1, visited, idx, out)
 		}
 		*out = append(*out, d)
 	}
@@ -123,15 +128,16 @@ func (s *Scope) Explain(path string) string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	var b strings.Builder
-	s.explain(path, 0, map[string]struct{}{}, &b)
+	s.explain(path, 0, map[string]struct{}{}, s.lineageIndex(), &b)
 	return b.String()
 }
 
-func (s *Scope) explain(key string, depth int, visited map[string]struct{}, b *strings.Builder) {
-	if depth >= maxLineageDepth {
+func (s *Scope) explain(key string, depth int, visited map[string]struct{}, idx map[string][]Derivation, b *strings.Builder) {
+	if depth >= MaxLineageDepth {
+		fmt.Fprintf(b, "%s… (truncated: max lineage depth %d reached)\n", strings.Repeat("  ", depth), MaxLineageDepth)
 		return
 	}
-	for _, d := range s.derivationsFor(key) {
+	for _, d := range derivationsFor(s.derivations, idx, key) {
 		indent := strings.Repeat("  ", depth)
 		if d.StageType == seedStageType {
 			fmt.Fprintf(b, "%s%s = %v [seed]\n", indent, d.Path, d.Value)
@@ -143,28 +149,41 @@ func (s *Scope) explain(key string, depth int, visited map[string]struct{}, b *s
 		}
 		visited[d.Path] = struct{}{}
 		for _, id := range sortedInputs(d.Inputs) {
-			s.explain(id, depth+1, visited, b)
+			s.explain(id, depth+1, visited, idx, b)
 		}
 	}
 }
 
-// derivationsFor returns the derivation recorded exactly at key, or — when there
-// is none — every derivation whose path is under the key namespace (key + "."),
-// sorted by path. This links an input identifier (a top-level name like "tiers")
-// to the namespaced values a stage wrote under it ("tiers.tag").
-func (s *Scope) derivationsFor(key string) []Derivation {
-	if d, ok := s.derivations[key]; ok {
-		return []Derivation{d}
-	}
-	var out []Derivation
-	prefix := key + "."
+// lineageIndex groups derivations by every ancestor namespace of their path
+// ("a.b.c" is indexed under "a" and "a.b"), each list sorted by path. Built once
+// per Lineage/Explain call so derivationsFor is an O(1) lookup instead of an O(N)
+// prefix scan at every recursion step (a guard against restored graphs with many
+// derivations). Caller must hold s.mu.
+func (s *Scope) lineageIndex() map[string][]Derivation {
+	idx := make(map[string][]Derivation, len(s.derivations))
 	for p, d := range s.derivations {
-		if strings.HasPrefix(p, prefix) {
-			out = append(out, d)
+		for i := 0; i < len(p); i++ {
+			if p[i] == '.' {
+				idx[p[:i]] = append(idx[p[:i]], d)
+			}
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
-	return out
+	for k := range idx {
+		list := idx[k]
+		sort.Slice(list, func(i, j int) bool { return list[i].Path < list[j].Path })
+	}
+	return idx
+}
+
+// derivationsFor returns the derivation recorded exactly at key, or — when there
+// is none — every derivation whose path is under the key namespace (key + "."),
+// taken from the precomputed index. This links an input identifier (a top-level
+// name like "tiers") to the namespaced values a stage wrote under it ("tiers.tag").
+func derivationsFor(derivations map[string]Derivation, idx map[string][]Derivation, key string) []Derivation {
+	if d, ok := derivations[key]; ok {
+		return []Derivation{d}
+	}
+	return idx[key]
 }
 
 func sortedInputs(inputs map[string]any) []string {

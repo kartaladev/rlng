@@ -1,6 +1,18 @@
 package rlng
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
+
+// errEmptyMappingKey is the Cause of a MappingError returned by NewMapper when a
+// MappingTemplate contains an empty output-path key.
+var errEmptyMappingKey = errors.New("mapping template key must not be empty")
+
+// errNilInput is returned by Evaluate/flatten when the input is a nil pointer or
+// an untyped nil, which would otherwise seed an empty Scope and return a bogus
+// zero result. A non-nil empty map remains a valid (empty) seed.
+var errNilInput = errors.New("rlng: nil input")
 
 // MappingError reports a failure compiling or evaluating a result-mapping field,
 // or decoding the assembled result. Field is the output dot-path ("" for the

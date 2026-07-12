@@ -15,7 +15,7 @@ func references(src string) []string {
 	if err != nil {
 		return nil
 	}
-	v := &refVisitor{seen: map[string]struct{}{}}
+	v := &refVisitor{seen: map[string]struct{}{}, callees: map[string]struct{}{}}
 	node := tree.Node
 	ast.Walk(&node, v)
 	if len(v.seen) == 0 {
@@ -23,16 +23,34 @@ func references(src string) []string {
 	}
 	refs := make([]string, 0, len(v.seen))
 	for name := range v.seen {
+		// A call callee (e.g. `discount` in `discount(x)`) is a function name
+		// supplied by the env, not a data field the expression reads; exclude it
+		// so References reports only value inputs. (Builtins like len are
+		// BuiltinNode, already not IdentifierNodes.)
+		if _, isCallee := v.callees[name]; isCallee {
+			continue
+		}
 		refs = append(refs, name)
+	}
+	if len(refs) == 0 {
+		return nil
 	}
 	sort.Strings(refs)
 	return refs
 }
 
-type refVisitor struct{ seen map[string]struct{} }
+type refVisitor struct {
+	seen    map[string]struct{}
+	callees map[string]struct{}
+}
 
 func (r *refVisitor) Visit(node *ast.Node) {
-	if id, ok := (*node).(*ast.IdentifierNode); ok {
-		r.seen[id.Value] = struct{}{}
+	switch n := (*node).(type) {
+	case *ast.IdentifierNode:
+		r.seen[n.Value] = struct{}{}
+	case *ast.CallNode:
+		if id, ok := n.Callee.(*ast.IdentifierNode); ok {
+			r.callees[id.Value] = struct{}{}
+		}
 	}
 }

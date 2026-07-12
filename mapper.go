@@ -1,6 +1,7 @@
 package rlng
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
@@ -24,8 +25,8 @@ type mappedField struct {
 }
 
 // NewMapper compiles each template field's expression up front. A compile error
-// is a *MappingError naming the field. Fields are evaluated in sorted dot-path
-// order for determinism.
+// is a *MappingError naming the field, as is an empty template key. Fields are
+// evaluated in sorted dot-path order for determinism.
 func NewMapper[R any](tmpl MappingTemplate) (*Mapper[R], error) {
 	paths := make([]string, 0, len(tmpl))
 	for p := range tmpl {
@@ -35,6 +36,9 @@ func NewMapper[R any](tmpl MappingTemplate) (*Mapper[R], error) {
 
 	fields := make([]mappedField, 0, len(paths))
 	for _, p := range paths {
+		if p == "" {
+			return nil, &MappingError{Field: p, Cause: errEmptyMappingKey}
+		}
 		fn, err := expr.NewFunction(p, tmpl[p])
 		if err != nil {
 			return nil, &MappingError{Field: p, Cause: err}
@@ -54,7 +58,9 @@ func (m *Mapper[R]) Map(scope map[string]any) (R, error) {
 		if err != nil {
 			return zero, &MappingError{Field: f.path, Cause: err}
 		}
-		setNested(out, f.path, v)
+		if err := setNested(out, f.path, v); err != nil {
+			return zero, &MappingError{Field: f.path, Cause: err}
+		}
 	}
 
 	var r R
@@ -65,16 +71,26 @@ func (m *Mapper[R]) Map(scope map[string]any) (R, error) {
 }
 
 // setNested writes v at a dot-separated path in out, creating intermediate maps.
-func setNested(out map[string]any, path string, v any) {
+// It returns an error when an output path collides with a value already written
+// at a shorter prefix (e.g. both "a" and "a.b" are mapped), rather than silently
+// overwriting — mirroring stage.Scope.Set's ErrPathNotMap guard.
+func setNested(out map[string]any, path string, v any) error {
 	keys := strings.Split(path, ".")
 	m := out
 	for _, k := range keys[:len(keys)-1] {
-		child, ok := m[k].(map[string]any)
+		existing, ok := m[k]
 		if !ok {
-			child = make(map[string]any)
+			child := make(map[string]any)
 			m[k] = child
+			m = child
+			continue
+		}
+		child, ok := existing.(map[string]any)
+		if !ok {
+			return fmt.Errorf("output path %q conflicts with the value already mapped at %q", path, k)
 		}
 		m = child
 	}
 	m[keys[len(keys)-1]] = v
+	return nil
 }
