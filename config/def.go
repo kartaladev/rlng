@@ -30,11 +30,11 @@ type PipelineDef struct {
 	Version string `yaml:"version" json:"version"`
 }
 
-// StageDef is a flat union over the three stage types, selected by Type. Fields
+// StageDef is a flat union over the four stage types, selected by Type. Fields
 // not relevant to Type are ignored by Build.
 type StageDef struct {
 	Name      string   `yaml:"name" json:"name"`
-	Type      string   `yaml:"type" json:"type"` // single-expr | multi-expr | decision-table
+	Type      string   `yaml:"type" json:"type"` // single-expr | multi-expr | decision-table | foreach
 	DependsOn []string `yaml:"depends_on" json:"depends_on"`
 
 	// single-expr
@@ -50,6 +50,30 @@ type StageDef struct {
 	Aggregation string             `yaml:"aggregation" json:"aggregation"` // collect only: list (default) | sum | min | max | count
 	Rules       []RuleDef          `yaml:"rules" json:"rules"`
 	Default     map[string]ExprDef `yaml:"default" json:"default"` // else decisions applied when no rule matches
+
+	// foreach: Collection is the Scope path to a []any; As names the
+	// per-element binding (default "item", see pipe.WithForEachAs); Stages are
+	// the inner sub-pipeline's stage definitions, built and topologically
+	// sorted the same way as the top-level pipeline (a nested foreach among
+	// them is rejected — see ErrNestedForEach); Rollups reduce a per-element
+	// output key across all elements into a header value. Output (shared with
+	// single-expr, above) names the per-element results list key (default
+	// "items", see pipe.WithForEachOutput).
+	Collection string      `yaml:"collection" json:"collection"`
+	As         string      `yaml:"as" json:"as"`
+	Stages     []StageDef  `yaml:"stages" json:"stages"`
+	Rollups    []RollupDef `yaml:"rollups" json:"rollups"`
+}
+
+// RollupDef declares one foreach roll-up: Key is the per-element output key
+// to reduce, Agg is the aggregation name (list (default) | sum | min | max |
+// count — the same vocabulary as StageDef.Aggregation), and As is the header
+// key, namespaced under the foreach stage's own name, the reduced value is
+// written to.
+type RollupDef struct {
+	Key string `yaml:"key" json:"key"`
+	Agg string `yaml:"agg" json:"agg"`
+	As  string `yaml:"as" json:"as"`
 }
 
 // NamedExprDef is one entry of a multi-expr stage.

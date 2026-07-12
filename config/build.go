@@ -12,6 +12,13 @@ import (
 // stages (e.g. an empty or truncated config document).
 var ErrNoStages = errors.New("pipeline has no stages")
 
+// ErrNestedForEach is the Cause of the ConfigError returned when a foreach
+// stage's inner Stages list contains another foreach stage. Nesting is
+// rejected at build time (D7): a foreach's inner pipeline runs once per
+// element, and a nested foreach would compound that fan-out in a way the
+// config surface does not yet support.
+var ErrNestedForEach = errors.New("foreach: nested foreach is not supported")
+
 // Build compiles the definition into a *pipe.Pipeline, mapping each StageDef to
 // the matching stage constructor in list order. Expression and name validation
 // is delegated to the stage/expr constructors; Build adds config-shape checks
@@ -77,6 +84,8 @@ func (sd StageDef) build(constants, schema map[string]any, strict bool) (pipe.St
 		return sd.buildMulti(base, constants, schema, strict)
 	case pipe.TypeDecisionTable:
 		return sd.buildTable(base, constants, schema, strict)
+	case pipe.TypeForEach:
+		return sd.buildForEach(base, constants, schema, strict)
 	default:
 		return nil, &ConfigError{Stage: sd.Name, Field: "type", Cause: fmt.Errorf("unknown stage type %q", sd.Type)}
 	}
@@ -127,6 +136,11 @@ func (sd StageDef) hydrateGlobals() error {
 	}
 	for key, ed := range sd.Default {
 		if err := hydrateExprGlobals(sd.Name, fmt.Sprintf("default.%s", key), &ed); err != nil {
+			return err
+		}
+	}
+	for _, isd := range sd.Stages {
+		if err := isd.hydrateGlobals(); err != nil {
 			return err
 		}
 	}
@@ -269,6 +283,63 @@ func (sd StageDef) buildTable(base []pipe.Option, constants, schema map[string]a
 		opts = append(opts, pipe.WithDefault(defaults, withStrictEnv(strict, schema, withConstants(constants, nil))...))
 	}
 	s, err := pipe.NewDecisionTable(sd.Name, rules, opts...)
+	if err != nil {
+		return nil, &ConfigError{Cause: err} // stage error already names the stage
+	}
+	return s, nil
+}
+
+// buildForEach builds a foreach stage: each inner StageDef is built via the
+// same StageDef.build path used for top-level stages (so an inner stage sees
+// the same constants/schema/strict-env), assembled into a *pipe.Pipeline, and
+// wrapped by pipe.NewForEach. A nested foreach among sd.Stages is rejected
+// before it is built (ErrNestedForEach), naming both the outer and inner
+// stage. depends-on comes from sd.DependsOn via WithForEachDependsOn rather
+// than base, since base carries a pipe.Option (WithDependsOn), not a
+// pipe.ForEachOption.
+func (sd StageDef) buildForEach(base []pipe.Option, constants, schema map[string]any, strict bool) (pipe.Stage, error) { //nolint:unparam // base is part of the shared build-dispatch signature; see doc comment.
+	if len(sd.Stages) == 0 {
+		return nil, &ConfigError{Stage: sd.Name, Field: "stages", Cause: errors.New("foreach requires at least one inner stage")}
+	}
+
+	inner := make([]pipe.Stage, 0, len(sd.Stages))
+	for _, isd := range sd.Stages {
+		if isd.Type == pipe.TypeForEach {
+			return nil, &ConfigError{Stage: sd.Name, Field: "stages", Cause: fmt.Errorf("inner stage %q: %w", isd.Name, ErrNestedForEach)}
+		}
+		st, err := isd.build(constants, schema, strict)
+		if err != nil {
+			return nil, err // already a *ConfigError naming the inner stage
+		}
+		inner = append(inner, st)
+	}
+
+	innerPipe, err := pipe.NewPipeline(inner...)
+	if err != nil {
+		return nil, &ConfigError{Stage: sd.Name, Cause: err}
+	}
+
+	rollups := make([]pipe.Rollup, 0, len(sd.Rollups))
+	for _, rd := range sd.Rollups {
+		agg, err := parseAggregation(rd.Agg)
+		if err != nil {
+			return nil, &ConfigError{Stage: sd.Name, Field: "rollups", Cause: err}
+		}
+		rollups = append(rollups, pipe.Rollup{Key: rd.Key, Agg: agg, As: rd.As})
+	}
+
+	opts := []pipe.ForEachOption{
+		pipe.WithRollups(rollups...),
+		pipe.WithForEachDependsOn(sd.DependsOn...),
+	}
+	if sd.As != "" {
+		opts = append(opts, pipe.WithForEachAs(sd.As))
+	}
+	if sd.Output != "" {
+		opts = append(opts, pipe.WithForEachOutput(sd.Output))
+	}
+
+	s, err := pipe.NewForEach(sd.Name, sd.Collection, innerPipe, opts...)
 	if err != nil {
 		return nil, &ConfigError{Cause: err} // stage error already names the stage
 	}
