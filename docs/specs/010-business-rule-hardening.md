@@ -79,9 +79,17 @@ governance, or persistence).
 - **Decimal money type.** Exact decimal arithmetic inside expressions is a
   cross-cutting design (custom expr type + operator handling) warranting its own
   spec; `float64` semantics are documented as a caveat meanwhile.
+  *Realized by Spec 014 (generalized to value serde consistency).*
 - **`foreach` stage.** Applying a decision table per element of a collection is a
   new stage type warranting its own spec; the `map/filter/reduce` expr builtins
-  cover the scalar-in-one-expression case today.
+  cover the scalar-in-one-expression case today. *Realized by Spec 015.*
+
+### Follow-on remediation (deeper post-010 audit)
+
+A second, deeper business-rule production-readiness audit of the merged library
+produced specs **011** (config-path safety parity), **012** (evaluation
+correctness & explainability), **013** (ruleset identity), **014** (value serde
+consistency — subsumes the decimal deferral above), and **015** (`foreach`).
 
 ## Non-goals
 
