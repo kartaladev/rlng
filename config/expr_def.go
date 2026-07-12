@@ -29,6 +29,13 @@ func (e *ExprDef) UnmarshalYAML(value *yaml.Node) error {
 		e.Expr = value.Value
 		return nil
 	case yaml.MappingNode:
+		// Validate known fields before decoding
+		known := map[string]bool{"expr": true, "fallback": true, "globals": true, "coerce": true}
+		for i := 0; i < len(value.Content); i += 2 {
+			if k := value.Content[i].Value; !known[k] {
+				return &ConfigError{Field: "expr", Cause: fmt.Errorf("unknown field %q", k)}
+			}
+		}
 		type raw ExprDef // alias breaks the UnmarshalYAML recursion
 		var r raw
 		if err := value.Decode(&r); err != nil {
@@ -50,7 +57,9 @@ func (e *ExprDef) UnmarshalJSON(data []byte) error {
 	}
 	type raw ExprDef // alias breaks the UnmarshalJSON recursion
 	var r raw
-	if err := json.Unmarshal(data, &r); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&r); err != nil {
 		return err
 	}
 	*e = ExprDef(r)

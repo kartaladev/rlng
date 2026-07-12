@@ -156,6 +156,35 @@ func TestExprDefOptionsWiring(t *testing.T) {
 	assert.Equal(t, 42, got, "Globals default + Fallback must be wired through Build")
 }
 
+func TestExprDefObjectFormRejectsUnknownKeyYAML(t *testing.T) {
+	doc := []byte(`
+stages:
+  - name: s
+    type: single-expr
+    expr:
+      expr: "1"
+      fallbck: "2"
+`)
+	_, err := config.ParseYAML(doc)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "fallbck")
+}
+
+func TestExprDefObjectFormRejectsUnknownKeyJSON(t *testing.T) {
+	doc := []byte(`{"stages":[{"name":"s","type":"single-expr","expr":{"expr":"1","fallbck":"2"}}]}`)
+	_, err := config.ParseJSON(doc)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "fallbck")
+}
+
+func TestExprDefObjectFormValidKeysStillParse(t *testing.T) {
+	doc := []byte(`{"stages":[{"name":"s","type":"single-expr","expr":{"expr":"1","fallback":"2","coerce":true}}]}`)
+	d, err := config.ParseJSON(doc)
+	require.NoError(t, err)
+	require.Equal(t, "1", d.Stages[0].Expr.Expr)
+	require.Equal(t, "2", d.Stages[0].Expr.Fallback)
+}
+
 func TestConfigErrorMessage(t *testing.T) {
 	t.Parallel()
 
