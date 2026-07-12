@@ -1,6 +1,7 @@
 package pipe_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/kartaladev/rlng/pipe"
@@ -39,6 +40,21 @@ func TestGetAs(t *testing.T) {
 			},
 		},
 		{
+			// A v2 Scope JSON round-trip (ADR-0038) reloads every sized
+			// integer as int64 (the sole canonical integer kind); GetInt must
+			// still widen it back to int losslessly.
+			name: "GetInt on an int64 value (v2 reload kind) widens losslessly",
+			seed: map[string]any{"count": int64(42)},
+			path: "count",
+			call: func(s *pipe.Scope) (any, error) { return s.GetInt("count") },
+			assert: func(t *testing.T, v any, err error) {
+				val, ok := v.(int)
+				require.NoError(t, err)
+				require.True(t, ok)
+				require.Equal(t, 42, val)
+			},
+		},
+		{
 			name: "GetInt64 happy path",
 			seed: map[string]any{"bigcount": int64(9223372036854775807)},
 			path: "bigcount",
@@ -60,6 +76,47 @@ func TestGetAs(t *testing.T) {
 				require.NoError(t, err)
 				require.True(t, ok)
 				require.Equal(t, 3.14159, val)
+			},
+		},
+		{
+			// A json.Number is the shape GetInt64 sees reading a legacy
+			// (pre-014, untagged) Scope JSON blob.
+			name: "GetInt64 on a valid-integer json.Number",
+			seed: map[string]any{"n": json.Number("123")},
+			path: "n",
+			call: func(s *pipe.Scope) (any, error) { return s.GetInt64("n") },
+			assert: func(t *testing.T, v any, err error) {
+				val, ok := v.(int64)
+				require.NoError(t, err)
+				require.True(t, ok)
+				require.Equal(t, int64(123), val)
+			},
+		},
+		{
+			name: "GetInt64 on a non-integer json.Number errors",
+			seed: map[string]any{"n": json.Number("1.5")},
+			path: "n",
+			call: func(s *pipe.Scope) (any, error) { return s.GetInt64("n") },
+			assert: func(t *testing.T, v any, err error) {
+				var typeErr *pipe.ScopeTypeError
+				require.ErrorAs(t, err, &typeErr)
+				require.Equal(t, "n", typeErr.Path)
+				require.Equal(t, "int64", typeErr.Expected)
+				require.Equal(t, "json.Number(1.5)", typeErr.Actual)
+			},
+		},
+		{
+			// Same rationale as the GetInt64 case above: json.Number is the
+			// shape GetFloat64 sees reading a legacy Scope JSON blob.
+			name: "GetFloat64 on a valid json.Number",
+			seed: map[string]any{"n": json.Number("3.14")},
+			path: "n",
+			call: func(s *pipe.Scope) (any, error) { return s.GetFloat64("n") },
+			assert: func(t *testing.T, v any, err error) {
+				val, ok := v.(float64)
+				require.NoError(t, err)
+				require.True(t, ok)
+				require.Equal(t, 3.14, val)
 			},
 		},
 		{

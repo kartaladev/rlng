@@ -32,7 +32,9 @@ func GetAs[T any](s *Scope, path string) (T, error) {
 }
 
 // GetInt returns the value at path as an int, or an error. A json.Number
-// (produced by JSON round-trip) is read losslessly; a non-integer or one that
+// (produced by a legacy, pre-014 JSON round-trip) or an int64 (produced by a
+// v2 Scope JSON round-trip — see ADR-0038, which canonicalizes every sized
+// integer to the int64 kind) is read losslessly; a non-integer or one that
 // overflows int is a *ScopeTypeError.
 func (s *Scope) GetInt(path string) (int, error) {
 	v, ok := s.Get(path)
@@ -42,6 +44,12 @@ func (s *Scope) GetInt(path string) (int, error) {
 	switch n := v.(type) {
 	case int:
 		return n, nil
+	case int64:
+		// Unreachable on 64-bit platforms (int == int64); guards 32-bit builds.
+		if int64(int(n)) != n {
+			return 0, &ScopeTypeError{Path: path, Expected: "int", Actual: fmt.Sprintf("int64(%d) overflows int", n)}
+		}
+		return int(n), nil
 	case json.Number:
 		i, err := n.Int64()
 		if err != nil {
