@@ -19,6 +19,30 @@ stages:
 // The same logical ruleset as equivalent JSON (object-form expr, reordered keys).
 const hashJSON = `{"stages":[{"expr":{"expr":"price * qty"},"type":"single-expr","name":"base"}]}`
 
+// pre015HashYAML is a non-foreach ruleset whose Hash() is pinned to the value
+// produced before the foreach schema fields were added to StageDef. The foreach
+// fields must not perturb the fingerprint of a ruleset that uses none of them
+// (they carry `omitempty`), so a decision persisted under an earlier release
+// still MatchesRuleset after upgrading — replay-safety across the boundary.
+const pre015HashYAML = `
+constants:
+  primeMin: 750
+stages:
+  - name: grade
+    type: decision-table
+    rules:
+      - id: PRIME
+        condition: score >= primeMin
+        decisions:
+          tier: '"prime"'
+    default:
+      tier: '"declined"'
+`
+
+// pre015Golden is the Hash() of pre015HashYAML as computed by the pre-foreach
+// StageDef (verified against the `main` branch).
+const pre015Golden = "35050a41fa676ae392d72d91e6a091ac2b6a72519c396d86c2b216fddb837de2"
+
 func TestPipelineDefHash(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -49,6 +73,15 @@ func TestPipelineDefHash(t *testing.T) {
 				return d1.Hash(), d2.Hash()
 			},
 			assert: func(t *testing.T, a, b string) { assert.Equal(t, a, b) },
+		},
+		{
+			name: "foreach schema fields do not perturb a pre-015 ruleset's hash (cross-version replay stability)",
+			build: func(t *testing.T) (string, string) {
+				d, err := config.ParseYAML([]byte(pre015HashYAML))
+				require.NoError(t, err)
+				return d.Hash(), pre015Golden
+			},
+			assert: func(t *testing.T, a, b string) { assert.Equal(t, b, a) },
 		},
 		{
 			name: "a changed expression changes the hash",

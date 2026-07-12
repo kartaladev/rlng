@@ -199,6 +199,30 @@ stages:
 			},
 		},
 		{
+			name: "a rollup missing its as is a build-time error (fail loud, not a runtime path error)",
+			yaml: `
+stages:
+  - name: lines
+    type: foreach
+    collection: items
+    stages:
+      - name: amt
+        type: single-expr
+        expr: item.price
+    rollups:
+      - key: amt
+        agg: sum
+`,
+			assert: func(t *testing.T, d *config.PipelineDef, buildErr error) {
+				require.NoError(t, buildErr)
+				_, err := d.Build()
+				require.Error(t, err)
+				var ce *config.ConfigError
+				require.ErrorAs(t, err, &ce)
+				assert.ErrorIs(t, err, pipe.ErrForEachEmptyRollup)
+			},
+		},
+		{
 			name: "duplicate inner stage names surface the pipeline construction error",
 			yaml: `
 stages:

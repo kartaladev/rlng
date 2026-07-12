@@ -99,6 +99,40 @@ same increment.
   adding nesting-detection logic to `ForEach` itself, which contradicts the
   reuse-over-special-case altitude this ADR chose.
 
+## Whole-branch gate outcome (increment 015 complete)
+
+Tasks 2–4 (roll-ups + per-element firing, config surface, acceptance example)
+landed on this core. The final `main..HEAD` review settled three more points:
+
+- **Hash stability across the schema change (fixed).** `StageDef` gained four
+  foreach fields (`Collection`/`As`/`Stages`/`Rollups`). Because `Hash()`
+  fingerprints the canonical JSON of the parsed definition, always-emitted new
+  fields would have changed the hash of *every* pre-foreach ruleset, silently
+  breaking `MatchesRuleset` replay-verification across the upgrade. The four
+  fields therefore carry `json:",omitempty"` so a stage using none of them
+  serializes exactly as before; a pinned golden-hash test guards this.
+- **Fail-loud roll-up validation (fixed).** `NewForEach` now rejects a `Rollup`
+  with an empty `Key` or `As` (`ErrForEachEmptyRollup`) at construction — an
+  empty `As` would otherwise be a confusing runtime path error and an empty
+  `Key` a silently-empty roll-up. The config builder surfaces it as a
+  `*ConfigError` naming the stage.
+- **Deferred to a later increment (backlog, not blocking):**
+  - *Dot-path roll-up keys.* `Rollup.Key` is looked up as a flat top-level key
+    in each element's result map, so rolling up a **decision-table** output
+    (namespaced `<table>.<key>`) currently needs a companion `single-expr` to
+    surface the value top-level (as the acceptance example shows). A future
+    increment may make `Key` dot-path-aware (backward-compatible: a dot-free
+    key is unchanged). Documented as the roll-up contract for now.
+  - *Per-element lineage (D5 beyond firing).* Per-element firing is recorded on
+    the outer scope under `<stage>[i]`, but each element's full derivation graph
+    (built when the outer scope tracks provenance) is discarded — only the data
+    `Snapshot()` survives in `items`. "Line i denied by rule X" is answerable;
+    the deeper per-element lineage is not yet surfaced.
+  - *Per-element `Snapshot()`+`NewScope` cost.* Each element deep-copies the
+    outer scope's map spine (O(elements × outer-scope size)); acceptable for
+    typical line-item counts, a candidate for a benchmark before large
+    collections.
+
 ## Traceability
 
 Spec: 015 (docs/specs/015-foreach-line-item-stage.md)

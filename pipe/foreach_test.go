@@ -733,6 +733,33 @@ func TestNewForEachErrors(t *testing.T) {
 				assert.Equal(t, pipe.TypeForEach, se.Type)
 			},
 		},
+		{
+			name: "rollup with an empty As is rejected at construction",
+			build: func() (*pipe.ForEach, error) {
+				return pipe.NewForEach("lines", "items", validInner,
+					pipe.WithRollups(pipe.Rollup{Key: "amount", Agg: pipe.AggregateSum, As: ""}))
+			},
+			assert: func(t *testing.T, err error) {
+				var se *pipe.StageError
+				require.ErrorAs(t, err, &se)
+				assert.Equal(t, "lines", se.Stage)
+				assert.Equal(t, pipe.TypeForEach, se.Type)
+				assert.ErrorIs(t, se, pipe.ErrForEachEmptyRollup)
+			},
+		},
+		{
+			name: "rollup with an empty Key is rejected at construction",
+			build: func() (*pipe.ForEach, error) {
+				return pipe.NewForEach("lines", "items", validInner,
+					pipe.WithRollups(pipe.Rollup{Key: "", Agg: pipe.AggregateSum, As: "total"}))
+			},
+			assert: func(t *testing.T, err error) {
+				var se *pipe.StageError
+				require.ErrorAs(t, err, &se)
+				assert.Equal(t, "lines", se.Stage)
+				assert.ErrorIs(t, se, pipe.ErrForEachEmptyRollup)
+			},
+		},
 	}
 
 	for _, tc := range cases {

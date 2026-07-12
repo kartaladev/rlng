@@ -14,6 +14,13 @@ var ErrForEachNotList = errors.New("foreach: collection is not a list")
 // path is not present in the Scope.
 var ErrForEachNoCollection = errors.New("foreach: collection path not found")
 
+// ErrForEachEmptyRollup is the Cause of a StageError returned by NewForEach
+// when a Rollup has an empty Key or As. Both are required: an empty As has no
+// output path to write to, and an empty Key matches no per-element value — both
+// are fail-loud at construction rather than a confusing runtime path error or a
+// silently-empty roll-up.
+var ErrForEachEmptyRollup = errors.New("foreach: rollup Key and As must not be empty")
+
 // ForEach is a stage that runs an inner *Pipeline once per element of a Scope
 // collection, against a fresh per-element Scope, collecting each element's
 // resulting data back as an ordered list. See ADR-0040.
@@ -94,6 +101,11 @@ func NewForEach(name, collection string, inner *Pipeline, opts ...ForEachOption)
 	cfg := &forEachConfig{as: "item", output: "items"}
 	for _, o := range opts {
 		o(cfg)
+	}
+	for _, r := range cfg.rollups {
+		if r.Key == "" || r.As == "" {
+			return nil, &StageError{Stage: name, Type: TypeForEach, Cause: ErrForEachEmptyRollup}
+		}
 	}
 
 	return &ForEach{

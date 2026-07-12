@@ -59,10 +59,15 @@ type StageDef struct {
 	// output key across all elements into a header value. Output (shared with
 	// single-expr, above) names the per-element results list key (default
 	// "items", see pipe.WithForEachOutput).
-	Collection string      `yaml:"collection" json:"collection"`
-	As         string      `yaml:"as" json:"as"`
-	Stages     []StageDef  `yaml:"stages" json:"stages"`
-	Rollups    []RollupDef `yaml:"rollups" json:"rollups"`
+	//
+	// These four carry `omitempty` on the JSON tag (unlike the older fields
+	// above) so a stage that uses none of them serializes exactly as it did
+	// before foreach existed — keeping Hash() stable for pre-foreach rulesets
+	// so a persisted decision still MatchesRuleset across the upgrade.
+	Collection string      `yaml:"collection" json:"collection,omitempty"`
+	As         string      `yaml:"as" json:"as,omitempty"`
+	Stages     []StageDef  `yaml:"stages" json:"stages,omitempty"`
+	Rollups    []RollupDef `yaml:"rollups" json:"rollups,omitempty"`
 }
 
 // RollupDef declares one foreach roll-up: Key is the per-element output key
