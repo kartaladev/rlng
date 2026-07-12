@@ -53,7 +53,7 @@ func TestBuildDecisionTableExtensions(t *testing.T) {
 				sc := pipe.NewScope(map[string]any{"wire": true, "rush": true})
 				require.NoError(t, p.Run(t.Context(), sc))
 				v, _ := sc.Get("fees.fee")
-				assert.Equal(t, 40, v)
+				assert.Equal(t, int64(40), v, "an all-int sum stays exact in int64")
 			},
 		},
 		{

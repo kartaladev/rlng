@@ -84,6 +84,38 @@ func TestDecisionTablePolicies(t *testing.T) {
 			},
 		},
 		{
+			name: "any: numeric int vs float agree without a false conflict",
+			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
+				d, err := pipe.NewDecisionTable("g", []pipe.Rule{
+					{Condition: "true", Decisions: map[string]string{"amt": "10"}},
+					{Condition: "true", Decisions: map[string]string{"amt": "10.0"}},
+				}, pipe.WithHitPolicy(pipe.HitPolicyAny))
+				require.NoError(t, err)
+				return d, pipe.NewScope(map[string]any{})
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				require.NoError(t, err)
+				v, ok := sc.Get("g.amt")
+				require.True(t, ok)
+				assert.Equal(t, 10, v, "the first-seen value is kept")
+			},
+		},
+		{
+			name: "any: numeric disagreement is still a conflict",
+			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
+				d, err := pipe.NewDecisionTable("g", []pipe.Rule{
+					{Condition: "true", Decisions: map[string]string{"amt": "10"}},
+					{Condition: "true", Decisions: map[string]string{"amt": "11"}},
+				}, pipe.WithHitPolicy(pipe.HitPolicyAny))
+				require.NoError(t, err)
+				return d, pipe.NewScope(map[string]any{})
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				require.Error(t, err)
+				assert.ErrorIs(t, err, pipe.ErrConflictingMatches)
+			},
+		},
+		{
 			name: "any: conflicting matches is an error",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("g", []pipe.Rule{
@@ -130,7 +162,7 @@ func TestDecisionTablePolicies(t *testing.T) {
 			assert: func(t *testing.T, sc *pipe.Scope, err error) {
 				require.NoError(t, err)
 				v, _ := sc.Get("fees.fee")
-				assert.Equal(t, 40, v)
+				assert.Equal(t, int64(40), v, "an all-int sum stays exact in int64")
 			},
 		},
 		{

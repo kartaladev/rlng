@@ -108,7 +108,7 @@ func TestDecisionTablePolicyEdges(t *testing.T) {
 			assert: func(t *testing.T, sc *pipe.Scope, err error) {
 				require.NoError(t, err)
 				v, _ := sc.Get("c.r")
-				assert.Equal(t, 7, v)
+				assert.Equal(t, int64(7), v, "an all-int sum (incl. a uint operand) stays exact in int64")
 			},
 		},
 		{
@@ -264,7 +264,7 @@ func TestCollectAggregationProvenanceLabels(t *testing.T) {
 	}
 
 	cases := []testCase{
-		{name: "sum", agg: pipe.AggregateSum, wantOp: "collect:sum:v", wantVal: 30},
+		{name: "sum", agg: pipe.AggregateSum, wantOp: "collect:sum:v", wantVal: int64(30)},
 		{name: "min", agg: pipe.AggregateMin, wantOp: "collect:min:v", wantVal: 10},
 		{name: "max", agg: pipe.AggregateMax, wantOp: "collect:max:v", wantVal: 20},
 		{name: "count", agg: pipe.AggregateCount, wantOp: "collect:count:v", wantVal: 2},

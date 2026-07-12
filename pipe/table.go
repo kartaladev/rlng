@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/kartaladev/rlng/expr"
+	"github.com/shopspring/decimal"
 )
 
 // HitPolicy selects how a DecisionTable resolves matching rules.
@@ -35,7 +36,11 @@ type CollectAggregation int
 const (
 	// AggregateList keeps every matched value as a []any in rule order (default).
 	AggregateList CollectAggregation = iota
-	// AggregateSum sums the matched numeric values (int if all ints, else float).
+	// AggregateSum sums the matched numeric values: int64 when every matched
+	// value is an integer (exact, checked for overflow), decimal.Decimal when
+	// any matched value is a decimal (exact), otherwise float64. An int64 sum
+	// that would exceed the range of int64 is ErrAggregateOverflow rather than
+	// silently wrapping or degrading to float64.
 	AggregateSum
 	// AggregateMin returns the smallest matched numeric value.
 	AggregateMin
@@ -56,6 +61,11 @@ var ErrConflictingMatches = errors.New("decision-table: matching rules disagree 
 // ErrNonNumericAggregate is the Cause of a StageError when a sum/min/max
 // aggregation encounters a non-numeric matched value.
 var ErrNonNumericAggregate = errors.New("decision-table: non-numeric value in numeric aggregation")
+
+// ErrAggregateOverflow is the Cause of a StageError when an integer sum
+// aggregation exceeds the range of int64. The engine errors rather than
+// silently wrapping or degrading to float64.
+var ErrAggregateOverflow = errors.New("decision-table: integer aggregation overflows int64")
 
 // Rule is one row of a DecisionTable: a boolean condition and a set of
 // output-key -> value-expression decisions. Optional ID and Message make a
@@ -312,7 +322,7 @@ func (d *DecisionTable) executeAny(env map[string]any, sc *Scope) error {
 				order = append(order, dec.key)
 				continue
 			}
-			if !reflect.DeepEqual(prev, v) {
+			if !valuesAgree(prev, v) {
 				return d.stageErr(fmt.Errorf("%w: key %q has %v and %v", ErrConflictingMatches, dec.key, prev, v))
 			}
 		}
@@ -456,51 +466,219 @@ const (
 	aggMax
 )
 
-// foldNumeric folds numeric values by op. Integers stay integers; a mix with any
-// float yields a float. A non-numeric value is ErrNonNumericAggregate. vals is
-// non-empty (only reached for a matched key).
-func foldNumeric(vals []any, op numericOp) (any, error) {
-	var acc float64
-	allInt := true
-	for i, v := range vals {
-		f, isInt, ok := asFloat(v)
-		if !ok {
-			return nil, fmt.Errorf("%w: %v (%T)", ErrNonNumericAggregate, v, v)
-		}
-		if !isInt {
-			allInt = false
-		}
-		switch {
-		case op == aggSum:
-			acc += f
-		case i == 0:
-			acc = f
-		case op == aggMin && f < acc:
-			acc = f
-		case op == aggMax && f > acc:
-			acc = f
-		}
+// numKind ranks numeric kinds so a fold promotes to the widest present kind:
+// int64 < float64 < decimal.
+type numKind int
+
+const (
+	kindInt numKind = iota
+	kindFloat
+	kindDecimal
+	kindNonNumeric
+)
+
+// classify reports the numeric kind of v, or kindNonNumeric when v is not one
+// of the supported numeric types.
+func classify(v any) numKind {
+	switch v.(type) {
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+		return kindInt
+	case float32, float64:
+		return kindFloat
+	case decimal.Decimal:
+		return kindDecimal
+	default:
+		return kindNonNumeric
 	}
-	if allInt {
-		return int(acc), nil
-	}
-	return acc, nil
 }
 
-// asFloat reports v as a float64, whether it was an integer kind, and whether it
-// was numeric at all.
-func asFloat(v any) (f float64, isInt bool, ok bool) {
+// foldNumeric folds vals (non-empty) by op with kind fidelity: an all-integer
+// fold stays int64 (checked overflow -> ErrAggregateOverflow); any decimal
+// present folds in decimal; otherwise float64. min/max return the actual
+// matched element. A non-numeric value is ErrNonNumericAggregate.
+func foldNumeric(vals []any, op numericOp) (any, error) {
+	widest := kindInt
+	for _, v := range vals {
+		k := classify(v)
+		if k == kindNonNumeric {
+			return nil, fmt.Errorf("%w: %v (%T)", ErrNonNumericAggregate, v, v)
+		}
+		if k > widest {
+			widest = k
+		}
+	}
+	switch widest {
+	case kindDecimal:
+		return foldDecimal(vals, op)
+	case kindFloat:
+		return foldFloat(vals, op)
+	default:
+		return foldInt(vals, op)
+	}
+}
+
+// foldInt folds vals (all classified kindInt) in int64. Sum is checked for
+// int64 overflow via the canonical test: adding operand n overflows iff n
+// is positive and the sum is smaller than the running total, or n is
+// negative and the sum is larger than the running total. This correctly
+// flags acc == n == math.MinInt64, which wraps to exactly 0 and would evade
+// a same-sign-operands check. min/max return the actual matched element
+// (vals[bestIdx]) rather than a reconstructed int64, so the caller sees the
+// original type (e.g. Go's native int for an expr literal).
+func foldInt(vals []any, op numericOp) (any, error) {
+	acc := toInt64(vals[0])
+	best := acc // for min/max, best is the winning element's int64
+	bestIdx := 0
+	for i := 1; i < len(vals); i++ {
+		n := toInt64(vals[i])
+		switch op {
+		case aggSum:
+			sum := acc + n
+			// Canonical signed-overflow test: adding a positive n that makes
+			// the sum smaller than acc is positive overflow; adding a
+			// negative n that makes the sum larger than acc is negative
+			// overflow. Unlike a same-sign-operands check, this also catches
+			// acc == n == math.MinInt64, where acc+n wraps to exactly 0 and
+			// would otherwise slip through undetected.
+			if (n > 0 && sum < acc) || (n < 0 && sum > acc) {
+				return nil, ErrAggregateOverflow
+			}
+			acc = sum
+		case aggMin:
+			if n < best {
+				best, bestIdx = n, i
+			}
+		case aggMax:
+			if n > best {
+				best, bestIdx = n, i
+			}
+		}
+	}
+	if op == aggSum {
+		return acc, nil
+	}
+	return vals[bestIdx], nil // return the ACTUAL matched element
+}
+
+// foldFloat folds vals (kindInt/kindFloat present, no decimal) in float64.
+// min/max return the actual matched element.
+func foldFloat(vals []any, op numericOp) (any, error) {
+	acc := toFloat64(vals[0])
+	best := acc
+	bestIdx := 0
+	for i := 1; i < len(vals); i++ {
+		n := toFloat64(vals[i])
+		switch op {
+		case aggSum:
+			acc += n
+		case aggMin:
+			if n < best {
+				best, bestIdx = n, i
+			}
+		case aggMax:
+			if n > best {
+				best, bestIdx = n, i
+			}
+		}
+	}
+	if op == aggSum {
+		return acc, nil
+	}
+	return vals[bestIdx], nil
+}
+
+// foldDecimal folds vals (any decimal present) in decimal.Decimal for exact
+// arithmetic. min/max return the actual matched element.
+func foldDecimal(vals []any, op numericOp) (any, error) {
+	acc, _ := asDecimal(vals[0])
+	best := acc
+	bestIdx := 0
+	for i := 1; i < len(vals); i++ {
+		d, _ := asDecimal(vals[i])
+		switch op {
+		case aggSum:
+			acc = acc.Add(d)
+		case aggMin:
+			if d.Cmp(best) < 0 {
+				best, bestIdx = d, i
+			}
+		case aggMax:
+			if d.Cmp(best) > 0 {
+				best, bestIdx = d, i
+			}
+		}
+	}
+	if op == aggSum {
+		return acc, nil
+	}
+	return vals[bestIdx], nil
+}
+
+// toInt64 converts a value already classified kindInt to int64. Callers
+// guarantee the classification, so an unrecognized kind (unreachable in
+// practice) reports zero rather than panicking.
+func toInt64(v any) int64 {
 	rv := reflect.ValueOf(v)
 	switch rv.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return float64(rv.Int()), true, true
+		return rv.Int()
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return float64(rv.Uint()), true, true
-	case reflect.Float32, reflect.Float64:
-		return rv.Float(), false, true
+		return int64(rv.Uint())
 	default:
-		return 0, false, false
+		return 0
 	}
+}
+
+// toFloat64 converts a value already classified kindInt or kindFloat to
+// float64. Callers guarantee the classification, so an unrecognized kind
+// (unreachable in practice) reports zero rather than panicking.
+func toFloat64(v any) float64 {
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return float64(rv.Int())
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return float64(rv.Uint())
+	case reflect.Float32, reflect.Float64:
+		return rv.Float()
+	default:
+		return 0
+	}
+}
+
+// asDecimal converts a numeric value (int/uint kinds, float32/64, or an
+// already-decimal.Decimal) to decimal.Decimal. ok is false only for a
+// non-numeric v; callers that have already classified v as numeric can
+// disregard it.
+func asDecimal(v any) (decimal.Decimal, bool) {
+	if d, ok := v.(decimal.Decimal); ok {
+		return d, true
+	}
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return decimal.NewFromInt(rv.Int()), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return decimal.NewFromInt(int64(rv.Uint())), true
+	case reflect.Float32, reflect.Float64:
+		return decimal.NewFromFloat(rv.Float()), true
+	default:
+		return decimal.Decimal{}, false
+	}
+}
+
+// valuesAgree reports whether two decision values agree for HitPolicyAny.
+// Numeric values agree by magnitude regardless of int/float/decimal kind (so
+// 10 and 10.0 agree); non-numeric values (or a numeric/non-numeric mix) fall
+// back to reflect.DeepEqual.
+func valuesAgree(a, b any) bool {
+	ka, kb := classify(a), classify(b)
+	if ka != kindNonNumeric && kb != kindNonNumeric {
+		da, _ := asDecimal(a)
+		db, _ := asDecimal(b)
+		return da.Equal(db)
+	}
+	return reflect.DeepEqual(a, b)
 }
 
 // aggLabel names a reducing aggregation for provenance operation labels,

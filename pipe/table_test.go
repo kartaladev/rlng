@@ -2,9 +2,11 @@ package pipe_test
 
 import (
 	"context"
+	"math"
 	"testing"
 
 	"github.com/kartaladev/rlng/pipe"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -388,6 +390,226 @@ func TestNewDecisionTableValidation(t *testing.T) {
 			t.Parallel()
 			_, err := pipe.NewDecisionTable(tc.stageName, tc.rules)
 			tc.assert(t, err)
+		})
+	}
+}
+
+// TestDecisionTableCollectAggregationFidelity covers the numeric-fidelity
+// aggregation rewrite of foldNumeric (G2): int64 sums stay exact (with checked
+// overflow), a decimal present in the matched values folds in decimal, mixed
+// kinds promote to the widest kind present, and min/max always return the
+// actual matched element rather than a reconstructed value.
+func TestDecisionTableCollectAggregationFidelity(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name string
+		agg  pipe.CollectAggregation
+		// exprs is one decision expression per rule; every rule matches
+		// ("true"), and each contributes one value to key "v".
+		exprs []string
+		// seed pre-populates the Scope so an expr can reference a Go-typed
+		// value directly (e.g. a uint) rather than only expr literals.
+		seed   map[string]any
+		assert func(t *testing.T, got any, err error)
+	}
+
+	cases := []testCase{
+		{
+			name:  "int sum above 2^53 stays exact int64",
+			agg:   pipe.AggregateSum,
+			exprs: []string{"9007199254740993", "1"}, // 2^53+1, then +1
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, int64(9007199254740994), got)
+			},
+		},
+		{
+			name:  "int sum overflow errors, not garbage",
+			agg:   pipe.AggregateSum,
+			exprs: []string{"9223372036854775807", "1"}, // math.MaxInt64 + 1
+			assert: func(t *testing.T, got any, err error) {
+				require.ErrorIs(t, err, pipe.ErrAggregateOverflow)
+			},
+		},
+		{
+			// The two-MinInt64 case wraps to exactly 0 under the naive
+			// sign-mismatch overflow check ((acc<0 && n<0 && sum>0) is
+			// false when sum==0), so it must be exercised explicitly.
+			name:  "int sum of two MinInt64 overflows, not silently zero",
+			agg:   pipe.AggregateSum,
+			exprs: []string{"a", "b"},
+			seed:  map[string]any{"a": int64(math.MinInt64), "b": int64(math.MinInt64)},
+			assert: func(t *testing.T, got any, err error) {
+				require.ErrorIs(t, err, pipe.ErrAggregateOverflow)
+			},
+		},
+		{
+			name:  "int sum negative overflow errors (MinInt64 + -1)",
+			agg:   pipe.AggregateSum,
+			exprs: []string{"a", "-1"},
+			seed:  map[string]any{"a": int64(math.MinInt64)},
+			assert: func(t *testing.T, got any, err error) {
+				require.ErrorIs(t, err, pipe.ErrAggregateOverflow)
+			},
+		},
+		{
+			name:  "int sum mixed sign to a normal negative does not overflow",
+			agg:   pipe.AggregateSum,
+			exprs: []string{"-5", "3"},
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, int64(-2), got)
+			},
+		},
+		{
+			name:  "decimal sum is exact (0.1 + 0.2 = 0.3)",
+			agg:   pipe.AggregateSum,
+			exprs: []string{`decimal("0.1")`, `decimal("0.2")`},
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				d, ok := got.(decimal.Decimal)
+				require.True(t, ok, "expected decimal.Decimal, got %T", got)
+				assert.True(t, decimal.RequireFromString("0.3").Equal(d), "got %s", d)
+			},
+		},
+		{
+			name:  "mixed int + decimal sum promotes to decimal",
+			agg:   pipe.AggregateSum,
+			exprs: []string{"10", `decimal("0.5")`},
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				d, ok := got.(decimal.Decimal)
+				require.True(t, ok, "expected decimal.Decimal, got %T", got)
+				assert.True(t, decimal.RequireFromString("10.5").Equal(d), "got %s", d)
+			},
+		},
+		{
+			name:  "float sum",
+			agg:   pipe.AggregateSum,
+			exprs: []string{"1.5", "2.25"},
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				assert.InDelta(t, 3.75, got, 1e-9)
+			},
+		},
+		{
+			// A bare int alongside a float promotes to float64 (no decimal
+			// present), exercising the int-to-float64 conversion branch.
+			name:  "mixed int + float sum promotes to float64",
+			agg:   pipe.AggregateSum,
+			exprs: []string{"3", "1.25"},
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				assert.InDelta(t, 4.25, got, 1e-9)
+			},
+		},
+		{
+			// A bare float alongside a decimal promotes to decimal (widest
+			// kind wins), exercising the float64-to-decimal conversion branch.
+			name:  "mixed float + decimal sum promotes to decimal",
+			agg:   pipe.AggregateSum,
+			exprs: []string{"1.25", `decimal("0.25")`},
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				d, ok := got.(decimal.Decimal)
+				require.True(t, ok, "expected decimal.Decimal, got %T", got)
+				assert.True(t, decimal.RequireFromString("1.5").Equal(d), "got %s", d)
+			},
+		},
+		{
+			// A Go uint seed value alongside a float promotes to float64,
+			// exercising the uint-to-float64 conversion branch.
+			name:  "mixed uint + float sum promotes to float64",
+			agg:   pipe.AggregateSum,
+			exprs: []string{"u", "1.25"},
+			seed:  map[string]any{"u": uint(2)},
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				assert.InDelta(t, 3.25, got, 1e-9)
+			},
+		},
+		{
+			// A Go uint seed value alongside a decimal promotes to decimal,
+			// exercising the uint-to-decimal conversion branch.
+			name:  "mixed uint + decimal sum promotes to decimal",
+			agg:   pipe.AggregateSum,
+			exprs: []string{"u", `decimal("0.5")`},
+			seed:  map[string]any{"u": uint(3)},
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				d, ok := got.(decimal.Decimal)
+				require.True(t, ok, "expected decimal.Decimal, got %T", got)
+				assert.True(t, decimal.RequireFromString("3.5").Equal(d), "got %s", d)
+			},
+		},
+		{
+			name:  "decimal min returns the exact matched element",
+			agg:   pipe.AggregateMin,
+			exprs: []string{`decimal("2.5")`, `decimal("1.5")`},
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				d, ok := got.(decimal.Decimal)
+				require.True(t, ok, "expected decimal.Decimal, got %T", got)
+				assert.True(t, decimal.RequireFromString("1.5").Equal(d), "got %s", d)
+			},
+		},
+		{
+			name:  "decimal max returns the exact matched element",
+			agg:   pipe.AggregateMax,
+			exprs: []string{`decimal("1.5")`, `decimal("2.5")`},
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				d, ok := got.(decimal.Decimal)
+				require.True(t, ok, "expected decimal.Decimal, got %T", got)
+				assert.True(t, decimal.RequireFromString("2.5").Equal(d), "got %s", d)
+			},
+		},
+		{
+			name:  "float max returns the exact matched element",
+			agg:   pipe.AggregateMax,
+			exprs: []string{"1.1", "3.3", "2.2"},
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				assert.InDelta(t, 3.3, got, 1e-9)
+			},
+		},
+		{
+			name:  "large-int min returns the exact matched element",
+			agg:   pipe.AggregateMin,
+			exprs: []string{"9007199254740993", "5", "9007199254740992"},
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, 5, got)
+			},
+		},
+		{
+			name:  "large-int max returns the exact matched element",
+			agg:   pipe.AggregateMax,
+			exprs: []string{"9007199254740992", "9007199254740993"},
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				assert.Equal(t, 9007199254740993, got)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			rules := make([]pipe.Rule, len(tc.exprs))
+			for i, e := range tc.exprs {
+				rules[i] = pipe.Rule{Condition: "true", Decisions: map[string]string{"v": e}}
+			}
+			d, err := pipe.NewDecisionTable("agg", rules,
+				pipe.WithHitPolicy(pipe.HitPolicyCollect), pipe.WithCollectAggregation(tc.agg))
+			require.NoError(t, err)
+
+			sc := pipe.NewScope(tc.seed)
+			err = d.Execute(t.Context(), sc)
+			got, _ := sc.Get("agg.v")
+			tc.assert(t, got, err)
 		})
 	}
 }
