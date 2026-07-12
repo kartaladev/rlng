@@ -1,96 +1,87 @@
-# HANDOVER — rlng (updated 2026-07-12)
+# HANDOVER — rlng (updated 2026-07-13)
 
-> **To the next session (READ FIRST, trust these over any memory):** `CLAUDE.md`, then the
-> governing artifacts — the SDD ledger `.superpowers/sdd/progress.md` (the durable per-task record),
-> `docs/specs/013-ruleset-identity.md`, `docs/specs/014-value-serde-consistency.md`, and
-> `docs/specs/015-foreach-line-item-stage.md` (the next increments, plans NOT yet written). This file
-> points at them; it does not restate them. **Never commit/push without explicit user approval** —
-> per-task commits during an approved plan are the only pre-authorized exception (CLAUDE.md).
+> **To the next session (READ FIRST, trust these over any memory):** `CLAUDE.md`, then the SDD
+> ledger `.superpowers/sdd/progress.md` (the durable per-task record), and the next-increment specs
+> `docs/specs/014-value-serde-consistency.md` and `docs/specs/015-foreach-line-item-stage.md` (plans
+> NOT yet written). This file points at them; it does not restate them. **Never commit/push without
+> explicit user approval** — per-task commits during an approved plan are the only pre-authorized
+> exception (CLAUDE.md).
 
 ## Objective & roadmap position
 
 `rlng` is a pure-Go rule + calculation engine on `expr-lang/expr` (debuggability-first: no cgo, typed
-wrapping errors). This session is executing a **deeper business-rule production-readiness audit**
-remediation as five focused specs (011–015).
+wrapping errors). Executing a deeper business-rule production-readiness audit remediation as five
+focused specs (011–015).
 
-- **Active branch:** `claude/business-rule-audit-hw3p61` (carries **spec-010** at `9a366f7`, the
-  **011** increment, and the now-complete **012** increment stacked on top).
-- **Increment status:** **011 DONE**, **012 DONE** (this session). **013/014/015 NOT started** — plans
-  not yet written.
+- **Increment status:** **011 DONE & merged**, **012 DONE & merged** (both on `origin/main`),
+  **013 DONE & gated** (on branch, awaiting merge/push approval). **014/015 NOT started.**
+- **Active branch:** `claude/ruleset-identity-013` (off `main@7a60d69`), holding the complete 013
+  increment. `main` currently = `7a60d69` (010+011+012 merged).
 
 ## Exact state (safepoint)
 
 Tree builds; `go test ./... -race` green (all 5 pkgs); `go vet` / `gofmt -l .` clean;
-`CGO_ENABLED=0 go build ./...` OK. `git status --short`: only ` M docs/HANDOVER.md` (this file, the
-sole uncommitted change — a `docs:` artifact; offer to commit it). Last commit:
-`a48cfb4 docs(rlng): ADRs 0034-0036 + firing/fallback/coerce docs`.
+`CGO_ENABLED=0 go build ./...` OK. `git status --short`: only ` M docs/HANDOVER.md` (this file). Last
+commit: `1e9ce5e docs(rlng): ADR-0037 + ruleset identity example and docs`.
 
-**Increment 011 — Config-path safety parity: COMPLETE, gated, green.** Commits `455cf92`→`b676e58`.
-ADRs 0031/0032/0033. Whole-branch gate over `9a366f7..b676e58` done (code-review: 1 fixed + 4 Minor
-triaged; security clean).
+**Increment 013 — Ruleset identity & decision stamping: COMPLETE, gated, green.**
+- Task 1 `c5d379a` — `pipe.RulesetIdentity{Hash, Version}`, chainable `Pipeline.WithRuleset`, `Run`
+  stamps the Scope, `Scope.Ruleset()`.
+- Task 2 `ccdccf9` — `(*config.PipelineDef).Hash()` (canonical JSON + SHA-256, version excluded),
+  `Version` field, `WithRulesetVersion` BuildOption, `Build` wiring, `MatchesRuleset`.
+- Task 3 `dd21745` — Scope JSON round-trips ruleset + firing (fully replayable record); `FiringRule`
+  json tags.
+- Task 4 `1e9ce5e` — ADR-0037 + runnable example + firing/identity docs.
+- All 4 tasks reviewed-Approved (Task 1 had one plan-mandated table-test fold, fixed). **Whole-branch
+  gate over `main..HEAD` done:** `/code-review` (high) 0 correctness bugs, 2 Minor triaged to backlog;
+  `/security-review` clean. See the ledger for the triaged Minors.
 
-**Increment 012 — Evaluation correctness & explainability: COMPLETE, gated, green.**
-- Task 1 `208b0c1` — multi-rule firing model (`map[string][]FiringRule`, `FiringRulesFor`).
-- Task 2 `eaf3a68` — collect & any record firing per matched rule; any-conflict records no stray firing.
-- Task 3 `2e86621` — `feat(expr)!` fallback fires on error only; nil first-class; `WithFallbackOnNil`,
-  `WithFallbackObserver`.
-- Task 4 `efd2118` — `fix(expr)!` safe/honest coercion: NaN/±Inf→false, unhandled type→typed EvalError.
-- Task 5 `a48cfb4` — ADRs 0034/0035/0036 + runnable firing example + firing/fallback/coerce docs.
-- All 5 tasks reviewed-Approved. **Whole-branch gate over `b676e58..a48cfb4` done:** `/code-review`
-  (high) found 0 correctness bugs, 2 Minor triaged to backlog (see ledger); `/security-review` clean.
+**Specs/plans/ADRs:** Specs 011–015 committed. Plans **011/012/013 done**; **014/015 NOT written.**
+ADRs 0031–0037 authored & committed. Spec 013 carries resolved decisions D1–D7.
 
-**Specs/plans/ADRs status:** Specs 011–015 committed (`455cf92`). Plans **011 & 012 done**;
-**plans 013/014/015 NOT written.** ADRs 0031–0036 authored & committed.
-
-## Traceability pointers (read these first, in order)
+## Traceability pointers (read first, in order)
 
 1. `CLAUDE.md` (workflow, gates, commit discipline, testing rules).
-2. `.superpowers/sdd/progress.md` — the SDD ledger: every task's SHA, the 011 & 012 whole-branch gate
-   results, and the triaged/carried Minor findings. **Trust the ledger + `git log` over memory.**
-3. `docs/specs/013-ruleset-identity.md`, `docs/specs/014-value-serde-consistency.md`,
-   `docs/specs/015-foreach-line-item-stage.md` — the remaining increments to plan & execute.
-4. Background: `docs/specs/010`/`011`/`012` + ADRs 0022–0036.
+2. `.superpowers/sdd/progress.md` — the SDD ledger: every task's SHA, the 011/012/013 whole-branch gate
+   results, and the triaged Minor findings. **Trust the ledger + `git log` over memory.**
+3. `docs/specs/014-value-serde-consistency.md`, `docs/specs/015-foreach-line-item-stage.md` — the
+   remaining increments to plan & execute.
+4. Background: `docs/specs/010`/`011`/`012`/`013` + ADRs 0022–0037.
 
 ## Decisions & deviations this session
 
-- **012 behavior changes shipped (pre-`v0.1.0`, ADR-bound):** Task 3 — a `nil` main result no longer
-  triggers a fallback by default (opt in with `WithFallbackOnNil`); `WithFallbackObserver` surfaces an
-  error-triggered fallback's cause (ADR-0034). Task 4 — under `WithCoerce`, `NaN`/`±Inf`→false and an
-  unhandled result type → typed `EvalError` (ADR-0035); `truthy` is now `truthy(v any) (bool, error)`.
-  Both flagged `!` (breaking) in commit subjects; each updated the pre-existing test asserting the old
-  behavior.
-- **012 code-review Minors (triaged, non-blocking — ledger has rationale):** (1) a panicking
-  `WithFallbackObserver` callback escapes `Apply` — WON'T-FIX (caller code; Go doesn't recover user
-  callbacks). (2) collect/any record firing before `writeAgg`/aggregate can error — BACKLOG (cosmetic;
-  an errored Run's Scope is discarded).
-- **Firing is still NOT serialized** by the Scope JSON codec (`pipe/json.go` has zero firing refs) —
-  a real gap for **spec 013**'s replayable decision record. Capture it when writing Plan 013 (persist
-  firing + ruleset identity in the JSON round-trip).
+- **013 shipped** all of G1–G4 plus the expanded scope the user chose (firing serialization in the
+  Scope JSON), realized per spec 013's D1–D7. All additive/backward-compatible — no breaking change.
+- **013 code-review Minors (triaged, non-blocking — ledger has rationale):** (1) `FiringRule` json tags
+  change wire keys for a consumer who directly marshaled the struct pre-013 (library never emitted it
+  before). (2) `MatchesRuleset` re-hashes via `Hash()` each call (replay path, not hot path).
+- **User process directive (carry forward):** implementers start from `cc-skills-golang:golang-how-to`
+  and honor the custom skills (`table-test`, `use-mockgen`, `use-testcontainers`); run `/code-review` +
+  `/security-review` before delivery.
 
 ## Pending approvals / open questions
 
-- **Nothing is pushed.** Merge/push of `claude/business-rule-audit-hw3p61` needs explicit user
-  approval. The branch bundles 010 + 011 + 012; the user may want to split or sequence PRs.
-- **014 decimal approach** (decimal-library dependency vs in-house minor-units type) is deferred to
-  ADR-0039 and should be **brainstormed with the user before Plan 014 is written** — it touches the
-  minimal-deps and pure-Go/no-cgo constraints.
+- **Nothing is pushed.** Merge/push of `claude/ruleset-identity-013` needs explicit user approval
+  (fast-forward onto `main@7a60d69`; 4 commits `c5d379a..1e9ce5e`). Offer to commit this `HANDOVER.md`
+  too, then delete the merged branch (CLAUDE.md).
+- **014 decimal approach** (decimal-library dependency vs in-house minor-units type) must be
+  **brainstormed with the user before Plan 014 is written** — it touches the minimal-deps and
+  pure-Go/no-cgo constraints (deferred to ADR-0039).
 
 ## Next actions (resume here)
 
-1. **Present increments 011 + 012 for the user's merge/push decision** (do not push without approval).
-   Offer to commit this `HANDOVER.md` too.
-2. **Then plans 013 → 014 → 015** — write each plan just-in-time (`superpowers:writing-plans` from the
-   committed spec), execute via `superpowers:subagent-driven-development` (the SDD loop is established;
-   scripts under `~/.claude/plugins/cache/claude-plugins-official/superpowers/6.1.1/skills/subagent-driven-development/scripts/`).
-   Brainstorm 014's decimal decision with the user first. Each plan must include a Task that authors its
-   ADRs (lesson from 011).
+1. **Present increment 013 for the user's merge/push decision** (do not push without approval). On
+   approval: commit `HANDOVER.md`, fast-forward merge to `main`, push, delete the branch.
+2. **Then plans 014 → 015** — brainstorm 014's decimal decision with the user first, write each plan
+   just-in-time (`superpowers:writing-plans` from the committed spec), execute via
+   `superpowers:subagent-driven-development`. Each plan must include a Task that authors its ADRs, and
+   ensure `scripts/task-brief` is run for EVERY task (013 Task 4's brief was initially missed).
 
 ## Gotchas / environment
 
 - **`govulncheck` and `golangci-lint` are NOT installed locally** — `.github/workflows/ci.yml` runs
   them (plus build/vet/fmt/race across a Go 1.25/1.26 matrix). Let CI go green before any merge.
 - **`go.mod` declares `go 1.25`.** Supported floor is Go 1.25+.
-- **Scratchpad** for temp files: `/private/tmp/claude-501/.../scratchpad` (not `/tmp`).
 - **SDD hand-off files** (`.superpowers/sdd/task-N-brief.md`, `task-N-report.md`, `review-*.diff`) are
-  git-ignored scratch reused per task/increment; the ledger `progress.md` is the durable record.
-  `git clean -fdx` would destroy them; recover from `git log`.
+  git-ignored scratch reused per task/increment (overwritten each time) — a stale brief from a prior
+  plan can linger (013 Task 4 hit this); the ledger `progress.md` is the durable record.
