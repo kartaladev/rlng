@@ -28,10 +28,19 @@ func hydrateDecimals(m map[string]any) error {
 func hydrateValue(v any) (any, error) {
 	switch x := v.(type) {
 	case map[string]any:
-		if raw, ok := decLiteral(x); ok {
-			d, err := decimal.NewFromString(raw)
+		// A map whose sole key is the reserved "$dec" marker is a decimal
+		// literal: its value MUST be a string. A non-string value (e.g. an
+		// unquoted number that YAML/JSON decoded to a float/int) is a malformed
+		// literal — fail loud rather than silently treating it as an ordinary
+		// map, which would mask an author's typo.
+		if raw, hasDec := x["$dec"]; hasDec && len(x) == 1 {
+			s, ok := raw.(string)
+			if !ok {
+				return nil, fmt.Errorf("%w: $dec value must be a quoted string, got %T (%v)", ErrDecimalLiteral, raw, raw)
+			}
+			d, err := decimal.NewFromString(s)
 			if err != nil {
-				return nil, fmt.Errorf("%w: %q: %v", ErrDecimalLiteral, raw, err)
+				return nil, fmt.Errorf("%w: %q: %v", ErrDecimalLiteral, s, err)
 			}
 			return d, nil
 		}
@@ -51,14 +60,4 @@ func hydrateValue(v any) (any, error) {
 	default:
 		return v, nil
 	}
-}
-
-// decLiteral reports whether m is exactly {"$dec": "<string>"} and returns the
-// string. A map with $dec plus other keys is NOT a literal (returns false).
-func decLiteral(m map[string]any) (string, bool) {
-	if len(m) != 1 {
-		return "", false
-	}
-	s, ok := m["$dec"].(string)
-	return s, ok
 }

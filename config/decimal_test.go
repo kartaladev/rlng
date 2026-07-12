@@ -86,6 +86,20 @@ func TestBuildHydratesDecimalLiterals(t *testing.T) {
 			},
 		},
 		{
+			name: "a $dec literal with a non-string (unquoted) value fails Build with ErrDecimalLiteral",
+			def: &config.PipelineDef{
+				Constants: map[string]any{"rate": map[string]any{"$dec": 123}},
+				Stages:    []config.StageDef{trivialStage},
+			},
+			assert: func(t *testing.T, def *config.PipelineDef, err error) {
+				require.Error(t, err)
+				require.ErrorIs(t, err, config.ErrDecimalLiteral)
+				var ce *config.ConfigError
+				require.ErrorAs(t, err, &ce)
+				assert.Equal(t, "constants", ce.Field)
+			},
+		},
+		{
 			name: "valid $dec literal in a per-expression global hydrates and Build succeeds",
 			def: &config.PipelineDef{
 				Stages: []config.StageDef{
