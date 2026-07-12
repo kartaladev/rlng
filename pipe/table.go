@@ -297,7 +297,6 @@ func (d *DecisionTable) executeAny(env map[string]any, sc *Scope) error {
 	if len(matched) == 0 {
 		return d.applyDefaults(env, sc)
 	}
-	sc.recordFiring(d.name, d.rules[matched[0]].id, d.rules[matched[0]].message, false)
 
 	agreed := make(map[string]any)
 	order := make([]string, 0)
@@ -318,6 +317,12 @@ func (d *DecisionTable) executeAny(env map[string]any, sc *Scope) error {
 			}
 		}
 	}
+
+	firings := make([]FiringRule, 0, len(matched))
+	for _, idx := range matched {
+		firings = append(firings, FiringRule{Stage: d.name, RuleID: d.rules[idx].id, Message: d.rules[idx].message})
+	}
+	sc.recordFirings(d.name, firings)
 
 	for _, key := range order {
 		if err := d.writeAgg(sc, key, agreed[key], "any:"+key); err != nil {
@@ -341,6 +346,7 @@ func (d *DecisionTable) executeCollect(env map[string]any, sc *Scope) error {
 		inputs = make(map[string]map[string]any)
 	}
 	matchedAny := false
+	var firings []FiringRule
 
 	for _, r := range d.rules {
 		ok, err := r.cond.Test(env)
@@ -351,6 +357,7 @@ func (d *DecisionTable) executeCollect(env map[string]any, sc *Scope) error {
 			continue
 		}
 		matchedAny = true
+		firings = append(firings, FiringRule{Stage: d.name, RuleID: r.id, Message: r.message})
 		for _, dec := range r.decisions {
 			v, err := dec.fn.Apply(env)
 			if err != nil {
@@ -375,6 +382,7 @@ func (d *DecisionTable) executeCollect(env map[string]any, sc *Scope) error {
 	if !matchedAny {
 		return d.applyDefaults(env, sc)
 	}
+	sc.recordFirings(d.name, firings)
 
 	for _, key := range order {
 		reduced, err := aggregate(d.aggregation, collected[key])

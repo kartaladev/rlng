@@ -1,7 +1,6 @@
 package pipe_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/kartaladev/rlng/pipe"
@@ -97,6 +96,25 @@ func TestDecisionTablePolicies(t *testing.T) {
 			assert: func(t *testing.T, sc *pipe.Scope, err error) {
 				require.Error(t, err)
 				assert.ErrorIs(t, err, pipe.ErrConflictingMatches)
+				assert.Empty(t, sc.FiringRulesFor("g"), "a conflict must not record a firing")
+			},
+		},
+		{
+			name: "any: records firing per agreeing rule",
+			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
+				d, err := pipe.NewDecisionTable("decide", []pipe.Rule{
+					{ID: "A", Condition: "x > 0", Decisions: map[string]string{"ok": "true"}},
+					{ID: "B", Condition: "x > 1", Decisions: map[string]string{"ok": "true"}},
+				}, pipe.WithHitPolicy(pipe.HitPolicyAny))
+				require.NoError(t, err)
+				return d, pipe.NewScope(map[string]any{"x": 2})
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				require.NoError(t, err)
+				fired := sc.FiringRulesFor("decide")
+				require.Len(t, fired, 2)
+				assert.Equal(t, "A", fired[0].RuleID)
+				assert.Equal(t, "B", fired[1].RuleID)
 			},
 		},
 		{
@@ -148,6 +166,24 @@ func TestDecisionTablePolicies(t *testing.T) {
 			},
 		},
 		{
+			name: "collect: records firing per match",
+			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
+				d, err := pipe.NewDecisionTable("fees", []pipe.Rule{
+					{ID: "BASE", Condition: "true", Decisions: map[string]string{"fee": "10"}},
+					{ID: "SURCHARGE", Condition: "risky", Decisions: map[string]string{"fee": "5"}},
+				}, pipe.WithHitPolicy(pipe.HitPolicyCollect), pipe.WithCollectAggregation(pipe.AggregateSum))
+				require.NoError(t, err)
+				return d, pipe.NewScope(map[string]any{"risky": true})
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				require.NoError(t, err)
+				fired := sc.FiringRulesFor("fees")
+				require.Len(t, fired, 2)
+				assert.Equal(t, "BASE", fired[0].RuleID)
+				assert.Equal(t, "SURCHARGE", fired[1].RuleID)
+			},
+		},
+		{
 			name: "collect sum over non-numeric is an error",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("x", []pipe.Rule{
@@ -167,7 +203,7 @@ func TestDecisionTablePolicies(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			d, sc := tc.build(t)
-			err := d.Execute(context.Background(), sc)
+			err := d.Execute(t.Context(), sc)
 			tc.assert(t, sc, err)
 		})
 	}
