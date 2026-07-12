@@ -103,6 +103,18 @@ func TestLint(t *testing.T) {
 				assert.Empty(t, findings)
 			},
 		},
+		{
+			name: "semantic catch-all (1 == 1) is recognized: not flagged missing-default",
+			def: config.PipelineDef{Stages: []config.StageDef{{
+				Name: "t", Type: "decision-table",
+				Rules: []config.RuleDef{
+					rule("1 == 1", `"1"`),
+				},
+			}}},
+			assert: func(t *testing.T, findings []config.Finding) {
+				assert.False(t, hasCode(findings, config.LintMissingDefault), "1 == 1 is a catch-all; must not flag missing-default")
+			},
+		},
 	}
 
 	for _, tc := range cases {

@@ -18,9 +18,22 @@ var ErrNoStages = errors.New("pipeline has no stages")
 // and wraps failures in a ConfigError. A definition with no stages is a
 // ConfigError (ErrNoStages), so an empty/truncated document fails consistently
 // across YAML and JSON rather than building a silent no-op pipeline.
-func (d *PipelineDef) Build() (*pipe.Pipeline, error) {
+//
+// Build is advisory-only by default: a lint smell (e.g. a first-match table
+// with no default and no catch-all) does not fail construction. Pass
+// WithLintErrors to promote Lint findings to a *LintError instead.
+func (d *PipelineDef) Build(opts ...BuildOption) (*pipe.Pipeline, error) {
+	cfg := &buildConfig{}
+	for _, o := range opts {
+		o(cfg)
+	}
 	if len(d.Stages) == 0 {
 		return nil, &ConfigError{Cause: ErrNoStages}
+	}
+	if cfg.lintErrors {
+		if findings := d.Lint(); len(findings) > 0 {
+			return nil, &LintError{Findings: findings}
+		}
 	}
 	stages := make([]pipe.Stage, 0, len(d.Stages))
 	for _, sd := range d.Stages {

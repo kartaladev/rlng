@@ -99,7 +99,18 @@ func isFirstMatch(hitPolicy string) bool {
 	}
 }
 
-// isCatchAll reports whether a condition is an unconditional true literal.
+// isCatchAll reports whether a condition is an unconditional truth. Detection is
+// best-effort and syntactic: it recognizes the literal `true`, a parenthesized
+// `(true)`, and the trivial tautology `1 == 1`. A semantic always-true condition
+// it does not recognize may still be flagged missing-default (a false positive);
+// this is advisory analysis, not evaluation.
 func isCatchAll(condition string) bool {
-	return strings.TrimSpace(condition) == "true"
+	s := strings.TrimSpace(condition)
+	s = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(s, "("), ")"))
+	switch s {
+	case "true", "1 == 1":
+		return true
+	default:
+		return false
+	}
 }
