@@ -11,6 +11,7 @@ const (
 	TypeSingleExpr    = "single-expr"
 	TypeMultiExpr     = "multi-expr"
 	TypeDecisionTable = "decision-table"
+	TypeForEach       = "foreach"
 )
 
 // Stage is a unit of rule/calculation logic that reads from and writes to a
