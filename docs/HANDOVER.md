@@ -10,7 +10,18 @@
 wrapping errors). Executing the post-010 audit remediation as focused specs (011–015).
 
 - **Increment 014 (value serde consistency): COMPLETE, gated green, merged to `main`, and pushed.**
-- **Increment 015 (foreach line-item stage): NEXT — not yet started.**
+- **Increment 015 (foreach line-item stage): PLANNED (spec Accepted + Plan written & committed);
+  implementation NOT started — to begin in a FRESH session per the user's directive.**
+
+## ⏸ PAUSE POINT (this session, 2026-07-13)
+
+Stopped cleanly after planning 015, per the user: *"Pause after plan, we will start implementation on
+a clean new session."* Tree builds green (only docs changed on the 015 branch). **To resume 015:**
+on branch `claude/foreach-015` (at `31b902d`, base `main@45c2d81`), read `CLAUDE.md`, then
+`.superpowers/sdd/progress.md` (fresh 015 ledger), `docs/specs/015-foreach-line-item-stage.md`
+(Accepted, D1–D9), and `docs/plans/015-foreach-line-item-stage.md`, then execute via
+`superpowers:subagent-driven-development` starting at Task 1. **015 is GATED: do NOT push — merge/push
+awaits explicit user approval.**
 
 ## Increment 014 — DONE
 
