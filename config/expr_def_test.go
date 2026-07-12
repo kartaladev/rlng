@@ -156,6 +156,11 @@ func TestExprDefOptionsWiring(t *testing.T) {
 	assert.Equal(t, 42, got, "Globals default + Fallback must be wired through Build")
 }
 
+// TestExprDefObjectFormRejectsUnknownKeyYAML is the sole ParseYAML case for
+// this scenario in this file, so it stands alone per the table-test skill's
+// single-case exception. It also asserts that the inner ConfigError's Field
+// ("expr") survives ParseYAML's outer error wrap — see ParseYAML's re-wrap
+// guard in parse.go.
 func TestExprDefObjectFormRejectsUnknownKeyYAML(t *testing.T) {
 	doc := []byte(`
 stages:
@@ -168,21 +173,58 @@ stages:
 	_, err := config.ParseYAML(doc)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "fallbck")
+
+	var ce *config.ConfigError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, "expr", ce.Field, "inner ConfigError.Field must not be masked by ParseYAML's outer wrap")
 }
 
-func TestExprDefObjectFormRejectsUnknownKeyJSON(t *testing.T) {
-	doc := []byte(`{"stages":[{"name":"s","type":"single-expr","expr":{"expr":"1","fallbck":"2"}}]}`)
-	_, err := config.ParseJSON(doc)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "fallbck")
-}
+// TestExprDefObjectFormParseJSON folds the object-form unknown-key-rejected
+// and valid-keys-parse cases into a single assert-closure table, since both
+// exercise config.ParseJSON with varying input and expected outcome (per the
+// table-test skill).
+func TestExprDefObjectFormParseJSON(t *testing.T) {
+	t.Parallel()
 
-func TestExprDefObjectFormValidKeysStillParse(t *testing.T) {
-	doc := []byte(`{"stages":[{"name":"s","type":"single-expr","expr":{"expr":"1","fallback":"2","coerce":true}}]}`)
-	d, err := config.ParseJSON(doc)
-	require.NoError(t, err)
-	require.Equal(t, "1", d.Stages[0].Expr.Expr)
-	require.Equal(t, "2", d.Stages[0].Expr.Fallback)
+	type testCase struct {
+		name   string
+		json   string
+		assert func(t *testing.T, d *config.PipelineDef, err error)
+	}
+
+	cases := []testCase{
+		{
+			name: "unknown key in expr object is rejected with attributed field",
+			json: `{"stages":[{"name":"s","type":"single-expr","expr":{"expr":"1","fallbck":"2"}}]}`,
+			assert: func(t *testing.T, d *config.PipelineDef, err error) {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), "fallbck")
+
+				var ce *config.ConfigError
+				require.ErrorAs(t, err, &ce)
+				assert.Equal(t, "expr", ce.Field, "inner ConfigError.Field must not be masked by ParseJSON's outer wrap")
+			},
+		},
+		{
+			name: "valid keys still parse",
+			json: `{"stages":[{"name":"s","type":"single-expr","expr":{"expr":"1","fallback":"2","coerce":true}}]}`,
+			assert: func(t *testing.T, d *config.PipelineDef, err error) {
+				require.NoError(t, err)
+				require.Len(t, d.Stages, 1)
+				require.NotNil(t, d.Stages[0].Expr)
+				assert.Equal(t, "1", d.Stages[0].Expr.Expr)
+				assert.Equal(t, "2", d.Stages[0].Expr.Fallback)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			d, err := config.ParseJSON([]byte(tc.json))
+			tc.assert(t, d, err)
+		})
+	}
 }
 
 func TestConfigErrorMessage(t *testing.T) {

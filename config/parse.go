@@ -25,6 +25,13 @@ func ParseYAML(data []byte) (*PipelineDef, error) {
 		if errors.Is(err, io.EOF) { // empty document
 			return &d, nil
 		}
+		if ce := asConfigError(err); ce != nil {
+			// A nested Unmarshaler (e.g. ExprDef) already returned a
+			// *ConfigError naming the offending Field; re-wrapping here
+			// would shadow it (errors.As matches the first *ConfigError
+			// in the chain), masking the Field attribution. Return as-is.
+			return nil, ce
+		}
 		return nil, &ConfigError{Cause: err}
 	}
 	return &d, nil
@@ -41,9 +48,24 @@ func ParseJSON(data []byte) (*PipelineDef, error) {
 		if errors.Is(err, io.EOF) { // empty document
 			return &d, nil
 		}
+		if ce := asConfigError(err); ce != nil {
+			// See the matching comment in ParseYAML: don't shadow a nested
+			// ConfigError's Field attribution behind an outer wrap.
+			return nil, ce
+		}
 		return nil, &ConfigError{Cause: err}
 	}
 	return &d, nil
+}
+
+// asConfigError returns err's first *ConfigError in its chain, or nil if none
+// is present.
+func asConfigError(err error) *ConfigError {
+	var ce *ConfigError
+	if errors.As(err, &ce) {
+		return ce
+	}
+	return nil
 }
 
 // LoadFile reads a config file and decodes it by extension: .yaml/.yml as YAML,

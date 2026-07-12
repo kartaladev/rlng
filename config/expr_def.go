@@ -55,6 +55,22 @@ func (e *ExprDef) UnmarshalJSON(data []byte) error {
 	if t := bytes.TrimSpace(data); len(t) > 0 && t[0] == '"' {
 		return json.Unmarshal(data, &e.Expr)
 	}
+
+	// Validate known fields before decoding, mirroring UnmarshalYAML's
+	// pre-check, so an unknown key is attributed to Field "expr" rather than
+	// surfacing as an unattributed stdlib decode error. If probing fails
+	// (e.g. data isn't a JSON object), fall through and let the decode below
+	// report the error.
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(data, &probe); err == nil {
+		known := map[string]bool{"expr": true, "fallback": true, "globals": true, "coerce": true}
+		for k := range probe {
+			if !known[k] {
+				return &ConfigError{Field: "expr", Cause: fmt.Errorf("unknown field %q", k)}
+			}
+		}
+	}
+
 	type raw ExprDef // alias breaks the UnmarshalJSON recursion
 	var r raw
 	dec := json.NewDecoder(bytes.NewReader(data))
