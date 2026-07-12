@@ -34,8 +34,9 @@ Rules are declared as config and compiled once, then evaluated on the hot path:
 - **Decision tables** — ordered `condition → decisions` rules with hit policies
   **single / unique / any / collect**, a per-table **default (else)** branch, and collect
   **aggregation** (`sum`/`min`/`max`/`count`/list).
-- **Explainable decisions** — optional rule `id`/`message`, a recorded **firing rule**
-  per stage, value **provenance/lineage**, and **per-stage timing**.
+- **Explainable decisions** — optional rule `id`/`message`, a recorded firing trail per
+  stage (`FiringRule` for the first/only match, `FiringRulesFor` for every rule a
+  **collect**/**any** table matched), value **provenance/lineage**, and **per-stage timing**.
 - **Strict typed evaluation** — opt-in `expr.WithEnv` rejects field typos and type errors
   at compile time instead of silently evaluating to nil.
 - **Extensible** — register host functions (`expr.WithFunction`), including a clock-backed
