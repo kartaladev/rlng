@@ -1,7 +1,7 @@
 # Spec 015 — `foreach` line-item stage
 
-- **Status:** Draft (awaiting review)
-- **Date:** 2026-07-12
+- **Status:** Accepted (design brainstormed autonomously & approved-pending 2026-07-13; see Resolved decisions)
+- **Date:** 2026-07-12 (decisions resolved 2026-07-13)
 - **Post-010 audit remediation.** Realizes the `foreach` deferral recorded in
   ADR-0030; motivated by the audit's line-item-adjudication gap (I4).
 - **Builds on:** Spec 002 (`pipe` Scope & stages), Spec 003 (`Pipeline` DAG),
@@ -75,3 +75,57 @@ way. Header-level decisions work today; line-level adjudication does not.
   stops iteration.
 - Config: a `foreach` stage parses and builds (strict-decoding honored); an
   invalid inner unit is a build-time error naming the stage.
+
+## Resolved decisions (brainstormed autonomously 2026-07-13; approval-pending)
+
+> Brainstormed without live user input per the user's 2026-07-13 AFK directive.
+> Plan 015 realizes these; ADR-0040 records them. **This increment is to be left
+> GATED — merge/push awaits explicit user approval.** Decisions favor maximal
+> reuse of existing machinery over new special-case code (altitude).
+
+- **D1 — Inner unit is a sub-`Pipeline` (G1, reuse/altitude):** a `foreach` stage
+  owns an inner `*pipe.Pipeline` of ordinary stages (single-expr/multi-expr/
+  decision-table), built from nested `StageDef`s. Per element it runs that inner
+  pipeline against a **fresh per-element `Scope`**, so ALL existing stage
+  machinery (DAG ordering, decision tables + hit policies, firing, provenance,
+  timing) works per element with no new evaluation code. *Alt rejected:* a
+  bespoke "decision-table-or-exprs" inner unit — more code, less reuse.
+- **D2 — Per-element scope (G1):** the per-element `Scope` is seeded from the
+  outer scope's `Snapshot()` (outer constants/thresholds readable) plus the
+  element bound under a configurable name, default `item` (`as:`). The outer
+  scope is **not mutated** during iteration. *Alt rejected:* setting/unsetting an
+  `item` key on the shared parent scope — mutation hazards for provenance/replay.
+- **D3 — Structured per-element output (G2):** results are written as a list
+  under `<stage>.<output>` (default `output: items`), element *i* = the inner
+  pipeline's resulting data map (its `Snapshot()`), in collection order. Downstream
+  stages and the mapper consume `items` as a `[]map[string]any`. *Alt rejected:*
+  synthesizing `items[i].<key>` dot-paths into the scope — awkward and unbounded.
+- **D4 — Roll-up reuses Spec-010 / 014 aggregation (G2):** an optional `rollups`
+  list, each `{key, agg, as}`, reduces a per-element output `key` across elements
+  by `agg` (sum/min/max/count/list, via the 014-hardened `foldNumeric` — int64/
+  decimal-faithful) and writes the result at `<stage>.<as>`. Roll-up over an
+  empty collection is the aggregation's identity/empty result.
+- **D5 — Per-element firing & provenance (G3):** each element's inner-pipeline
+  firing is recorded into the outer scope under the composite stage key
+  `<stage>[i]` (reusing the Spec-012 multi-firing model + `recordFirings`), so
+  `FiringRulesFor("<stage>[i]")` answers "line *i* denied by rule LTV_MAX_80".
+  Per-element lineage is available on each element's result.
+- **D6 — Config surface (G4):** `type: foreach`, `collection: <scope path>`,
+  `as: item` (default), `stages: [<inner StageDef>...]` (the inner unit, nested
+  `StageDef`s built into the sub-pipeline), `output: items` (default), and
+  `rollups: [{key, agg, as}]`. Spec-011 strict decoding is honored (unknown
+  fields rejected; an invalid inner stage is a build-time error naming the
+  outer stage and the inner stage).
+- **D7 — Nested `foreach` DEFERRED (non-goal):** an inner unit that itself
+  contains a `foreach` stage is a **build-time error** with a clear message.
+  Bounds first-cut complexity (per-element indexing/firing across nesting is
+  deferred); reassess in a later increment.
+- **D8 — Safety & determinism (G5):** iteration is sequential in collection
+  order; an empty collection writes an empty `items` (`[]`) and identity roll-ups
+  (a defined no-op, not a silent gap); a non-list / missing value at `collection`
+  is a typed `StageError` (no panic); a per-element inner error is a typed
+  `StageError` naming the element index; `ctx.Err()` is checked before each
+  element so a large collection is cancellable at element boundaries.
+- **D9 — Value fidelity (relates to 014):** per-element numeric outputs honor the
+  014 value contract (decimal/int64 preserved through the per-element scope, the
+  `items` list, roll-up aggregation, and any JSON round-trip).
