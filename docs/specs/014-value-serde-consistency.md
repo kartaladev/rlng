@@ -1,7 +1,7 @@
 # Spec 014 — Value serialization/deserialization consistency
 
-- **Status:** Draft (awaiting review)
-- **Date:** 2026-07-12
+- **Status:** Accepted (design brainstormed & approved 2026-07-13; see Resolved decisions)
+- **Date:** 2026-07-12 (decisions resolved 2026-07-13)
 - **Post-010 audit remediation.** Generalizes the audit's "exact-decimal money"
   blocker (B1) into a cross-cutting **value serde consistency** requirement;
   exact-decimal money is the primary motivating use case, not the whole spec.
@@ -110,3 +110,44 @@ end-to-end rather than silently degrading to `float64`.
   aggregate → JSON → reload → map.
 - Seed/mapping fidelity: an integer config constant / struct field is not silently
   widened to float; a lossy result-mapping narrowing errors per the G1 contract.
+
+## Resolved decisions (brainstormed & approved 2026-07-13)
+
+These resolve the spec's open design forks; Plan 014 realizes them and ADR-0038 /
+ADR-0039 record them.
+
+- **D1 — Exact-decimal representation (G4 / ADR-0039):** depend on
+  `github.com/shopspring/decimal` (pure Go, no cgo, `big.Int`-backed, de-facto
+  standard) rather than an in-house type. One new direct dependency, justified for
+  money correctness; honors the pure-Go/no-cgo hard constraint. Rounding modes
+  (incl. banker's half-even) come from the library.
+- **D2 — Decimal entry & propagation (G4):** decimals are introduced *explicitly*
+  (spec non-goal #2 stands — native `int`/`float` arithmetic is untouched):
+  a `decimal(x)` expr builtin constructs one; a config constant may be declared
+  decimal via a `!decimal "…"` YAML tag / equivalent JSON object form; a caller may
+  seed a `decimal.Decimal` field. `expr` **operator overloading** keeps arithmetic
+  exact once any operand is decimal, covering `decimal×decimal` **and** mixed
+  `decimal×int` / `int×decimal` so `principal_dec * 12` needs no wrap. Rounding
+  builtins: `round(x, places)` (half-away) and `roundBank(x, places)` (half-even).
+  Division uses shopspring `DivisionPrecision` with a final `roundBank`.
+- **D3 — Scope JSON kind fidelity (G3 / ADR-0038):** **full canonical type
+  tagging** — every `data` scalar encodes as `{"$k":<kind>,"v":<payload>}`
+  (`int64` reloads `int64`, `float` reloads `float`, `decimal` reloads `decimal`,
+  `time` RFC3339). The envelope carries a schema-version marker (`"v":2`). The
+  decoder rehydrates v2 by tag; a **legacy (untagged) blob still loads** via the
+  current bare-value path (spec-007 blobs → `json.Number` etc.), so reads stay
+  backward-compatible. **Consequence (ADR-0038):** a *new* (tagged) blob is **not**
+  readable by a pre-014 library version — format evolution is one-way; the version
+  marker makes it detectable.
+- **D4 — Aggregation fidelity (G2):** `foldNumeric` accumulates all-integer folds
+  in `int64` with a checked add → typed overflow error (no `float64` round-trip, no
+  `int(acc)` truncation); promotes to decimal when any operand is decimal, else
+  `float64`; `min`/`max` return the actual matched element. `HitPolicyAny`
+  agreement uses numeric-aware equality (equal magnitude across int/float/decimal),
+  non-numeric falls back to `DeepEqual`.
+- **D5 — Scope of increment:** G1–G5 (both ADRs) ship as a **single Plan 014**,
+  ordered: ADR-0038 + value-kind helpers → decimal type/builtins/operators → G2
+  aggregation → G3 JSON tagging → G5 seed/config/mapping hooks → ADR-0039 + the
+  driving `$250k @ 7.25% → $18,125.00` acceptance example (seed → eval → aggregate
+  → JSON → reload → map, reproducing on replay). TDD each; every hot-path and
+  typed-error branch covered.
