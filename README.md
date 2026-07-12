@@ -26,7 +26,9 @@ Rules are declared as config and compiled once, then evaluated on the hot path:
 
 - **Declarative config** — YAML/JSON rule definitions loaded via pluggable sources, with
   pipeline-level `constants` and an output `mapping` block so a whole decision service is
-  one document.
+  one document. Opt-in strict mode via a `schema` block catches field typos and type errors
+  at build time; `WithStrict()` / `WithSchema()` enforce or supply schema programmatically;
+  `WithLintErrors()` promotes static checks (missing defaults, unreachable rules) to build errors.
 - **Staged evaluation** — stages (single-expression, multi-expression, and decision-table)
   are ordered by their declared dependencies (a topologically sorted DAG).
 - **Decision tables** — ordered `condition → decisions` rules with hit policies

@@ -39,3 +39,19 @@ stages:
 	fmt.Printf("%.1f\n", v)
 	// Output: 22.0
 }
+
+func ExamplePipelineDef_Build_strict() {
+	doc := []byte(`
+schema:
+  score: 0
+stages:
+  - name: gate
+    type: single-expr
+    expr: "score >= 650"
+    output: eligible
+`)
+	d, _ := config.ParseYAML(doc)
+	_, err := d.Build(config.WithStrict())
+	fmt.Println(err)
+	// Output: <nil>
+}

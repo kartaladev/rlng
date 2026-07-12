@@ -7,4 +7,19 @@
 // expression) or an object with compile options (expr, fallback, globals,
 // coerce). Parse with ParseYAML, ParseJSON, or LoadFile, then call Build to
 // compile the definition into a *pipe.Pipeline.
+//
+// Strict mode & schema: A definition may declare a top-level schema block
+// (field name -> representative value giving its type) to enable strict
+// compilation. When schema is present, every stage expression is compiled with
+// WithEnv, so field typos and type mismatches are caught at Build time instead
+// of silently evaluating to nil. Call Build with WithStrict() to require strict
+// compilation and error if no schema is available; Build with WithSchema(env)
+// to supply schema programmatically for cases where it cannot be embedded in
+// the document.
+//
+// Lint enforcement: Call Build with WithLintErrors() to promote static ruleset
+// checks (unreachable rules, missing-default coverage gaps) to Build-time errors.
+// Without WithLintErrors(), the same checks are available via the Lint function
+// but do not block construction. LintError lists all violations and the stage
+// each one occurs in.
 package config
