@@ -30,6 +30,9 @@ func (d *PipelineDef) Build(opts ...BuildOption) (*pipe.Pipeline, error) {
 	if len(d.Stages) == 0 {
 		return nil, &ConfigError{Cause: ErrNoStages}
 	}
+	if err := d.hydrateConstants(); err != nil {
+		return nil, err
+	}
 	if cfg.lintErrors {
 		if findings := d.Lint(); len(findings) > 0 {
 			return nil, &LintError{Findings: findings}
@@ -77,6 +80,70 @@ func (sd StageDef) build(constants, schema map[string]any, strict bool) (pipe.St
 	default:
 		return nil, &ConfigError{Stage: sd.Name, Field: "type", Cause: fmt.Errorf("unknown stage type %q", sd.Type)}
 	}
+}
+
+// hydrateConstants replaces every {"$dec": "…"} config literal in the
+// pipeline's Constants and in every per-expression ExprDef.Globals map with a
+// decimal.Decimal, in place, before either feeds expr.WithGlobals. A
+// malformed literal is a *ConfigError wrapping ErrDecimalLiteral, attributed
+// to the field ("constants" for the pipeline-level map, "<sub>.globals" for a
+// per-expression override) where it was declared.
+func (d *PipelineDef) hydrateConstants() error {
+	if err := hydrateDecimals(d.Constants); err != nil {
+		return &ConfigError{Field: "constants", Cause: err}
+	}
+	for _, sd := range d.Stages {
+		if err := sd.hydrateGlobals(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// hydrateGlobals hydrates every ExprDef.Globals map reachable from sd: the
+// value expr, the condition, each multi-expr entry, each rule's condition and
+// decisions, and the table default decisions.
+func (sd StageDef) hydrateGlobals() error {
+	if err := hydrateExprGlobals(sd.Name, "expr", sd.Expr); err != nil {
+		return err
+	}
+	if err := hydrateExprGlobals(sd.Name, "condition", sd.Condition); err != nil {
+		return err
+	}
+	for i, e := range sd.Exprs {
+		if err := hydrateExprGlobals(sd.Name, fmt.Sprintf("exprs[%d].expr", i), &e.Expr); err != nil {
+			return err
+		}
+	}
+	for i, r := range sd.Rules {
+		if err := hydrateExprGlobals(sd.Name, fmt.Sprintf("rules[%d].condition", i), &r.Condition); err != nil {
+			return err
+		}
+		for key, ed := range r.Decisions {
+			if err := hydrateExprGlobals(sd.Name, fmt.Sprintf("rules[%d].decisions.%s", i, key), &ed); err != nil {
+				return err
+			}
+		}
+	}
+	for key, ed := range sd.Default {
+		if err := hydrateExprGlobals(sd.Name, fmt.Sprintf("default.%s", key), &ed); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// hydrateExprGlobals hydrates ed's Globals map in place, wrapping a decimal
+// literal failure in a *ConfigError naming stage and field+".globals". A nil
+// ed (an absent optional sub-expression, e.g. StageDef.Condition) is a no-op.
+func hydrateExprGlobals(stage, field string, ed *ExprDef) error {
+	if ed == nil {
+		return nil
+	}
+	if err := hydrateDecimals(ed.Globals); err != nil {
+		return &ConfigError{Stage: stage, Field: field + ".globals", Cause: err}
+	}
+	return nil
 }
 
 // withConstants prepends a WithGlobals option carrying the pipeline constants to

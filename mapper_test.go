@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/kartaladev/rlng"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -159,6 +160,75 @@ func TestMapperNestedSiblingPaths(t *testing.T) {
 	info := r["info"].(map[string]any)
 	assert.Equal(t, "a", info["tag"])
 	assert.Equal(t, "b", info["note"])
+}
+
+// decimalMapResult exercises every decimalNarrowHook branch: decimal->decimal
+// (AsDecimal), decimal->int with an integral value (AsInt), decimal->float
+// (AsFloat), and decimal->string (AsString).
+type decimalMapResult struct {
+	AsDecimal decimal.Decimal `mapstructure:"as_decimal"`
+	AsInt     int             `mapstructure:"as_int"`
+	AsFloat   float64         `mapstructure:"as_float"`
+	AsString  string          `mapstructure:"as_string"`
+}
+
+// decimalIntResult isolates the decimal->int target so the lossy-narrowing
+// case can fail the whole Map call without the other kind conversions in the
+// way.
+type decimalIntResult struct {
+	AsInt int `mapstructure:"as_int"`
+}
+
+// TestMapperDecimalFidelity covers mapper.go's decimalNarrowHook: every
+// non-decimal decode is already covered by TestMapperMapStruct above, so this
+// table isolates the decimal-source branches.
+func TestMapperDecimalFidelity(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name string
+		run  func(t *testing.T)
+	}
+
+	cases := []testCase{
+		{
+			name: "decimal->decimal exact, decimal->int integral, decimal->float, decimal->string",
+			run: func(t *testing.T) {
+				m, err := rlng.NewMapper[decimalMapResult](rlng.MappingTemplate{
+					"as_decimal": `decimal("18125.00")`,
+					"as_int":     `decimal("42")`,
+					"as_float":   `decimal("3.14")`,
+					"as_string":  `decimal("18125.5")`,
+				})
+				require.NoError(t, err)
+				r, err := m.Map(map[string]any{})
+				require.NoError(t, err)
+				assert.True(t, decimal.RequireFromString("18125.00").Equal(r.AsDecimal))
+				assert.Equal(t, 42, r.AsInt)
+				assert.InDelta(t, 3.14, r.AsFloat, 1e-9)
+				assert.Equal(t, "18125.5", r.AsString)
+			},
+		},
+		{
+			name: "fractional decimal into int field is a lossy-narrowing MappingError",
+			run: func(t *testing.T) {
+				m, err := rlng.NewMapper[decimalIntResult](rlng.MappingTemplate{"as_int": `decimal("3.5")`})
+				require.NoError(t, err)
+				_, err = m.Map(map[string]any{})
+				require.Error(t, err)
+				var me *rlng.MappingError
+				require.ErrorAs(t, err, &me)
+				require.ErrorIs(t, err, rlng.ErrLossyResultNarrowing)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			tc.run(t)
+		})
+	}
 }
 
 func TestMappingErrorMessage(t *testing.T) {

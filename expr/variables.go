@@ -5,13 +5,21 @@ import (
 	"reflect"
 
 	"github.com/expr-lang/expr/ast"
+	"github.com/shopspring/decimal"
 )
+
+// decimalDecimalType is decimal.Decimal's reflect.Type, used by Visit to
+// recognize a decimal global/local so it can be patched as a `decimal("…")`
+// call default instead of being skipped as a non-scalar struct.
+var decimalDecimalType = reflect.TypeOf(decimal.Decimal{})
 
 // variablePatcher rewrites each identifier that matches a declared variable
 // into `identifier ?? <literal>`, so the variable acts as a default overridable
-// by the runtime environment. Lookup precedence is locals, then globals. Only
-// scalar values become literals; anything else is skipped (the identifier is
-// then a normal, undefined-allowed lookup).
+// by the runtime environment. Lookup precedence is locals, then globals. Scalar
+// values become literals; a decimal.Decimal becomes a `decimal("<string>")`
+// call (the decimal builtin is always registered, see decimalExprOptions);
+// anything else is skipped (the identifier is then a normal, undefined-allowed
+// lookup).
 type variablePatcher struct {
 	globals map[string]any
 	locals  map[string]any
@@ -63,6 +71,16 @@ func (v *variablePatcher) Visit(node *ast.Node) {
 		rv = rv.Elem()
 	}
 	if !rv.IsValid() {
+		return
+	}
+
+	if rv.Type() == decimalDecimalType {
+		d := rv.Interface().(decimal.Decimal)
+		call := &ast.CallNode{
+			Callee:    &ast.IdentifierNode{Value: "decimal"},
+			Arguments: []ast.Node{&ast.StringNode{Value: d.String()}},
+		}
+		ast.Patch(node, &ast.BinaryNode{Operator: "??", Left: ident, Right: call})
 		return
 	}
 

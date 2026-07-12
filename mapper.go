@@ -2,11 +2,13 @@ package rlng
 
 import (
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/kartaladev/rlng/expr"
+	"github.com/shopspring/decimal"
 )
 
 // MappingTemplate maps an output dot-path to a leaf expression evaluated against
@@ -64,10 +66,53 @@ func (m *Mapper[R]) Map(scope map[string]any) (R, error) {
 	}
 
 	var r R
-	if err := mapstructure.Decode(out, &r); err != nil {
+	cfg := &mapstructure.DecoderConfig{Result: &r, DecodeHook: decimalNarrowHook}
+	dec, err := mapstructure.NewDecoder(cfg)
+	if err != nil {
+		return zero, &MappingError{Cause: err}
+	}
+	if err := dec.Decode(out); err != nil {
 		return zero, &MappingError{Cause: err}
 	}
 	return r, nil
+}
+
+// decimalNarrowHook is a mapstructure.DecodeHookFuncType that keeps the
+// Mapper decimal-faithful. When the scope value being decoded is a
+// decimal.Decimal, it converts explicitly instead of letting mapstructure's
+// generic numeric conversion silently truncate or misrepresent it:
+//   - to an integer kind: exact only when the decimal has no fractional part
+//     (Decimal.IsInteger); otherwise ErrLossyResultNarrowing, naming the value.
+//   - to a float kind: Decimal.InexactFloat64 (float64 cannot represent every
+//     decimal exactly, but the caller opted into float by the field's type).
+//   - to a string: Decimal.String (always exact).
+//   - to decimal.Decimal itself (or any other target): passed through
+//     unchanged; mapstructure's own struct-to-struct assignment handles it.
+//
+// A non-decimal source value is returned unchanged so every other field
+// decodes exactly as it did before this hook existed.
+func decimalNarrowHook(from, to reflect.Type, data any) (any, error) {
+	if from != decimalType {
+		return data, nil
+	}
+	d, ok := data.(decimal.Decimal)
+	if !ok {
+		return data, nil
+	}
+	switch to.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		if !d.IsInteger() {
+			return nil, fmt.Errorf("%w: %s", ErrLossyResultNarrowing, d.String())
+		}
+		return d.IntPart(), nil
+	case reflect.Float32, reflect.Float64:
+		return d.InexactFloat64(), nil
+	case reflect.String:
+		return d.String(), nil
+	default:
+		return data, nil
+	}
 }
 
 // setNested writes v at a dot-separated path in out, creating intermediate maps.

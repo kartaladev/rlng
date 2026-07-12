@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/kartaladev/rlng/pipe"
+	"github.com/shopspring/decimal"
 )
 
 // Engine runs a compiled pipeline against arbitrary input and returns the
@@ -79,7 +81,7 @@ func (e *Engine) Evaluate(ctx context.Context, input any) (map[string]any, error
 // result); a non-nil empty map is a valid empty seed.
 func flatten[I any](input I) (map[string]any, error) {
 	if m, ok := any(input).(map[string]any); ok {
-		return m, nil
+		return m, nil // map seed preserves decimals untouched
 	}
 	rv := reflect.ValueOf(input)
 	if !rv.IsValid() || (rv.Kind() == reflect.Pointer && rv.IsNil()) {
@@ -89,5 +91,68 @@ func flatten[I any](input I) (map[string]any, error) {
 	if err := mapstructure.Decode(input, &m); err != nil {
 		return nil, fmt.Errorf("rlng: seed input: %w", err)
 	}
+	restoreDecimals(rv, m)
 	return m, nil
+}
+
+// decimalType is decimal.Decimal's reflect.Type, used to detect struct fields
+// that restoreDecimals must rewrite back into the flattened seed map.
+var decimalType = reflect.TypeOf(decimal.Decimal{})
+
+// restoreDecimals rewrites decimal.Decimal struct fields back into m, which
+// mapstructure.Decode decomposes into empty maps: decimal.Decimal has no
+// exported fields, and DecodeHooks do not fire for the struct->map (seed)
+// direction, only for map->struct decoding (see the Mapper's decimalNarrowHook
+// in mapper.go). Recurses into nested struct fields and their corresponding
+// nested maps in m — including a *pointer*-typed nested struct field: when
+// the pointer is non-nil, mapstructure.Decode dereferences it and decomposes
+// the pointee into a nested map[string]any (as long as the pointee struct has
+// at least one mapstructure-tagged field), and this function's own leading
+// pointer-dereference loop then walks it exactly like a plain nested struct
+// field. Only a nil pointer field is left un-decomposed (mapstructure keeps
+// the raw nil pointer in m rather than a map), so there is nothing to
+// recurse into for that field — not a limitation, since a nil pointer has no
+// decimal to restore.
+func restoreDecimals(rv reflect.Value, m map[string]any) {
+	for rv.Kind() == reflect.Pointer {
+		if rv.IsNil() {
+			return
+		}
+		rv = rv.Elem()
+	}
+	if rv.Kind() != reflect.Struct {
+		return
+	}
+	t := rv.Type()
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if f.PkgPath != "" { // unexported
+			continue
+		}
+		key := mapstructureKey(f)
+		if f.Type == decimalType {
+			m[key] = rv.Field(i).Interface()
+			continue
+		}
+		if child, ok := m[key].(map[string]any); ok {
+			restoreDecimals(rv.Field(i), child)
+		}
+	}
+}
+
+// mapstructureKey returns the map key mapstructure uses for field f: the
+// first comma-separated segment of the `mapstructure` tag if present, else
+// the field name.
+func mapstructureKey(f reflect.StructField) string {
+	tag := f.Tag.Get("mapstructure")
+	if tag == "" {
+		return f.Name
+	}
+	if i := strings.IndexByte(tag, ','); i >= 0 {
+		tag = tag[:i]
+	}
+	if tag == "" {
+		return f.Name
+	}
+	return tag
 }

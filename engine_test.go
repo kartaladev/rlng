@@ -7,6 +7,7 @@ import (
 
 	"github.com/kartaladev/rlng"
 	"github.com/kartaladev/rlng/pipe"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -179,4 +180,274 @@ func TestNewRejectsNilPipeline(t *testing.T) {
 	e, err := rlng.New(nil)
 	assert.Nil(t, e)
 	require.ErrorIs(t, err, rlng.ErrNilPipeline)
+}
+
+// decimalFidelityLoan is a seed struct exercising every restoreDecimals and
+// mapstructureKey path: a tagged decimal field, an untagged decimal field
+// (mapstructure key falls back to the Go field name), a nested-struct decimal
+// field, a non-decimal int64 field that must survive flatten untouched (not
+// widened to float64), a decimal field tagged with a trailing mapstructure
+// option (comma-separated key), a decimal field whose tag has an empty name
+// segment (falls back to the field name), a plain map field (recursion must
+// stop at a non-struct child rather than panic), and an unexported field
+// (restoreDecimals must skip it, mirroring mapstructure's own behavior).
+type decimalFidelityLoan struct {
+	Principal    decimal.Decimal `mapstructure:"principal"`
+	Untagged     decimal.Decimal
+	Term         int64                 `mapstructure:"term"`
+	Nested       decimalFidelityNested `mapstructure:"nested"`
+	CommaTag     decimal.Decimal       `mapstructure:"comma_tag,omitempty"`
+	EmptyNameTag decimal.Decimal       `mapstructure:",omitempty"`
+	Meta         map[string]any        `mapstructure:"meta"`
+	secret       string                // unexported: exercises restoreDecimals' PkgPath skip branch
+}
+
+type decimalFidelityNested struct {
+	Fee decimal.Decimal `mapstructure:"fee"`
+}
+
+// decimalFidelityPointerLoan exercises restoreDecimals' pointer-dereference
+// loop on a RECURSIVE call: a non-nil *decimalFidelityNested field. Because
+// decimalFidelityNested has a mapstructure-tagged field, mapstructure.Decode
+// dereferences a non-nil pointer here and decomposes it into a nested
+// map[string]any (see dereferencePtrToStructIfNeeded in the mapstructure
+// source) — restoreDecimals must then restore the decimal inside it, not
+// leave it un-decomposed.
+type decimalFidelityPointerLoan struct {
+	Nested *decimalFidelityNested `mapstructure:"nested"`
+}
+
+// decimalFidelityLineItem/decimalFidelityLines exercise a struct-nested SLICE
+// of structs, each holding a decimal.Decimal field — see
+// TestEngineSeedPreservesDecimalInSliceOfStructs for why restoreDecimals does
+// not need to (and does not) walk into []any: mapstructure.Decode, called
+// without the Deep config flag (as flatten does), never decomposes a
+// slice-of-structs field into []any of maps in the first place — it leaves
+// the raw typed slice in the seed map, decimal fields intact.
+type decimalFidelityLineItem struct {
+	Fee decimal.Decimal `mapstructure:"fee"`
+}
+
+type decimalFidelityLines struct {
+	Lines []decimalFidelityLineItem `mapstructure:"lines"`
+}
+
+// buildTrivialEngine returns an Engine whose single stage always succeeds
+// regardless of input shape, so seeding fidelity can be observed on the Scope
+// without any stage computation getting in the way.
+func buildTrivialEngine(tb testing.TB) *rlng.Engine {
+	tb.Helper()
+	noop, err := pipe.NewSingleExpr("noop", "1")
+	require.NoError(tb, err)
+	p, err := pipe.NewPipeline(noop)
+	require.NoError(tb, err)
+	e, err := rlng.New(p)
+	require.NoError(tb, err)
+	return e
+}
+
+// TestEngineSeedPreservesDecimal covers flatten's decimal restore (engine.go):
+// mapstructure decomposes a struct-nested decimal.Decimal into an empty map
+// and no DecodeHook fires for it, so flatten must reflect-walk the seed
+// struct and rewrite the real decimal value back in. A map[string]any seed
+// bypasses mapstructure entirely and so preserves decimals for free; that
+// path is covered here too for symmetry.
+func TestEngineSeedPreservesDecimal(t *testing.T) {
+	t.Parallel()
+
+	type testCase struct {
+		name   string
+		input  any
+		assert func(t *testing.T, sc *pipe.Scope)
+	}
+
+	cases := []testCase{
+		{
+			name: "tagged struct decimal field preserved and int64 not widened to float",
+			input: decimalFidelityLoan{
+				Principal: decimal.NewFromInt(250000),
+				Term:      360,
+			},
+			assert: func(t *testing.T, sc *pipe.Scope) {
+				v, ok := sc.Get("principal")
+				require.True(t, ok)
+				d, ok := v.(decimal.Decimal)
+				require.True(t, ok, "scope value must be decimal.Decimal, got %T", v)
+				assert.True(t, decimal.NewFromInt(250000).Equal(d))
+
+				tv, ok := sc.Get("term")
+				require.True(t, ok)
+				ti, ok := tv.(int64)
+				require.True(t, ok, "scope value must remain int64, got %T", tv)
+				assert.Equal(t, int64(360), ti)
+			},
+		},
+		{
+			name: "untagged struct decimal field preserved under its Go field name",
+			input: decimalFidelityLoan{
+				Untagged: decimal.NewFromInt(5),
+			},
+			assert: func(t *testing.T, sc *pipe.Scope) {
+				v, ok := sc.Get("Untagged")
+				require.True(t, ok)
+				d, ok := v.(decimal.Decimal)
+				require.True(t, ok, "scope value must be decimal.Decimal, got %T", v)
+				assert.True(t, decimal.NewFromInt(5).Equal(d))
+			},
+		},
+		{
+			name: "nested struct decimal field preserved",
+			input: decimalFidelityLoan{
+				Nested: decimalFidelityNested{Fee: decimal.NewFromInt(7)},
+			},
+			assert: func(t *testing.T, sc *pipe.Scope) {
+				v, ok := sc.Get("nested.fee")
+				require.True(t, ok)
+				d, ok := v.(decimal.Decimal)
+				require.True(t, ok, "scope value must be decimal.Decimal, got %T", v)
+				assert.True(t, decimal.NewFromInt(7).Equal(d))
+			},
+		},
+		{
+			name:  "map seed decimal preserved untouched",
+			input: map[string]any{"principal": decimal.NewFromInt(99)},
+			assert: func(t *testing.T, sc *pipe.Scope) {
+				v, ok := sc.Get("principal")
+				require.True(t, ok)
+				d, ok := v.(decimal.Decimal)
+				require.True(t, ok, "scope value must be decimal.Decimal, got %T", v)
+				assert.True(t, decimal.NewFromInt(99).Equal(d))
+			},
+		},
+		{
+			name: "comma-tagged decimal field preserved under its trimmed tag name",
+			input: decimalFidelityLoan{
+				CommaTag: decimal.NewFromInt(11),
+			},
+			assert: func(t *testing.T, sc *pipe.Scope) {
+				v, ok := sc.Get("comma_tag")
+				require.True(t, ok)
+				d, ok := v.(decimal.Decimal)
+				require.True(t, ok, "scope value must be decimal.Decimal, got %T", v)
+				assert.True(t, decimal.NewFromInt(11).Equal(d))
+			},
+		},
+		{
+			name: "empty-name-tag decimal field falls back to its Go field name",
+			input: decimalFidelityLoan{
+				EmptyNameTag: decimal.NewFromInt(13),
+			},
+			assert: func(t *testing.T, sc *pipe.Scope) {
+				v, ok := sc.Get("EmptyNameTag")
+				require.True(t, ok)
+				d, ok := v.(decimal.Decimal)
+				require.True(t, ok, "scope value must be decimal.Decimal, got %T", v)
+				assert.True(t, decimal.NewFromInt(13).Equal(d))
+			},
+		},
+		{
+			// A plain map field's recursion target is Kind Map, not Struct, so
+			// restoreDecimals must stop there instead of panicking; an unexported
+			// field must be skipped the same way mapstructure itself skips it.
+			name: "map field and unexported field do not disrupt restore",
+			input: decimalFidelityLoan{
+				Principal: decimal.NewFromInt(1),
+				Meta:      map[string]any{"note": "x"},
+				secret:    "hidden",
+			},
+			assert: func(t *testing.T, sc *pipe.Scope) {
+				v, ok := sc.Get("meta.note")
+				require.True(t, ok)
+				assert.Equal(t, "x", v)
+				_, ok = sc.Get("secret")
+				assert.False(t, ok, "unexported field must not leak into the Scope")
+			},
+		},
+		{
+			// A non-nil top-level pointer input exercises restoreDecimals'
+			// pointer-dereference loop (flatten already rejects a nil pointer
+			// before restoreDecimals is ever called).
+			name:  "pointer to struct top-level input dereferences correctly",
+			input: &decimalFidelityLoan{Principal: decimal.NewFromInt(42)},
+			assert: func(t *testing.T, sc *pipe.Scope) {
+				v, ok := sc.Get("principal")
+				require.True(t, ok)
+				d, ok := v.(decimal.Decimal)
+				require.True(t, ok, "scope value must be decimal.Decimal, got %T", v)
+				assert.True(t, decimal.NewFromInt(42).Equal(d))
+			},
+		},
+		{
+			// A non-nil POINTER-typed nested struct field: mapstructure
+			// dereferences it into a nested map[string]any (the pointee has a
+			// tagged field), and restoreDecimals' own pointer-dereference loop
+			// must restore the decimal nested inside it, on the recursive call
+			// — not just at the top level.
+			name: "non-nil pointer-typed nested struct field decimal is restored",
+			input: decimalFidelityPointerLoan{
+				Nested: &decimalFidelityNested{Fee: decimal.NewFromInt(77)},
+			},
+			assert: func(t *testing.T, sc *pipe.Scope) {
+				v, ok := sc.Get("nested.fee")
+				require.True(t, ok)
+				d, ok := v.(decimal.Decimal)
+				require.True(t, ok, "scope value must be decimal.Decimal, got %T", v)
+				assert.True(t, decimal.NewFromInt(77).Equal(d))
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			e := buildTrivialEngine(t)
+			sc, err := e.EvaluateScope(t.Context(), tc.input)
+			require.NoError(t, err)
+			tc.assert(t, sc)
+		})
+	}
+}
+
+// TestEngineSeedPreservesDecimalInSliceOfStructs is the regression guard for
+// a struct-nested slice-of-structs field holding decimals (e.g.
+// Lines []LineItem{ Fee decimal.Decimal }). Verified empirically (see
+// mstest reproduction in the round-1 review report): mapstructure.Decode,
+// invoked without the Deep config flag exactly as flatten does, does NOT
+// decompose a slice-of-structs field into []any of maps at all — it leaves
+// the field as the original typed Go slice, decimal fields untouched. So
+// there is no restoreDecimals gap to close here (nothing was ever flattened
+// away to restore); each element's decimal is read correctly straight off
+// the raw slice by an expression that indexes into it, which this test
+// exercises for every element to guard against a future flatten() change
+// (e.g. enabling Deep) silently reintroducing the loss this was mistaken for.
+func TestEngineSeedPreservesDecimalInSliceOfStructs(t *testing.T) {
+	t.Parallel()
+
+	first, err := pipe.NewSingleExpr("first", "lines[0].Fee")
+	require.NoError(t, err)
+	second, err := pipe.NewSingleExpr("second", "lines[1].Fee")
+	require.NoError(t, err)
+	p, err := pipe.NewPipeline(first, second)
+	require.NoError(t, err)
+	e, err := rlng.New(p)
+	require.NoError(t, err)
+
+	input := decimalFidelityLines{Lines: []decimalFidelityLineItem{
+		{Fee: decimal.NewFromInt(3)},
+		{Fee: decimal.NewFromInt(4)},
+	}}
+	sc, err := e.EvaluateScope(t.Context(), input)
+	require.NoError(t, err)
+
+	v0, ok := sc.Get("first")
+	require.True(t, ok)
+	d0, ok := v0.(decimal.Decimal)
+	require.True(t, ok, "scope value must be decimal.Decimal, got %T", v0)
+	assert.True(t, decimal.NewFromInt(3).Equal(d0))
+
+	v1, ok := sc.Get("second")
+	require.True(t, ok)
+	d1, ok := v1.(decimal.Decimal)
+	require.True(t, ok, "scope value must be decimal.Decimal, got %T", v1)
+	assert.True(t, decimal.NewFromInt(4).Equal(d1))
 }

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/kartaladev/rlng/expr"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/require"
 )
 
@@ -125,6 +126,30 @@ func TestVariableDefaults(t *testing.T) {
 			assert: func(t *testing.T, got any, err error) {
 				require.NoError(t, err)
 				require.Nil(t, got)
+			},
+		},
+		{
+			name:    "decimal global default applies when env omits the key",
+			src:     "rate",
+			globals: map[string]any{"rate": decimal.RequireFromString("0.0725")},
+			env:     map[string]any{},
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				d, ok := got.(decimal.Decimal)
+				require.True(t, ok, "expected decimal.Decimal, got %T", got)
+				require.True(t, decimal.RequireFromString("0.0725").Equal(d))
+			},
+		},
+		{
+			name:    "runtime env overrides the decimal default",
+			src:     "rate",
+			globals: map[string]any{"rate": decimal.RequireFromString("0.0725")},
+			env:     map[string]any{"rate": decimal.RequireFromString("0.5")},
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				d, ok := got.(decimal.Decimal)
+				require.True(t, ok, "expected decimal.Decimal, got %T", got)
+				require.True(t, decimal.RequireFromString("0.5").Equal(d))
 			},
 		},
 	}

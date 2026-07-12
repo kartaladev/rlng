@@ -23,6 +23,15 @@ var ErrNilPipeline = errors.New("rlng: pipeline must not be nil")
 // is nil.
 var ErrNilMapper = errors.New("rlng: mapper must not be nil")
 
+// ErrLossyResultNarrowing is returned by Mapper.Map when a decimal.Decimal
+// scope value would be narrowed into a result field in a way that loses
+// precision — specifically, a decimal carrying a fractional part decoded into
+// an integer-kind field. Decimal->float and decimal->string are always exact
+// enough to represent (a float trades exactness for range, which the caller
+// has to opt into via the field's own type; a string is lossless), so only
+// the integer-kind narrowing is guarded.
+var ErrLossyResultNarrowing = errors.New("rlng: mapping would lose precision narrowing a decimal")
+
 // MappingError reports a failure compiling or evaluating a result-mapping field,
 // or decoding the assembled result. Field is the output dot-path ("" for the
 // final decode). It unwraps to the underlying expr or mapstructure error.
