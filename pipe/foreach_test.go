@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/kartaladev/rlng/pipe"
+	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -355,6 +356,313 @@ func TestForEachExecute(t *testing.T) {
 				assert.Equal(t, "lines", se.Stage)
 				assert.Equal(t, pipe.TypeForEach, se.Type)
 				assert.ErrorIs(t, se, pipe.ErrPathNotMap)
+			},
+		},
+		{
+			name: "rollup sum of decimal outputs stays exact decimal.Decimal",
+			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
+				inner, err := pipe.NewSingleExpr("amt", "item.amt")
+				require.NoError(t, err)
+				innerPipe, err := pipe.NewPipeline(inner)
+				require.NoError(t, err)
+
+				fe, err := pipe.NewForEach("lines", "items", innerPipe,
+					pipe.WithRollups(pipe.Rollup{Key: "amt", Agg: pipe.AggregateSum, As: "total"}))
+				require.NoError(t, err)
+
+				sc := pipe.NewScope(map[string]any{
+					"items": []any{
+						map[string]any{"amt": decimal.RequireFromString("0.1")},
+						map[string]any{"amt": decimal.RequireFromString("0.2")},
+					},
+				})
+				return fe, sc
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				require.NoError(t, err)
+				got, ok := sc.Get("lines.total")
+				require.True(t, ok)
+				d, ok := got.(decimal.Decimal)
+				require.True(t, ok, "expected decimal.Decimal, got %T", got)
+				assert.True(t, decimal.RequireFromString("0.3").Equal(d), "got %s", d)
+			},
+		},
+		{
+			name: "rollup sum of int64 outputs stays int64",
+			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
+				inner, err := pipe.NewSingleExpr("amt", "item.amt")
+				require.NoError(t, err)
+				innerPipe, err := pipe.NewPipeline(inner)
+				require.NoError(t, err)
+
+				fe, err := pipe.NewForEach("lines", "items", innerPipe,
+					pipe.WithRollups(pipe.Rollup{Key: "amt", Agg: pipe.AggregateSum, As: "total"}))
+				require.NoError(t, err)
+
+				sc := pipe.NewScope(map[string]any{
+					"items": []any{
+						map[string]any{"amt": int64(10)},
+						map[string]any{"amt": int64(32)},
+					},
+				})
+				return fe, sc
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				require.NoError(t, err)
+				got, ok := sc.Get("lines.total")
+				require.True(t, ok)
+				assert.Equal(t, int64(42), got)
+			},
+		},
+		{
+			name: "rollup min over decimal outputs returns the exact matched element",
+			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
+				inner, err := pipe.NewSingleExpr("amt", "item.amt")
+				require.NoError(t, err)
+				innerPipe, err := pipe.NewPipeline(inner)
+				require.NoError(t, err)
+
+				fe, err := pipe.NewForEach("lines", "items", innerPipe,
+					pipe.WithRollups(pipe.Rollup{Key: "amt", Agg: pipe.AggregateMin, As: "smallest"}))
+				require.NoError(t, err)
+
+				sc := pipe.NewScope(map[string]any{
+					"items": []any{
+						map[string]any{"amt": decimal.RequireFromString("2.5")},
+						map[string]any{"amt": decimal.RequireFromString("1.5")},
+					},
+				})
+				return fe, sc
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				require.NoError(t, err)
+				got, ok := sc.Get("lines.smallest")
+				require.True(t, ok)
+				d, ok := got.(decimal.Decimal)
+				require.True(t, ok, "expected decimal.Decimal, got %T", got)
+				assert.True(t, decimal.RequireFromString("1.5").Equal(d), "got %s", d)
+			},
+		},
+		{
+			name: "rollup max over int64 outputs returns the exact matched element",
+			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
+				inner, err := pipe.NewSingleExpr("amt", "item.amt")
+				require.NoError(t, err)
+				innerPipe, err := pipe.NewPipeline(inner)
+				require.NoError(t, err)
+
+				fe, err := pipe.NewForEach("lines", "items", innerPipe,
+					pipe.WithRollups(pipe.Rollup{Key: "amt", Agg: pipe.AggregateMax, As: "largest"}))
+				require.NoError(t, err)
+
+				sc := pipe.NewScope(map[string]any{
+					"items": []any{
+						map[string]any{"amt": int64(5)},
+						map[string]any{"amt": int64(9)},
+						map[string]any{"amt": int64(3)},
+					},
+				})
+				return fe, sc
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				require.NoError(t, err)
+				got, ok := sc.Get("lines.largest")
+				require.True(t, ok)
+				assert.Equal(t, int64(9), got)
+			},
+		},
+		{
+			name: "rollup count over per-element outputs",
+			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
+				inner, err := pipe.NewSingleExpr("amt", "item.amt")
+				require.NoError(t, err)
+				innerPipe, err := pipe.NewPipeline(inner)
+				require.NoError(t, err)
+
+				fe, err := pipe.NewForEach("lines", "items", innerPipe,
+					pipe.WithRollups(pipe.Rollup{Key: "amt", Agg: pipe.AggregateCount, As: "n"}))
+				require.NoError(t, err)
+
+				sc := pipe.NewScope(map[string]any{
+					"items": []any{
+						map[string]any{"amt": int64(5)},
+						map[string]any{"amt": int64(9)},
+						map[string]any{"amt": int64(3)},
+					},
+				})
+				return fe, sc
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				require.NoError(t, err)
+				got, ok := sc.Get("lines.n")
+				require.True(t, ok)
+				assert.Equal(t, 3, got)
+			},
+		},
+		{
+			name: "rollup list collects all per-element values in order",
+			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
+				inner, err := pipe.NewSingleExpr("amt", "item.amt")
+				require.NoError(t, err)
+				innerPipe, err := pipe.NewPipeline(inner)
+				require.NoError(t, err)
+
+				fe, err := pipe.NewForEach("lines", "items", innerPipe,
+					pipe.WithRollups(pipe.Rollup{Key: "amt", Agg: pipe.AggregateList, As: "all"}))
+				require.NoError(t, err)
+
+				sc := pipe.NewScope(map[string]any{
+					"items": []any{
+						map[string]any{"amt": int64(5)},
+						map[string]any{"amt": int64(9)},
+					},
+				})
+				return fe, sc
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				require.NoError(t, err)
+				got, ok := sc.Get("lines.all")
+				require.True(t, ok)
+				assert.Equal(t, []any{int64(5), int64(9)}, got)
+			},
+		},
+		{
+			name: "rollup over an empty collection: count 0, list empty, sum/min/max absent",
+			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
+				innerPipe, err := pipe.NewPipeline()
+				require.NoError(t, err)
+
+				fe, err := pipe.NewForEach("lines", "items", innerPipe,
+					pipe.WithRollups(
+						pipe.Rollup{Key: "amt", Agg: pipe.AggregateCount, As: "n"},
+						pipe.Rollup{Key: "amt", Agg: pipe.AggregateList, As: "all"},
+						pipe.Rollup{Key: "amt", Agg: pipe.AggregateSum, As: "total"},
+						pipe.Rollup{Key: "amt", Agg: pipe.AggregateMin, As: "smallest"},
+						pipe.Rollup{Key: "amt", Agg: pipe.AggregateMax, As: "largest"},
+					))
+				require.NoError(t, err)
+
+				sc := pipe.NewScope(map[string]any{"items": []any{}})
+				return fe, sc
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				require.NoError(t, err)
+
+				n, ok := sc.Get("lines.n")
+				require.True(t, ok)
+				assert.Equal(t, 0, n)
+
+				all, ok := sc.Get("lines.all")
+				require.True(t, ok)
+				assert.Equal(t, []any{}, all)
+
+				_, ok = sc.Get("lines.total")
+				assert.False(t, ok, "sum over empty must leave the key absent")
+				_, ok = sc.Get("lines.smallest")
+				assert.False(t, ok, "min over empty must leave the key absent")
+				_, ok = sc.Get("lines.largest")
+				assert.False(t, ok, "max over empty must leave the key absent")
+			},
+		},
+		{
+			name: "rollup over non-numeric values surfaces the aggregate error",
+			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
+				inner, err := pipe.NewSingleExpr("amt", "item.amt")
+				require.NoError(t, err)
+				innerPipe, err := pipe.NewPipeline(inner)
+				require.NoError(t, err)
+
+				fe, err := pipe.NewForEach("lines", "items", innerPipe,
+					pipe.WithRollups(pipe.Rollup{Key: "amt", Agg: pipe.AggregateSum, As: "total"}))
+				require.NoError(t, err)
+
+				sc := pipe.NewScope(map[string]any{
+					"items": []any{
+						map[string]any{"amt": "not-a-number"},
+					},
+				})
+				return fe, sc
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				var se *pipe.StageError
+				require.ErrorAs(t, err, &se)
+				assert.Equal(t, "lines", se.Stage)
+				assert.Equal(t, pipe.TypeForEach, se.Type)
+				assert.ErrorIs(t, se, pipe.ErrNonNumericAggregate)
+			},
+		},
+		{
+			name: "rollup write conflict surfaces as StageError",
+			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
+				inner, err := pipe.NewSingleExpr("amt", "item.amt")
+				require.NoError(t, err)
+				innerPipe, err := pipe.NewPipeline(inner)
+				require.NoError(t, err)
+
+				fe, err := pipe.NewForEach("lines", "items", innerPipe,
+					pipe.WithRollups(pipe.Rollup{Key: "amt", Agg: pipe.AggregateCount, As: "n"}))
+				require.NoError(t, err)
+
+				// "lines" is already a scalar, so the rollup write to
+				// "lines.n" (reached before the final items write) must
+				// traverse it as an intermediate map and fails with
+				// ErrPathNotMap.
+				sc := pipe.NewScope(map[string]any{
+					"lines": 5,
+					"items": []any{map[string]any{"amt": int64(1)}},
+				})
+				return fe, sc
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				var se *pipe.StageError
+				require.ErrorAs(t, err, &se)
+				assert.Equal(t, "lines", se.Stage)
+				assert.Equal(t, pipe.TypeForEach, se.Type)
+				assert.ErrorIs(t, se, pipe.ErrPathNotMap)
+			},
+		},
+		{
+			name: "per-element firing recorded under the composite stage key <stage>[i]",
+			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
+				table, err := pipe.NewDecisionTable("check", []pipe.Rule{
+					{ID: "HIGH", Condition: "item.ltv > 80", Decisions: map[string]string{"flag": `"high"`}},
+					{ID: "LOW", Condition: "item.ltv < 50", Decisions: map[string]string{"flag": `"low"`}},
+				})
+				require.NoError(t, err)
+				innerPipe, err := pipe.NewPipeline(table)
+				require.NoError(t, err)
+
+				fe, err := pipe.NewForEach("lines", "items", innerPipe)
+				require.NoError(t, err)
+
+				sc := pipe.NewScope(map[string]any{
+					"items": []any{
+						map[string]any{"ltv": 90}, // fires HIGH
+						map[string]any{"ltv": 65}, // fires nothing (gap between rules)
+						map[string]any{"ltv": 30}, // fires LOW
+					},
+				})
+				return fe, sc
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				require.NoError(t, err)
+
+				f0 := sc.FiringRulesFor("lines[0]")
+				require.Len(t, f0, 1)
+				assert.Equal(t, "check", f0[0].Stage)
+				assert.Equal(t, "HIGH", f0[0].RuleID)
+
+				f1 := sc.FiringRulesFor("lines[1]")
+				assert.Empty(t, f1, "no rule matched element 1, so nothing should be recorded")
+
+				f2 := sc.FiringRulesFor("lines[2]")
+				require.Len(t, f2, 1)
+				assert.Equal(t, "check", f2[0].Stage)
+				assert.Equal(t, "LOW", f2[0].RuleID)
+
+				// The inner stage's own name must not be conflated with the
+				// per-element composite key.
+				assert.Empty(t, sc.FiringRulesFor("check"))
 			},
 		},
 		provenancePropagationCase(),

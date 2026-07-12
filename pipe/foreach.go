@@ -24,14 +24,28 @@ type ForEach struct {
 	output     string
 	deps       []string
 	inner      *Pipeline
+	rollups    []Rollup
+}
+
+// Rollup reduces a per-element output key across all elements into a single
+// header value, written to the outer Scope at "<stage name>.<As>". Key is
+// looked up in each element's result map (produced by the inner pipeline);
+// elements missing Key are skipped. Agg is the same CollectAggregation used
+// by a HitPolicyCollect DecisionTable, so a Rollup carries the same int64/
+// decimal.Decimal/float64 fidelity as decision-table aggregation.
+type Rollup struct {
+	Key string
+	Agg CollectAggregation
+	As  string
 }
 
 // forEachConfig accumulates ForEachOption settings before defaults are
 // applied by NewForEach.
 type forEachConfig struct {
-	as     string
-	output string
-	deps   []string
+	as      string
+	output  string
+	deps    []string
+	rollups []Rollup
 }
 
 // ForEachOption configures a ForEach stage built by NewForEach.
@@ -53,6 +67,12 @@ func WithForEachOutput(key string) ForEachOption {
 // WithForEachDependsOn declares the stages this stage depends on.
 func WithForEachDependsOn(deps ...string) ForEachOption {
 	return func(c *forEachConfig) { c.deps = deps }
+}
+
+// WithRollups configures roll-up aggregations that reduce a per-element
+// output key across all elements into a header value at "<stage name>.<As>".
+func WithRollups(r ...Rollup) ForEachOption {
+	return func(c *forEachConfig) { c.rollups = r }
 }
 
 // NewForEach compiles a ForEach stage. collection is the Scope path to a
@@ -83,6 +103,7 @@ func NewForEach(name, collection string, inner *Pipeline, opts ...ForEachOption)
 		output:     cfg.output,
 		deps:       cfg.deps,
 		inner:      inner,
+		rollups:    cfg.rollups,
 	}, nil
 }
 
@@ -100,7 +121,15 @@ func (f *ForEach) DependsOn() []string { return f.deps }
 // element in order, runs the inner pipeline against a fresh per-element Scope
 // seeded from sc's Snapshot plus the element bound under f.as. The outer sc is
 // never mutated during iteration. Each element's resulting Snapshot is
-// appended, in order, to a list written to sc at "<name>.<output>". ctx is
+// appended, in order, to a list written to sc at "<name>.<output>". Any rules
+// the inner pipeline fires for element i are recorded on sc under the
+// composite stage key "<name>[i]" (queryable via sc.FiringRulesFor), giving
+// each element its own provenance without disturbing the inner stage's own
+// name. After every element runs, each configured Rollup reduces its Key
+// across all elements' results (skipping elements missing Key) and writes the
+// result to sc at "<name>.<As>"; an empty (or all-absent) collection writes 0
+// for AggregateCount and an empty list for AggregateList, and leaves the
+// key absent for AggregateSum/Min/Max (folding empty is undefined). ctx is
 // checked before the loop and before each element; a canceled context stops
 // iteration without writing the output. A non-list collection value is
 // ErrForEachNotList; a missing collection path is ErrForEachNoCollection; a
@@ -138,10 +167,62 @@ func (f *ForEach) Execute(ctx context.Context, sc *Scope) error {
 		if err := f.inner.Run(ctx, esc); err != nil {
 			return f.stageErr(fmt.Errorf("element %d: %w", i, err))
 		}
+
+		if elemFirings := esc.FiringRules(); len(elemFirings) > 0 {
+			sc.recordFirings(fmt.Sprintf("%s[%d]", f.name, i), elemFirings)
+		}
 		items = append(items, esc.Snapshot())
 	}
 
+	for _, r := range f.rollups {
+		if err := f.applyRollup(sc, r, items); err != nil {
+			return err
+		}
+	}
+
 	if err := sc.Set(f.name+"."+f.output, items); err != nil {
+		return f.stageErr(err)
+	}
+	return nil
+}
+
+// applyRollup reduces r.Key across items (each a map[string]any produced by
+// an element's inner-pipeline Snapshot) per r.Agg, writing the result to sc at
+// "<name>.<As>". Elements missing r.Key are skipped. When no element supplies
+// a value, AggregateCount writes 0 and AggregateList writes an empty list;
+// AggregateSum/Min/Max leave the key absent, since folding an empty
+// collection is undefined.
+func (f *ForEach) applyRollup(sc *Scope, r Rollup, items []any) error {
+	vals := make([]any, 0, len(items))
+	for _, item := range items {
+		m := item.(map[string]any) //nolint:errcheck // items are always esc.Snapshot() results
+		if v, ok := m[r.Key]; ok {
+			vals = append(vals, v)
+		}
+	}
+
+	if len(vals) == 0 {
+		switch r.Agg {
+		case AggregateCount:
+			return f.setRollup(sc, r.As, 0)
+		case AggregateList:
+			return f.setRollup(sc, r.As, []any{})
+		default: // AggregateSum, AggregateMin, AggregateMax: no defined result over empty
+			return nil
+		}
+	}
+
+	reduced, err := aggregate(r.Agg, vals)
+	if err != nil {
+		return f.stageErr(err)
+	}
+	return f.setRollup(sc, r.As, reduced)
+}
+
+// setRollup writes v to sc at "<name>.<as>", wrapping any Scope error as a
+// *StageError.
+func (f *ForEach) setRollup(sc *Scope, as string, v any) error {
+	if err := sc.Set(f.name+"."+as, v); err != nil {
 		return f.stageErr(err)
 	}
 	return nil
