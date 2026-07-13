@@ -12,9 +12,11 @@ wrapping errors). Increments 011–016 merged & pushed. **Increment 016 (config 
 
 **Active program: execute ALL 12 backlog items (B1–B12) from `docs/BACKLOG.md`,** each as its own
 increment. **B1 (incr 017, `f10a8be`); B2 (incr 018, `934f1b5`); B3 (incr 019, `2af21f2`); B4 (incr 020,
-`4b3089e`); B5 (incr 021, `89b1d57`); B6 (incr 022, `56b243d`); B7 (incr 023, `9569ecc`); B8 (incr 024 —
-this branch, feat commit; merge SHA in `git log` after merge).** B1–B8 complete. **B9 is next** (a
-design-checkpoint item — pause for the user's design approval before implementing).
+`4b3089e`); B5 (incr 021, `89b1d57`); B6 (incr 022, `56b243d`); B7 (incr 023, `9569ecc`); B8 (incr 024,
+`e6ed96e`); B9 (incr 025 — this branch, feat commit `612b20b` + docs close-out; merge SHA in `git log`
+after merge).** B1–B9 complete. **B10 is next.** Per the standing design-gating decision, B10 is
+**autonomous** (not a design-checkpoint item) — design + implement without a live approval pause; surface
+the design via the committed spec as usual.
 
 ## Standing decisions for this program (do NOT re-ask)
 - **Scope = all 12**, including the two deliberate non-goals **B11** (parallel exec; write a superseding
@@ -52,32 +54,40 @@ design-checkpoint item — pause for the user's design approval before implement
   provenance is on; zero cost off. New unexported `Scope.recordElementDerivations`; `ForEach.Execute` calls
   it per element. No data/`Hash()`/config/eval change. Spec 024 committed standalone (`ac52e63`); plan 024 +
   ADR-0049 ride in the feat commit. BACKLOG B8 → resolved.
+- **B9 / increment 025 (this branch `claude/nested-foreach-025`):** nested `foreach` support. A `foreach`
+  stage's inner `Stages` may now contain another `foreach` (no depth cap); per-element firing keys compose
+  hierarchically (`<outer>[i].<inner>[j].<table>`), and lineage composes for free via B6's exact/ancestor
+  reconciliation (no new provenance code). Each nesting level must bind a distinct `as` name — a collision
+  is rejected at build time via the new `config.ErrForEachAsCollision` sentinel. The prior `ErrNestedForEach`
+  build-time gate is removed. Breaking pre-1.0 changes: the per-element firing-key shape (`!` on the `pipe`
+  commit) and the `ErrNestedForEach` removal (`!` on the `config` commit). Spec 025 committed standalone
+  (`47e77df`); plan 025 + ADR-0050 ride in the feat commits (`d63a05c`, `612b20b`); acceptance example +
+  BACKLOG/HANDOVER close-out in this docs commit. BACKLOG B9 → resolved.
 
-## Next action — B9 (increment 025): DESIGN CHECKPOINT (pause for user approval)
-**B9 — Nested `foreach` support** (Spec 015 D7; ADR-0040; `config/build.go` `ErrNestedForEach`;
-feature-gap; P3). Nesting is currently **rejected** at build time (`ErrNestedForEach`) — a foreach's inner
-`Stages` list may not contain another foreach. Supporting an inner unit that itself iterates needs the
-fan-out semantics, scoping, and error model designed (the D7 deferral). **This is a design-checkpoint
-item** — brainstorm → write spec `docs/specs/025-*` → **PAUSE for the user's design approval before
-implementing** (standing design-gating decision above). Then plan 025 + ADR-0050 ride with the feat commit;
-full gate → auto merge+push. Read `pipe/foreach*.go`, `config/build.go` (`buildForEach`, `ErrNestedForEach`),
-Spec 015 D7, ADR-0040 first. Note: B9 is a bigger design than B5–B8 (real new semantics, not a provenance
-refinement) — expect a longer brainstorm.
+## Next action — B10 (increment 026): autonomous (no design checkpoint)
+**B10 — Convenience constructors** (`docs/BACKLOG.md`; ADR-0009; ADR-0005; ergonomics/YAGNI; additive;
+P3). `rlng.NewFromYAML`/`NewFromProvider` (compose an engine directly from a config source) and `Pipeline`
+implementing `Stage` (nested pipelines) were deferred as YAGNI in earlier increments — additive if desired.
+Per the standing design-gating decision, **B10 is NOT a design-checkpoint item** — design + implement
+autonomously (brainstorm → spec `docs/specs/026-*` → plan `docs/plans/026-*` + ADR `docs/adrs/0051-*` →
+TDD → gate → auto merge+push, with no live approval pause). Code-review + security-review gates still run
+as usual. Read `rlng.go` (or wherever the top-level engine constructor lives), ADR-0009, ADR-0005, and the
+B10 backlog entry first.
 
-Start: `git checkout -b <branch> main` (after this B8 branch is merged), brainstorm, author the spec.
+Start: `git checkout -b <branch> main` (after this B9 branch is merged), brainstorm, author the spec.
 
 ## Exact state
-- On branch `claude/foreach-per-element-lineage-024` off `main@9569ecc`. **B8 implementation complete and
-  green**; spec 024 committed standalone (`ac52e63`), about to commit the single feat increment (plan 024 +
-  ADR-0049 + BACKLOG/HANDOVER — this handover rides in it). After commit: whole-branch gate (`/code-review`
-  + `/security-review` over `main..HEAD`) → auto merge+push + delete branch (standing authorization).
+- On branch `claude/nested-foreach-025` off `main@e6ed96e`. **B9 implementation complete and green**
+  (`612b20b`); this docs commit adds the acceptance example and closes out BACKLOG/HANDOVER. After commit:
+  whole-branch gate (`/code-review` + `/security-review` over `main..HEAD`) → auto merge+push + delete
+  branch (standing authorization).
 - Full gate green: `go build ./...`, `go test ./... -race` (all packages ok), `go vet`, `gofmt -l .`
-  (empty), `CGO_ENABLED=0 go build`, `go mod tidy`(no-op)/`verify` all clean. `pipe` coverage 99.1%.
+  (empty), `CGO_ENABLED=0 go build`, `go mod tidy`(no-op)/`verify` all clean.
   `benchstat` installed at `$(go env GOPATH)/bin/benchstat`.
 
 ## Gotchas / environment
 - `govulncheck`/`golangci-lint` are NOT installed locally — CI runs them on push.
 - `.superpowers/sdd/*` are gitignored scratch (016's ledger); not used for the 017+ program — track via
   `docs/BACKLOG.md` + git log instead.
-- Artifact numbering is continuous: specs/plans at **024 done**, ADRs at **0049 done**. **B9 = spec 025 +
-  plan 025 + ADR-0050 next.**
+- Artifact numbering is continuous: specs/plans at **025 done**, ADRs at **0050 done**. **B10 = spec 026 +
+  plan 026 + ADR-0051 next.**

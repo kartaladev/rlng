@@ -25,7 +25,7 @@ spec+plan+ADR chain).
 | ~~**B6**~~ | ~~Precise member-path references in provenance~~ | — | — | — | ✅ **Done** (incr 022, ADR-0047) |
 | ~~**B7**~~ | ~~Intra-stage `MultiExpr` local-alias provenance~~ | — | — | — | ✅ **Done** (incr 023, ADR-0048) |
 | ~~**B8**~~ | ~~Per-element lineage beyond firing (`foreach`)~~ | — | — | — | ✅ **Done** (incr 024, ADR-0049) |
-| **B9** | Nested `foreach` support | Spec 015 D7; ADR-0040; `config/build.go:20` (`ErrNestedForEach`) | feature-gap | new ADR | **P3** |
+| ~~**B9**~~ | ~~Nested `foreach` support~~ | — | — | — | ✅ **Done** (incr 025, ADR-0050) |
 | **B10** | Convenience constructors (`NewFromYAML`/nested `Pipeline` as `Stage`) | ADR-0009; ADR-0005 | ergonomics (YAGNI) | additive | **P3** |
 | **B11** | Parallel execution of independent DAG stages | ADR-0006; ADR-0005 | perf/feature-gap | new superseding ADR | **P3** |
 | **B12** | Strict env / host functions declarable in YAML | ADR-0028 ("Deferred within config") | feature-gap (likely permanent non-goal) | new ADR | **P4** |
@@ -83,9 +83,13 @@ merged onto the outer scope under the `<stage>[i].` path prefix when the outer s
 (`<stage>[i].<inner output>` → element seed) via B6's exact/ancestor reconciliation, alongside the existing
 per-element firing. Always-on when provenance is on; zero cost off; no data/`Hash()`/config change.
 
-**B9 — Nested `foreach`.** Nesting is rejected at build time (`ErrNestedForEach`); the D7 deferral is
-*enforced*, but supporting an inner unit that itself iterates remains deferred (fan-out semantics, scoping,
-error model to design).
+**B9 — Nested `foreach`. ✅ DONE (increment 025, ADR-0050).** A `foreach` stage's inner `Stages` list may now
+contain another `foreach`, iterating without a depth cap. Per-element firing keys compose hierarchically
+(`<outer>[i].<inner>[j].<table>`), so a decision on the innermost element stays explainable down to the
+exact (outer, inner) pair; lineage composes the same way with no new provenance code (B6's exact/ancestor
+reconciliation already handles the deeper paths). Each nesting level must bind a distinct `as` name — the
+`as`-chain guard rejects a collision (`config.ErrForEachAsCollision`) at build time rather than allowing a
+silent shadow. The prior D7 deferral is resolved; there is no remaining nesting-depth gate.
 
 **B10 — Convenience constructors.** `rlng.NewFromYAML`/`NewFromProvider` (compose an engine directly from a
 config source) and `Pipeline` implementing `Stage` (nested pipelines) were deferred as YAGNI — additive if
@@ -113,6 +117,7 @@ Deferrals found in the docs but confirmed already implemented — excluded from 
 | Member-path provenance references (B6; ADR-0011 point 4) | Increment 022 / ADR-0047 |
 | Intra-stage MultiExpr local-alias provenance (B7; ADR-0011 known limitation) | Increment 023 / ADR-0048 |
 | Per-element foreach lineage (B8; ADR-0040 D5 / Spec 015 D5) | Increment 024 / ADR-0049 |
+| Nested foreach (B9; ADR-0040 D7 / Spec 015 D7) | Increment 025 / ADR-0050 |
 | Exact decimal money (ADR-0030) | Increment 014 / ADR-0038 + ADR-0039 |
 | `foreach` stage (ADR-0030) | Increment 015 / ADR-0040 |
 | Config-declared output mapping (ADR-0009; Spec 005/008 non-goals) | Increment 010 / ADR-0028 |
