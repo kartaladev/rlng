@@ -901,6 +901,133 @@ func TestForEachExecute(t *testing.T) {
 				assert.True(t, ok)
 			},
 		},
+		{
+			name: "nested foreach composes lineage, output shape, and an outer rollup over a nested value",
+			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
+				// Decision reads the element (pass-through keeps the int64 type stable,
+				// so the rollup sum stays int64 per ADR-0025) so lineage traces to the
+				// element seed.
+				vat, err := pipe.NewDecisionTable("vat", []pipe.Rule{
+					{ID: "ANY", Condition: "tax.rate >= 0", Decisions: map[string]pipe.Decision{"amount": {Expr: "tax.rate"}}},
+				})
+				require.NoError(t, err)
+				vatPipe, err := pipe.NewPipeline(vat)
+				require.NoError(t, err)
+				// Inner rollup: sum each order's per-tax vat.amount into taxes.sumAmt.
+				taxes, err := pipe.NewForEach("taxes", "line.taxes", vatPipe,
+					pipe.WithForEachAs("tax"),
+					pipe.WithRollups(pipe.Rollup{Key: "vat.amount", Agg: pipe.AggregateSum, As: "sumAmt"}),
+				)
+				require.NoError(t, err)
+				linesPipe, err := pipe.NewPipeline(taxes)
+				require.NoError(t, err)
+				// Outer rollup over the nested value taxes.sumAmt.
+				lines, err := pipe.NewForEach("lines", "orders", linesPipe,
+					pipe.WithForEachAs("line"),
+					pipe.WithRollups(pipe.Rollup{Key: "taxes.sumAmt", Agg: pipe.AggregateSum, As: "grandTotal"}),
+				)
+				require.NoError(t, err)
+
+				sc := pipe.NewScope(map[string]any{
+					"orders": []any{
+						map[string]any{"taxes": []any{
+							map[string]any{"rate": int64(5)},  // amount 5
+							map[string]any{"rate": int64(20)}, // amount 20 -> order sumAmt 25
+						}},
+					},
+				}, pipe.WithProvenance())
+				return lines, sc
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				require.NoError(t, err)
+
+				// Nested lineage: the innermost output traces through both prefixes to
+				// the element seed.
+				d, ok := sc.Derivation("lines[0].taxes[1].vat.amount")
+				require.True(t, ok)
+				assert.Equal(t, int64(20), d.Value)
+				ex := sc.Explain("lines[0].taxes[1].vat.amount")
+				assert.Contains(t, ex, "lines[0].taxes[1].vat.amount = 20")
+				assert.Contains(t, ex, "lines[0].taxes[1].tax")
+				assert.Contains(t, ex, "[seed]")
+				assert.NotEmpty(t, sc.Lineage("lines[0].taxes[1].vat.amount"))
+
+				// Nested output shape: lines.items[0].taxes.items[1].vat.amount.
+				got, ok := sc.Get("lines.items")
+				require.True(t, ok)
+				order0 := got.([]any)[0].(map[string]any)
+				innerItems := order0["taxes"].(map[string]any)["items"].([]any)
+				require.Len(t, innerItems, 2)
+				assert.Equal(t, int64(20), innerItems[1].(map[string]any)["vat"].(map[string]any)["amount"])
+
+				// Outer rollup over the nested value (5 + 20 = 25, int64-preserving).
+				grand, ok := sc.Get("lines.grandTotal")
+				require.True(t, ok)
+				assert.Equal(t, int64(25), grand)
+			},
+		},
+		{
+			name: "nested inner error names the outer element and surfaces the inner cause",
+			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
+				vat, err := pipe.NewDecisionTable("vat", []pipe.Rule{
+					{ID: "ANY", Condition: "true", Decisions: map[string]pipe.Decision{"band": {Expr: `"x"`}}},
+				})
+				require.NoError(t, err)
+				vatPipe, err := pipe.NewPipeline(vat)
+				require.NoError(t, err)
+				taxes, err := pipe.NewForEach("taxes", "line.taxes", vatPipe, pipe.WithForEachAs("tax"))
+				require.NoError(t, err)
+				linesPipe, err := pipe.NewPipeline(taxes)
+				require.NoError(t, err)
+				lines, err := pipe.NewForEach("lines", "orders", linesPipe, pipe.WithForEachAs("line"))
+				require.NoError(t, err)
+
+				// Outer element 0's "taxes" is NOT a list -> the inner foreach errors.
+				sc := pipe.NewScope(map[string]any{
+					"orders": []any{map[string]any{"taxes": int64(5)}},
+				})
+				return lines, sc
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				var se *pipe.StageError
+				require.ErrorAs(t, err, &se)
+				assert.Equal(t, "lines", se.Stage) // outermost stage owns the returned error
+				assert.ErrorIs(t, err, pipe.ErrForEachNotList)
+				assert.Contains(t, err.Error(), "element 0") // the outer element index is named
+			},
+		},
+		{
+			name: "canceled context stops a nested foreach with a StageError, no output",
+			ctx: func(ctx context.Context) context.Context {
+				cctx, cancel := context.WithCancel(ctx)
+				cancel()
+				return cctx
+			},
+			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
+				vat, err := pipe.NewSingleExpr("amt", "tax.rate")
+				require.NoError(t, err)
+				vatPipe, err := pipe.NewPipeline(vat)
+				require.NoError(t, err)
+				taxes, err := pipe.NewForEach("taxes", "line.taxes", vatPipe, pipe.WithForEachAs("tax"))
+				require.NoError(t, err)
+				linesPipe, err := pipe.NewPipeline(taxes)
+				require.NoError(t, err)
+				lines, err := pipe.NewForEach("lines", "orders", linesPipe, pipe.WithForEachAs("line"))
+				require.NoError(t, err)
+				sc := pipe.NewScope(map[string]any{
+					"orders": []any{map[string]any{"taxes": []any{map[string]any{"rate": int64(1)}}}},
+				})
+				return lines, sc
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				var se *pipe.StageError
+				require.ErrorAs(t, err, &se)
+				assert.Equal(t, "lines", se.Stage)
+				assert.ErrorIs(t, err, context.Canceled)
+				_, ok := sc.Get("lines.items")
+				assert.False(t, ok, "no output written when canceled before iteration")
+			},
+		},
 		provenancePropagationCase(),
 		midIterationCancelCase(),
 	}
