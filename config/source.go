@@ -49,3 +49,8 @@ type Source interface {
 // Source declares a kind it cannot decode (including the KindUnspecified
 // zero value).
 var ErrUnknownSourceKind = errors.New("config: unknown source kind")
+
+// ErrNilSource is the Cause of the ConfigError Parse returns when a Provider
+// reports success (nil error) but yields a nil Source — a Provider-contract
+// violation surfaced as a debuggable typed error rather than a panic.
+var ErrNilSource = errors.New("config: provider returned a nil Source")

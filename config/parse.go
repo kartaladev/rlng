@@ -17,7 +17,8 @@ import (
 // strict decoders); an empty document decodes to an empty PipelineDef (Build
 // then rejects the zero-stage case). Failures are a *ConfigError; a Source
 // with an unrecognized Kind (including the KindUnspecified zero value) is
-// ErrUnknownSourceKind.
+// ErrUnknownSourceKind, and a Provider that reports success but yields a nil
+// Source is ErrNilSource (rather than a panic).
 func Parse(ctx context.Context, p Provider) (*PipelineDef, error) {
 	src, err := p.Source(ctx)
 	if err != nil {
@@ -27,6 +28,9 @@ func Parse(ctx context.Context, p Provider) (*PipelineDef, error) {
 			return nil, ce
 		}
 		return nil, &ConfigError{Cause: err}
+	}
+	if src == nil {
+		return nil, &ConfigError{Cause: ErrNilSource}
 	}
 	r := src.Reader()
 	if c, ok := r.(io.Closer); ok {

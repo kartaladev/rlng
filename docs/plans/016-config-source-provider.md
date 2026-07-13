@@ -581,9 +581,9 @@ The atomic breaking cut. Remove the three functions, migrate every caller to `Pa
 
 ## Task 5: Whole-branch gate
 
-- [ ] **Step 1: Whole-branch gate** over `main..HEAD`: `/code-review` (high) + `/security-review` (focus the URL provider: SSRF boundary is documented+caller-injectable, scheme allowlist enforced before dial, size cap via LimitReader, ctx honored, body closed; no panic on caller input). Fix/triage every finding; re-run affected reviews.
-- [ ] **Step 2: Full gate green** — `go test ./... -race`, `go vet ./...`, `gofmt -l .`, `CGO_ENABLED=0 go build ./...`, `go mod tidy`(no-op)/`verify` all clean.
-- [ ] **Step 3: Update `docs/HANDOVER.md`** and present increment 016 for the merge/push decision (do not push without explicit approval).
+- [x] **Step 1: Whole-branch gate** over `main..HEAD`: `/code-review` (high) surfaced one finding — `Parse` could panic on a `Provider` returning `(nil, nil)` (violates the no-panic-on-caller-input rule). Fixed: `ErrNilSource` sentinel + guard in `Parse` + `Parse` godoc, and a 2-case `fakeProvider` table in `parse_test.go` (raw-error + nil-Source). `/security-review` (+ an independent adversarial audit) found no vulnerability: the scheme allowlist blocks `file://` before dialing, `rawURL`/`path` are trusted caller-supplied API args with no in-library untrusted-input path, and `yaml.v3` strict struct-decode admits no gadget-chain RCE; the increment adds hardening. Carried `[T3]` (`http.NewRequestWithContext` err branch, defensive/unreachable via public API) acknowledged, no fix.
+- [x] **Step 2: Full gate green** — `go test ./... -race`, `go vet ./...`, `gofmt -l .`, `CGO_ENABLED=0 go build ./...`, `go mod tidy`(no-op)/`verify` all clean. `config` 99.5%.
+- [x] **Step 3: Update `docs/HANDOVER.md`** and present increment 016 for the merge/push decision — user approved commit-fix + merge-to-main + push + delete-branch.
 
 ## Self-review (author checklist)
 
