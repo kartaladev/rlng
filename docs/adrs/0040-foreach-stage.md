@@ -123,11 +123,11 @@ landed on this core. The final `main..HEAD` review settled three more points:
     companion `single-expr` to surface the value top-level. `Key` is now
     dot-path-aware (backward-compatible: a dot-free key is unchanged), so the
     companion stage is no longer required.
-  - *Per-element lineage (D5 beyond firing).* Per-element firing is recorded on
-    the outer scope under `<stage>[i]`, but each element's full derivation graph
-    (built when the outer scope tracks provenance) is discarded — only the data
-    `Snapshot()` survives in `items`. "Line i denied by rule X" is answerable;
-    the deeper per-element lineage is not yet surfaced.
+  - *Per-element lineage (D5 beyond firing).* **RESOLVED in increment 024 (ADR-0049).** Each element's full
+    derivation graph is now merged onto the outer scope under the `<stage>[i].`
+    path prefix when the outer scope tracks provenance, so `Lineage`/`Explain`
+    answer per-element lineage (e.g. `<stage>[i].<inner output>`) alongside the
+    per-element firing.
   - *Per-element `Snapshot()`+`NewScope` cost.* **RESOLVED in increment 018 (ADR-0043).** Each element
     deep-copies the outer scope's map spine (O(elements × outer-scope size)); a benchmark
     (`BenchmarkForEachScopeCopy`) confirmed the cost is linear in both axes and sub-millisecond for typical

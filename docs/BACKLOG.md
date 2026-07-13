@@ -24,7 +24,7 @@ spec+plan+ADR chain).
 | ~~**B5**~~ | ~~Per-decision options in decision-table config~~ | — | — | — | ✅ **Done** (incr 021, ADR-0046) |
 | ~~**B6**~~ | ~~Precise member-path references in provenance~~ | — | — | — | ✅ **Done** (incr 022, ADR-0047) |
 | ~~**B7**~~ | ~~Intra-stage `MultiExpr` local-alias provenance~~ | — | — | — | ✅ **Done** (incr 023, ADR-0048) |
-| **B8** | Per-element lineage beyond firing (`foreach`) | ADR-0040; Spec 015 D5 | feature-gap/debuggability | new ADR | **P3** |
+| ~~**B8**~~ | ~~Per-element lineage beyond firing (`foreach`)~~ | — | — | — | ✅ **Done** (incr 024, ADR-0049) |
 | **B9** | Nested `foreach` support | Spec 015 D7; ADR-0040; `config/build.go:20` (`ErrNestedForEach`) | feature-gap | new ADR | **P3** |
 | **B10** | Convenience constructors (`NewFromYAML`/nested `Pipeline` as `Stage`) | ADR-0009; ADR-0005 | ergonomics (YAGNI) | additive | **P3** |
 | **B11** | Parallel execution of independent DAG stages | ADR-0006; ADR-0005 | perf/feature-gap | new superseding ADR | **P3** |
@@ -77,9 +77,11 @@ intra-stage subtree (`calc.taxed` → `calc.base` → seeds). Localized to `pipe
 `snapshotRefs`; `single`/`table` and seed/cross-stage keys unchanged. Contract change (MultiExpr local
 `Inputs` keyed by path, not bare name); no signature/`Hash()`/config change.
 
-**B8 — Per-element lineage.** Per-element firing is recorded under `<stage>[i]`, but each element's full
-derivation graph (when the outer scope tracks provenance) is discarded — only the data `Snapshot()` survives
-in `items`. "Line i denied by rule X" is answerable; deeper per-element lineage is not yet surfaced.
+**B8 — Per-element lineage. ✅ DONE (increment 024, ADR-0049).** Each element's full derivation graph is now
+merged onto the outer scope under the `<stage>[i].` path prefix when the outer scope tracks provenance
+(paths + `Inputs` keys rewritten), so `Lineage`/`Explain`/`Derivations` answer per-element lineage
+(`<stage>[i].<inner output>` → element seed) via B6's exact/ancestor reconciliation, alongside the existing
+per-element firing. Always-on when provenance is on; zero cost off; no data/`Hash()`/config change.
 
 **B9 — Nested `foreach`.** Nesting is rejected at build time (`ErrNestedForEach`); the D7 deferral is
 *enforced*, but supporting an inner unit that itself iterates remains deferred (fan-out semantics, scoping,
@@ -110,6 +112,7 @@ Deferrals found in the docs but confirmed already implemented — excluded from 
 | Per-decision decision-table options (B5; ADR-0007 §5 / Spec 004) | Increment 021 / ADR-0046 |
 | Member-path provenance references (B6; ADR-0011 point 4) | Increment 022 / ADR-0047 |
 | Intra-stage MultiExpr local-alias provenance (B7; ADR-0011 known limitation) | Increment 023 / ADR-0048 |
+| Per-element foreach lineage (B8; ADR-0040 D5 / Spec 015 D5) | Increment 024 / ADR-0049 |
 | Exact decimal money (ADR-0030) | Increment 014 / ADR-0038 + ADR-0039 |
 | `foreach` stage (ADR-0030) | Increment 015 / ADR-0040 |
 | Config-declared output mapping (ADR-0009; Spec 005/008 non-goals) | Increment 010 / ADR-0028 |

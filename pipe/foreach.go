@@ -142,7 +142,11 @@ func (f *ForEach) DependsOn() []string { return f.deps }
 // the inner pipeline fires for element i are recorded on sc under the
 // composite stage key "<name>[i]" (queryable via sc.FiringRulesFor), giving
 // each element its own provenance without disturbing the inner stage's own
-// name. After every element runs, each configured Rollup reduces its Key
+// name. When the outer sc tracks provenance, element i's full derivation graph
+// is also merged onto sc under the "<name>[i]." path prefix, so sc.Lineage /
+// sc.Explain answer per-element lineage (e.g. "<name>[i].<inner output>");
+// nothing is recorded per-element when provenance is off. After every element
+// runs, each configured Rollup reduces its Key
 // across all elements' results (skipping elements missing Key) and writes the
 // result to sc at "<name>.<As>"; an empty (or all-absent) collection writes 0
 // for AggregateCount and an empty list for AggregateList, and leaves the
@@ -187,6 +191,9 @@ func (f *ForEach) Execute(ctx context.Context, sc *Scope) error {
 
 		if elemFirings := esc.FiringRules(); len(elemFirings) > 0 {
 			sc.recordFirings(fmt.Sprintf("%s[%d]", f.name, i), elemFirings)
+		}
+		if sc.TracksProvenance() {
+			sc.recordElementDerivations(fmt.Sprintf("%s[%d]", f.name, i), esc.Derivations())
 		}
 		items = append(items, esc.Snapshot())
 	}

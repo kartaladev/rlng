@@ -60,6 +60,32 @@ func (s *Scope) Derive(path string, v any, d Derivation) error {
 	return nil
 }
 
+// recordElementDerivations merges src (a per-element scope's derivations) into s
+// under prefix, rewriting each derivation's Path and its Inputs keys to
+// prefix + "." + <original> so the element's subgraph reconciles within s (via
+// derivationsFor's exact/descendants/ancestor logic). It is a no-op when s does
+// not track provenance or src is empty. ForEach uses it to surface per-element
+// lineage under the composite key "<stage>[i]", mirroring per-element firing.
+func (s *Scope) recordElementDerivations(prefix string, src map[string]Derivation) {
+	if !s.provenance || len(src) == 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, d := range src {
+		nd := d
+		nd.Path = prefix + "." + d.Path
+		if len(d.Inputs) > 0 {
+			ins := make(map[string]any, len(d.Inputs))
+			for k, v := range d.Inputs {
+				ins[prefix+"."+k] = v
+			}
+			nd.Inputs = ins
+		}
+		s.derivations[nd.Path] = nd
+	}
+}
+
 // Derivation returns the recorded derivation of the value at path, or false if
 // provenance is disabled or no value was recorded there.
 func (s *Scope) Derivation(path string) (Derivation, bool) {

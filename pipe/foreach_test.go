@@ -758,6 +758,82 @@ func TestForEachExecute(t *testing.T) {
 				assert.Empty(t, sc.FiringRulesFor("check"))
 			},
 		},
+		{
+			name: "per-element lineage merged under <stage>[i] with provenance on",
+			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
+				// Decision VALUES read the element (item.ltv) so per-element
+				// lineage has something to trace back to the element seed.
+				table, err := pipe.NewDecisionTable("check", []pipe.Rule{
+					{ID: "HIGH", Condition: "item.ltv > 80", Decisions: map[string]pipe.Decision{"score": {Expr: "item.ltv"}}},
+					{ID: "LOW", Condition: "item.ltv < 50", Decisions: map[string]pipe.Decision{"score": {Expr: "item.ltv"}}},
+				})
+				require.NoError(t, err)
+				innerPipe, err := pipe.NewPipeline(table)
+				require.NoError(t, err)
+				fe, err := pipe.NewForEach("lines", "items", innerPipe)
+				require.NoError(t, err)
+				sc := pipe.NewScope(map[string]any{
+					"items": []any{
+						map[string]any{"ltv": 90}, // fires HIGH
+						map[string]any{"ltv": 30}, // fires LOW
+					},
+				}, pipe.WithProvenance())
+				return fe, sc
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				require.NoError(t, err)
+
+				// Element 0's decision output is a derivation on the outer scope.
+				d0, ok := sc.Derivation("lines[0].check.score")
+				require.True(t, ok)
+				assert.Equal(t, "check", d0.Stage)
+				assert.Equal(t, 90, d0.Value)
+
+				// Explain traces element 0's output through its input (prefixed
+				// member path) back to its element seed (via the B6 ancestor
+				// fallback under the "lines[0]" prefix).
+				ex0 := sc.Explain("lines[0].check.score")
+				assert.Contains(t, ex0, "lines[0].check.score = 90")
+				assert.Contains(t, ex0, "lines[0].item")
+				assert.Contains(t, ex0, "[seed]")
+
+				// Element 1 is independent and reconciles within its own prefix.
+				d1, ok := sc.Derivation("lines[1].check.score")
+				require.True(t, ok)
+				assert.Equal(t, 30, d1.Value)
+				assert.NotEmpty(t, sc.Lineage("lines[1].check.score"))
+
+				// Per-element firing is still recorded (regression).
+				f0 := sc.FiringRulesFor("lines[0]")
+				require.Len(t, f0, 1)
+				assert.Equal(t, "HIGH", f0[0].RuleID)
+			},
+		},
+		{
+			name: "no per-element derivations recorded when provenance is off",
+			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
+				table, err := pipe.NewDecisionTable("check", []pipe.Rule{
+					{ID: "HIGH", Condition: "item.ltv > 80", Decisions: map[string]pipe.Decision{"flag": {Expr: `"high"`}}},
+				})
+				require.NoError(t, err)
+				innerPipe, err := pipe.NewPipeline(table)
+				require.NoError(t, err)
+				fe, err := pipe.NewForEach("lines", "items", innerPipe)
+				require.NoError(t, err)
+				sc := pipe.NewScope(map[string]any{
+					"items": []any{map[string]any{"ltv": 90}},
+				}) // no WithProvenance
+				return fe, sc
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				require.NoError(t, err)
+				_, ok := sc.Derivation("lines[0].check.flag")
+				assert.False(t, ok, "no per-element derivations when provenance is off")
+				assert.Empty(t, sc.Derivations())
+				// Firing is independent of provenance and still recorded.
+				assert.Len(t, sc.FiringRulesFor("lines[0]"), 1)
+			},
+		},
 		provenancePropagationCase(),
 		midIterationCancelCase(),
 	}
