@@ -199,13 +199,21 @@ func withStrictEnv(strict bool, schema map[string]any, opts []expr.Option) []exp
 	return append(opts, expr.WithEnv(schema))
 }
 
+// exprEnvOpts composes the pipeline env onto a sub-expression's own options:
+// prepend the pipeline constants (overridable defaults) then, when strict,
+// append the schema strict-env type-check. It is withStrictEnv ∘ withConstants,
+// the combination every build site applies.
+func exprEnvOpts(constants, schema map[string]any, strict bool, opts []expr.Option) []expr.Option {
+	return withStrictEnv(strict, schema, withConstants(constants, opts))
+}
+
 func (sd StageDef) buildSingle(base []pipe.Option, constants, schema map[string]any, strict bool) (pipe.Stage, error) {
 	if sd.Expr == nil {
 		return nil, &ConfigError{Stage: sd.Name, Field: "expr", Cause: errors.New("single-expr requires an expr")}
 	}
-	condOpts := withStrictEnv(strict, schema, withConstants(constants, sd.condOptions()))
+	condOpts := exprEnvOpts(constants, schema, strict, sd.condOptions())
 	opts := append([]pipe.Option{}, base...)
-	opts = append(opts, pipe.WithExprOptions(withStrictEnv(strict, schema, withConstants(constants, sd.Expr.options()))...))
+	opts = append(opts, pipe.WithExprOptions(exprEnvOpts(constants, schema, strict, sd.Expr.options())...))
 	if sd.Condition != nil {
 		opts = append(opts, pipe.WithCondition(sd.Condition.Expr, condOpts...))
 	}
@@ -220,7 +228,7 @@ func (sd StageDef) buildSingle(base []pipe.Option, constants, schema map[string]
 		// whether the condition genuinely failed before blaming it — otherwise
 		// the failure is stage-level (e.g. an empty stage name) and must not be
 		// misattributed to a sub-expression field.
-		if _, verr := expr.NewFunction(sd.Name, sd.Expr.Expr, withStrictEnv(strict, schema, withConstants(constants, sd.Expr.options()))...); verr != nil {
+		if _, verr := expr.NewFunction(sd.Name, sd.Expr.Expr, exprEnvOpts(constants, schema, strict, sd.Expr.options())...); verr != nil {
 			return nil, &ConfigError{Stage: sd.Name, Field: "expr", Cause: err}
 		}
 		if sd.Condition != nil {
@@ -252,7 +260,7 @@ func (sd StageDef) buildMulti(base []pipe.Option, constants, schema map[string]a
 			Name:       e.Name,
 			Expression: e.Expr.Expr,
 			Priority:   e.Priority,
-			Options:    withStrictEnv(strict, schema, withConstants(constants, e.Expr.options())),
+			Options:    exprEnvOpts(constants, schema, strict, e.Expr.options()),
 		})
 	}
 	s, err := pipe.NewMultiExpr(sd.Name, named, base...)
@@ -280,7 +288,7 @@ func (sd StageDef) buildTable(base []pipe.Option, constants, schema map[string]a
 			ID:               r.ID,
 			Message:          r.Message,
 			Condition:        r.Condition.Expr,
-			ConditionOptions: withStrictEnv(strict, schema, withConstants(constants, r.Condition.options())),
+			ConditionOptions: exprEnvOpts(constants, schema, strict, r.Condition.options()),
 			Decisions:        decisionsFrom(constants, schema, strict, r.Decisions),
 		})
 	}
@@ -399,7 +407,7 @@ func decisionsFrom(constants, schema map[string]any, strict bool, in map[string]
 	for key, ed := range in {
 		out[key] = pipe.Decision{
 			Expr:    ed.Expr,
-			Options: withStrictEnv(strict, schema, withConstants(constants, ed.options())),
+			Options: exprEnvOpts(constants, schema, strict, ed.options()),
 		}
 	}
 	return out

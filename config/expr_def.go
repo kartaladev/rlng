@@ -22,6 +22,11 @@ type ExprDef struct {
 	Coerce   bool           `yaml:"coerce" json:"coerce"`
 }
 
+// knownExprDefFields is the set of accepted keys in an ExprDef object form,
+// checked before decoding so an unknown key is attributed to Field "expr"
+// rather than surfacing as an unattributed stdlib error.
+var knownExprDefFields = map[string]bool{"expr": true, "fallback": true, "globals": true, "coerce": true}
+
 // UnmarshalYAML accepts a scalar (the expression) or a mapping (explicit fields).
 func (e *ExprDef) UnmarshalYAML(value *yaml.Node) error {
 	switch value.Kind {
@@ -30,9 +35,8 @@ func (e *ExprDef) UnmarshalYAML(value *yaml.Node) error {
 		return nil
 	case yaml.MappingNode:
 		// Validate known fields before decoding
-		known := map[string]bool{"expr": true, "fallback": true, "globals": true, "coerce": true}
 		for i := 0; i < len(value.Content); i += 2 {
-			if k := value.Content[i].Value; !known[k] {
+			if k := value.Content[i].Value; !knownExprDefFields[k] {
 				return &ConfigError{Field: "expr", Cause: fmt.Errorf("unknown field %q", k)}
 			}
 		}
@@ -63,9 +67,8 @@ func (e *ExprDef) UnmarshalJSON(data []byte) error {
 	// report the error.
 	var probe map[string]json.RawMessage
 	if err := json.Unmarshal(data, &probe); err == nil {
-		known := map[string]bool{"expr": true, "fallback": true, "globals": true, "coerce": true}
 		for k := range probe {
-			if !known[k] {
+			if !knownExprDefFields[k] {
 				return &ConfigError{Field: "expr", Cause: fmt.Errorf("unknown field %q", k)}
 			}
 		}
