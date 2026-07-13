@@ -15,15 +15,36 @@ import (
 // (strict schema, lint-as-error, version override) use the explicit
 // config.Parse -> Build -> New path.
 func NewFromProvider(ctx context.Context, p config.Provider, opts ...Option) (*Engine, error) {
+	cfg := &engineConfig{}
+	for _, o := range opts {
+		o(cfg)
+	}
 	def, err := config.Parse(ctx, p)
 	if err != nil {
 		return nil, err
 	}
-	pipeline, err := def.Build()
+	pipeline, err := def.Build(buildOptsFor(cfg)...)
 	if err != nil {
 		return nil, err
 	}
-	return New(pipeline, opts...)
+	// Construct directly (not via New): the concurrency Option was consumed into
+	// the build above, so passing it to New would trip ErrConcurrencyRequiresConfig.
+	return &Engine{pipeline: pipeline, scopeOpts: cfg.scopeOpts}, nil
+}
+
+// buildOptsFor maps engine-level concurrency config to config.BuildOptions, so
+// the concurrency Option threads down to the internally-built pipeline. A
+// WithMaxParallel(n) with n < 1 flows through as config.WithMaxParallel and
+// surfaces as a wrapped *pipe.InvalidMaxParallelError from Build.
+func buildOptsFor(cfg *engineConfig) []config.BuildOption {
+	switch cfg.concMode {
+	case concUnbounded:
+		return []config.BuildOption{config.WithConcurrency()}
+	case concBounded:
+		return []config.BuildOption{config.WithMaxParallel(cfg.concN)}
+	default:
+		return nil
+	}
 }
 
 // NewFromYAML builds an Engine from an in-memory YAML ruleset. It is shorthand
@@ -40,15 +61,24 @@ func NewFromYAML(ctx context.Context, yaml string, opts ...Option) (*Engine, err
 // is returned unwrapped; a nil mapper returns ErrNilMapper. Build-time options
 // require the explicit config.Parse -> Build -> NewTypedEngine path.
 func NewTypedFromProvider[I, R any](ctx context.Context, p config.Provider, mapper *Mapper[R], opts ...Option) (*TypedEngine[I, R], error) {
+	if mapper == nil {
+		return nil, ErrNilMapper
+	}
+	cfg := &engineConfig{}
+	for _, o := range opts {
+		o(cfg)
+	}
 	def, err := config.Parse(ctx, p)
 	if err != nil {
 		return nil, err
 	}
-	pipeline, err := def.Build()
+	pipeline, err := def.Build(buildOptsFor(cfg)...)
 	if err != nil {
 		return nil, err
 	}
-	return NewTypedEngine[I, R](pipeline, mapper, opts...)
+	// Construct directly (not via NewTypedEngine): concurrency was consumed into
+	// the build, so it would otherwise trip ErrConcurrencyRequiresConfig.
+	return &TypedEngine[I, R]{pipeline: pipeline, mapper: mapper, scopeOpts: cfg.scopeOpts}, nil
 }
 
 // NewTypedFromYAML builds a TypedEngine[I, R] from an in-memory YAML ruleset. It

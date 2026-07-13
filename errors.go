@@ -23,6 +23,13 @@ var ErrNilPipeline = errors.New("rlng: pipeline must not be nil")
 // is nil.
 var ErrNilMapper = errors.New("rlng: mapper must not be nil")
 
+// ErrConcurrencyRequiresConfig is returned by New/NewTypedEngine when a
+// concurrency Option (WithConcurrency/WithMaxParallel) is passed to a
+// constructor that wraps an already-built Pipeline. Concurrency is a property of
+// pipeline construction: set it on the pipeline via pipe.WithConcurrency, or use
+// NewFromYAML/NewFromProvider, which build the pipeline for you.
+var ErrConcurrencyRequiresConfig = errors.New("rlng: concurrency options apply only to the config constructors (NewFromYAML/NewFromProvider); set concurrency on the pipeline via pipe.WithConcurrency")
+
 // ErrLossyResultNarrowing is returned by Mapper.Map when a decimal.Decimal
 // scope value would be narrowed into a result field in a way that loses
 // precision — specifically, a decimal carrying a fractional part decoded into

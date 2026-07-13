@@ -28,6 +28,9 @@ func NewTypedEngine[I any, R any](pipeline *pipe.Pipeline, mapper *Mapper[R], op
 	for _, o := range opts {
 		o(cfg)
 	}
+	if cfg.concMode != concUnset {
+		return nil, ErrConcurrencyRequiresConfig
+	}
 	return &TypedEngine[I, R]{pipeline: pipeline, mapper: mapper, scopeOpts: cfg.scopeOpts}, nil
 }
 
