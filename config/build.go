@@ -69,7 +69,16 @@ func (d *PipelineDef) Build(opts ...BuildOption) (*pipe.Pipeline, error) {
 	if version == "" {
 		version = d.Version
 	}
-	return p.WithRuleset(pipe.RulesetIdentity{Hash: d.Hash(), Version: version}), nil
+	// Stamp the ruleset identity. A hand-built def carrying a non-marshalable
+	// value in an any-typed field cannot produce a stable content hash, so reject
+	// it here rather than stamp a meaningless placeholder identity (ADR-0045).
+	// The offending value can live in any any-typed field, so the error is not
+	// field-scoped; the wrapped marshal error names the type.
+	hash, err := d.hashCanonical()
+	if err != nil {
+		return nil, &ConfigError{Cause: fmt.Errorf("%w: %v", ErrUnhashableDef, err)}
+	}
+	return p.WithRuleset(pipe.RulesetIdentity{Hash: hash, Version: version}), nil
 }
 
 func (sd StageDef) build(constants, schema map[string]any, strict bool) (pipe.Stage, error) {

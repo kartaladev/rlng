@@ -103,6 +103,44 @@ func TestPipelineDefHash(t *testing.T) {
 	}
 }
 
+// unhashableDef hand-builds a PipelineDef carrying a non-JSON-marshalable value
+// (a func) in Constants, with a stage whose expression references no constant so
+// the func is unreferenced and Build reaches the ruleset-identity stamp. The
+// parse path can never produce such a value, so this is a Go-hand-built def.
+func unhashableDef() *config.PipelineDef {
+	return &config.PipelineDef{
+		Constants: map[string]any{"bad": func() {}},
+		Stages: []config.StageDef{
+			{Name: "s", Type: "single-expr", Expr: &config.ExprDef{Expr: "1 + 1"}},
+		},
+	}
+}
+
+// TestBuildRejectsUnhashableDef pins B4: a hand-built def whose canonical JSON
+// cannot be produced is rejected at Build with ErrUnhashableDef instead of being
+// silently stamped with the placeholder hash.
+func TestBuildRejectsUnhashableDef(t *testing.T) {
+	_, err := unhashableDef().Build()
+
+	require.Error(t, err)
+	require.ErrorIs(t, err, config.ErrUnhashableDef)
+	var ce *config.ConfigError
+	require.ErrorAs(t, err, &ce)
+}
+
+// TestHashPlaceholderForUnmarshalableDef documents the retained fallback: a
+// direct Hash() on an unmarshalable def does not panic and returns a stable
+// 64-char placeholder (the fail-loud check lives at Build, not Hash).
+func TestHashPlaceholderForUnmarshalableDef(t *testing.T) {
+	d := unhashableDef()
+
+	h1 := d.Hash()
+	h2 := d.Hash()
+
+	assert.Len(t, h1, 64)
+	assert.Equal(t, h1, h2)
+}
+
 func TestPipelineDefMatchesRuleset(t *testing.T) {
 	d, err := config.Parse(t.Context(), config.FromYAMLString(hashYAML))
 	require.NoError(t, err)

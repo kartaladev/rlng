@@ -20,7 +20,7 @@ spec+plan+ADR chain).
 | ~~**B1**~~ | ~~Dot-path roll-up keys~~ | — | — | — | ✅ **Done** (incr 017, ADR-0042) |
 | ~~**B2**~~ | ~~`foreach` per-element scope-copy benchmark~~ | — | — | — | ✅ **Done** (incr 018, ADR-0043) |
 | ~~**B3**~~ | ~~Numeric-coercing Scope getters~~ | — | — | — | ✅ **Done** (incr 019, ADR-0044) |
-| **B4** | `Hash()` rejects non-marshalable hand-built defs | ADR-0037 | hardening/tech-debt | contained (edge case) | **P2** |
+| ~~**B4**~~ | ~~`Hash()` rejects non-marshalable hand-built defs~~ | — | — | — | ✅ **Done** (incr 020, ADR-0045) |
 | **B5** | Per-decision options in decision-table config | ADR-0007; Spec 004; `config/build.go:358` | feature-gap | new ADR | **P2** |
 | **B6** | Precise member-path references in provenance | ADR-0011; Spec 006 non-goal | feature-gap/debuggability | new ADR | **P2** |
 | **B7** | Intra-stage `MultiExpr` local-alias provenance | ADR-0011 ("Known limitations") | tech-debt/debuggability | new ADR | **P3** |
@@ -49,9 +49,11 @@ overflow-checked, integral finite floats, `json.Number`, numeric strings) conver
 ADR-0035 (no silent truncation, never manufacture `NaN`/`±Inf`, fail loud with `*ScopeTypeError`). Strict
 getters unchanged (additive, no SemVer break).
 
-**B4 — `Hash()` non-marshalable fallback.** A hand-built `PipelineDef` carrying a non-JSON-marshalable
-value (`chan`/`func`) falls back to a stable placeholder hash and loses change-detection. Parse paths can
-never produce such values, so this only affects defs built by hand in Go. Could validate/reject at `Hash()`.
+**B4 — `Hash()` non-marshalable fallback. ✅ DONE (increment 020, ADR-0045).** `Build` now rejects a
+hand-built def carrying a non-JSON-marshalable value (in any `any`-typed field) with a `*ConfigError`
+wrapping the new `ErrUnhashableDef` sentinel, instead of silently stamping the `{}` placeholder identity.
+`Hash()`/`MatchesRuleset` signatures unchanged (the direct-`Hash()` fallback is retained + documented);
+parse paths unaffected; existing hashes byte-identical.
 
 **B5 — Per-decision decision-table options.** `stage.Rule` carries one rule-level `DecisionOptions` shared
 across all decisions; config rejects a decision that declares its own `fallback`/`globals`
@@ -96,6 +98,7 @@ Deferrals found in the docs but confirmed already implemented — excluded from 
 | Dot-path roll-up keys (B1; ADR-0040) | Increment 017 / ADR-0042 |
 | `foreach` per-element scope-copy benchmark (B2; ADR-0040) | Increment 018 / ADR-0043 |
 | Numeric-coercing Scope getters (B3; Spec 006 non-goal) | Increment 019 / ADR-0044 |
+| `Hash()` rejects non-marshalable hand-built defs (B4; ADR-0037) | Increment 020 / ADR-0045 |
 | Exact decimal money (ADR-0030) | Increment 014 / ADR-0038 + ADR-0039 |
 | `foreach` stage (ADR-0030) | Increment 015 / ADR-0040 |
 | Config-declared output mapping (ADR-0009; Spec 005/008 non-goals) | Increment 010 / ADR-0028 |
