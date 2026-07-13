@@ -35,7 +35,7 @@ func TestStageTimings(t *testing.T) {
 	require.NoError(t, err)
 	b, err := pipe.NewSingleExpr("b", "a + 1", pipe.WithDependsOn("a"))
 	require.NoError(t, err)
-	p, err := pipe.NewPipeline(a, b)
+	p, err := pipe.NewPipeline([]pipe.Stage{a, b})
 	require.NoError(t, err)
 
 	clk := &steppingClock{base: time.Unix(0, 0), step: time.Millisecond}

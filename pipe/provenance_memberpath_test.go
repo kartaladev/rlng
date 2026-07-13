@@ -26,7 +26,7 @@ func TestExplain_MemberPathPrecisionEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSingleExpr: %v", err)
 	}
-	p, err := pipe.NewPipeline(grade, note)
+	p, err := pipe.NewPipeline([]pipe.Stage{grade, note})
 	if err != nil {
 		t.Fatalf("NewPipeline: %v", err)
 	}

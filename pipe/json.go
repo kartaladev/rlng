@@ -44,7 +44,7 @@ type scopeTimingJSON struct {
 // run; `derivations` only when provenance is enabled (derivation values keep
 // their pre-existing bare-JSON-number representation, unaffected by this
 // task's data tagging); `ruleset` only when the Scope was stamped by a
-// Pipeline.WithRuleset pipeline's Run; `firing` only when a decision-table
+// WithRuleset-configured pipeline's Run; `firing` only when a decision-table
 // stage recorded a firing rule. The ruleset stamp and firing rules round-trip
 // through Unmarshal/MarshalJSON, so a reloaded Scope's Ruleset() and
 // FiringRule(s)/FiringRulesFor report the same values as before persisting.

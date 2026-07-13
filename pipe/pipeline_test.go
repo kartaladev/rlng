@@ -119,7 +119,7 @@ func TestNewPipelineValidation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			p, err := pipe.NewPipeline(tc.build()...)
+			p, err := pipe.NewPipeline(tc.build())
 			tc.assert(t, p, err)
 		})
 	}
@@ -267,7 +267,7 @@ func TestPipelineRun(t *testing.T) {
 			t.Parallel()
 
 			var order []string
-			p, err := pipe.NewPipeline(tc.build(&order)...)
+			p, err := pipe.NewPipeline(tc.build(&order))
 			require.NoError(t, err)
 
 			ctx := t.Context()

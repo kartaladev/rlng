@@ -89,7 +89,7 @@ func provenancePropagationCase() forEachExecuteCase {
 		name: "provenance-tracking outer scope propagates to the per-element scope",
 		build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
 			probe := &provenanceProbe{got: &got}
-			innerPipe, err := pipe.NewPipeline(probe)
+			innerPipe, err := pipe.NewPipeline([]pipe.Stage{probe})
 			require.NoError(t, err)
 
 			fe, err := pipe.NewForEach("lines", "items", innerPipe)
@@ -124,7 +124,7 @@ func midIterationCancelCase() forEachExecuteCase {
 		name: "context canceled mid-iteration stops at the next element boundary",
 		build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
 			probe := &cancelAfterFirst{holder: holder}
-			innerPipe, err := pipe.NewPipeline(probe)
+			innerPipe, err := pipe.NewPipeline([]pipe.Stage{probe})
 			require.NoError(t, err)
 
 			fe, err := pipe.NewForEach("lines", "items", innerPipe)
@@ -173,11 +173,11 @@ func nestedMidIterationCancelCase() forEachExecuteCase {
 		name: "context canceled mid-inner-iteration stops a nested foreach with a StageError, no output",
 		build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
 			probe := &cancelAfterFirst{holder: holder}
-			taxPipe, err := pipe.NewPipeline(probe)
+			taxPipe, err := pipe.NewPipeline([]pipe.Stage{probe})
 			require.NoError(t, err)
 			taxes, err := pipe.NewForEach("taxes", "line.taxes", taxPipe, pipe.WithForEachAs("tax"))
 			require.NoError(t, err)
-			linesPipe, err := pipe.NewPipeline(taxes)
+			linesPipe, err := pipe.NewPipeline([]pipe.Stage{taxes})
 			require.NoError(t, err)
 			lines, err := pipe.NewForEach("lines", "orders", linesPipe, pipe.WithForEachAs("line"))
 			require.NoError(t, err)
@@ -227,11 +227,11 @@ func nestedInnerErrorCase() forEachExecuteCase {
 		name: "nested inner error names both the outer and inner element index",
 		build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
 			probe := &errAfterFirst{}
-			taxPipe, err := pipe.NewPipeline(probe)
+			taxPipe, err := pipe.NewPipeline([]pipe.Stage{probe})
 			require.NoError(t, err)
 			taxes, err := pipe.NewForEach("taxes", "line.taxes", taxPipe, pipe.WithForEachAs("tax"))
 			require.NoError(t, err)
-			linesPipe, err := pipe.NewPipeline(taxes)
+			linesPipe, err := pipe.NewPipeline([]pipe.Stage{taxes})
 			require.NoError(t, err)
 			lines, err := pipe.NewForEach("lines", "orders", linesPipe, pipe.WithForEachAs("line"))
 			require.NoError(t, err)
@@ -272,7 +272,7 @@ func TestForEachExecute(t *testing.T) {
 			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
 				inner, err := pipe.NewSingleExpr("adjusted", "item.price * (1 - rate)")
 				require.NoError(t, err)
-				innerPipe, err := pipe.NewPipeline(inner)
+				innerPipe, err := pipe.NewPipeline([]pipe.Stage{inner})
 				require.NoError(t, err)
 
 				fe, err := pipe.NewForEach("lines", "items", innerPipe)
@@ -319,7 +319,7 @@ func TestForEachExecute(t *testing.T) {
 			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
 				inner, err := pipe.NewSingleExpr("doubled", "line.n * 2")
 				require.NoError(t, err)
-				innerPipe, err := pipe.NewPipeline(inner)
+				innerPipe, err := pipe.NewPipeline([]pipe.Stage{inner})
 				require.NoError(t, err)
 
 				fe, err := pipe.NewForEach("lines", "nums", innerPipe,
@@ -346,7 +346,7 @@ func TestForEachExecute(t *testing.T) {
 		{
 			name: "empty collection writes an empty items list, no error",
 			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
-				innerPipe, err := pipe.NewPipeline()
+				innerPipe, err := pipe.NewPipeline(nil)
 				require.NoError(t, err)
 
 				fe, err := pipe.NewForEach("lines", "items", innerPipe)
@@ -367,7 +367,7 @@ func TestForEachExecute(t *testing.T) {
 		{
 			name: "non-list collection value surfaces ErrForEachNotList",
 			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
-				innerPipe, err := pipe.NewPipeline()
+				innerPipe, err := pipe.NewPipeline(nil)
 				require.NoError(t, err)
 
 				fe, err := pipe.NewForEach("lines", "items", innerPipe)
@@ -387,7 +387,7 @@ func TestForEachExecute(t *testing.T) {
 		{
 			name: "missing collection path surfaces ErrForEachNoCollection",
 			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
-				innerPipe, err := pipe.NewPipeline()
+				innerPipe, err := pipe.NewPipeline(nil)
 				require.NoError(t, err)
 
 				fe, err := pipe.NewForEach("lines", "items", innerPipe)
@@ -409,7 +409,7 @@ func TestForEachExecute(t *testing.T) {
 			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
 				inner, err := pipe.NewSingleExpr("ratio", "item.a % item.b")
 				require.NoError(t, err)
-				innerPipe, err := pipe.NewPipeline(inner)
+				innerPipe, err := pipe.NewPipeline([]pipe.Stage{inner})
 				require.NoError(t, err)
 
 				fe, err := pipe.NewForEach("lines", "items", innerPipe)
@@ -436,7 +436,7 @@ func TestForEachExecute(t *testing.T) {
 			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
 				inner, err := pipe.NewSingleExpr("adjusted", "item.price")
 				require.NoError(t, err)
-				innerPipe, err := pipe.NewPipeline(inner)
+				innerPipe, err := pipe.NewPipeline([]pipe.Stage{inner})
 				require.NoError(t, err)
 
 				fe, err := pipe.NewForEach("lines", "items", innerPipe)
@@ -466,7 +466,7 @@ func TestForEachExecute(t *testing.T) {
 		{
 			name: "output write conflict surfaces as StageError",
 			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
-				innerPipe, err := pipe.NewPipeline()
+				innerPipe, err := pipe.NewPipeline(nil)
 				require.NoError(t, err)
 
 				fe, err := pipe.NewForEach("lines", "items", innerPipe)
@@ -494,7 +494,7 @@ func TestForEachExecute(t *testing.T) {
 			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
 				inner, err := pipe.NewSingleExpr("amt", "item.amt")
 				require.NoError(t, err)
-				innerPipe, err := pipe.NewPipeline(inner)
+				innerPipe, err := pipe.NewPipeline([]pipe.Stage{inner})
 				require.NoError(t, err)
 
 				fe, err := pipe.NewForEach("lines", "items", innerPipe,
@@ -523,7 +523,7 @@ func TestForEachExecute(t *testing.T) {
 			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
 				inner, err := pipe.NewSingleExpr("amt", "item.amt")
 				require.NoError(t, err)
-				innerPipe, err := pipe.NewPipeline(inner)
+				innerPipe, err := pipe.NewPipeline([]pipe.Stage{inner})
 				require.NoError(t, err)
 
 				fe, err := pipe.NewForEach("lines", "items", innerPipe,
@@ -555,7 +555,7 @@ func TestForEachExecute(t *testing.T) {
 					{ID: "OK", Condition: "item.amt >= 20", Decisions: map[string]pipe.Decision{"score": {Expr: "item.amt"}}},
 				})
 				require.NoError(t, err)
-				innerPipe, err := pipe.NewPipeline(grade)
+				innerPipe, err := pipe.NewPipeline([]pipe.Stage{grade})
 				require.NoError(t, err)
 
 				fe, err := pipe.NewForEach("lines", "items", innerPipe,
@@ -586,7 +586,7 @@ func TestForEachExecute(t *testing.T) {
 			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
 				inner, err := pipe.NewSingleExpr("amt", "item.amt")
 				require.NoError(t, err)
-				innerPipe, err := pipe.NewPipeline(inner)
+				innerPipe, err := pipe.NewPipeline([]pipe.Stage{inner})
 				require.NoError(t, err)
 
 				fe, err := pipe.NewForEach("lines", "items", innerPipe,
@@ -616,7 +616,7 @@ func TestForEachExecute(t *testing.T) {
 					{ID: "NEVER", Condition: "false", Decisions: map[string]pipe.Decision{"score": {Expr: "item.amt"}}},
 				})
 				require.NoError(t, err)
-				innerPipe, err := pipe.NewPipeline(grade)
+				innerPipe, err := pipe.NewPipeline([]pipe.Stage{grade})
 				require.NoError(t, err)
 
 				fe, err := pipe.NewForEach("lines", "items", innerPipe,
@@ -643,7 +643,7 @@ func TestForEachExecute(t *testing.T) {
 			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
 				inner, err := pipe.NewSingleExpr("amt", "item.amt")
 				require.NoError(t, err)
-				innerPipe, err := pipe.NewPipeline(inner)
+				innerPipe, err := pipe.NewPipeline([]pipe.Stage{inner})
 				require.NoError(t, err)
 
 				fe, err := pipe.NewForEach("lines", "items", innerPipe,
@@ -672,7 +672,7 @@ func TestForEachExecute(t *testing.T) {
 			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
 				inner, err := pipe.NewSingleExpr("amt", "item.amt")
 				require.NoError(t, err)
-				innerPipe, err := pipe.NewPipeline(inner)
+				innerPipe, err := pipe.NewPipeline([]pipe.Stage{inner})
 				require.NoError(t, err)
 
 				fe, err := pipe.NewForEach("lines", "items", innerPipe,
@@ -700,7 +700,7 @@ func TestForEachExecute(t *testing.T) {
 			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
 				inner, err := pipe.NewSingleExpr("amt", "item.amt")
 				require.NoError(t, err)
-				innerPipe, err := pipe.NewPipeline(inner)
+				innerPipe, err := pipe.NewPipeline([]pipe.Stage{inner})
 				require.NoError(t, err)
 
 				fe, err := pipe.NewForEach("lines", "items", innerPipe,
@@ -728,7 +728,7 @@ func TestForEachExecute(t *testing.T) {
 			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
 				inner, err := pipe.NewSingleExpr("amt", "item.amt")
 				require.NoError(t, err)
-				innerPipe, err := pipe.NewPipeline(inner)
+				innerPipe, err := pipe.NewPipeline([]pipe.Stage{inner})
 				require.NoError(t, err)
 
 				fe, err := pipe.NewForEach("lines", "items", innerPipe,
@@ -753,7 +753,7 @@ func TestForEachExecute(t *testing.T) {
 		{
 			name: "rollup over an empty collection: count 0, list empty, sum/min/max absent",
 			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
-				innerPipe, err := pipe.NewPipeline()
+				innerPipe, err := pipe.NewPipeline(nil)
 				require.NoError(t, err)
 
 				fe, err := pipe.NewForEach("lines", "items", innerPipe,
@@ -793,7 +793,7 @@ func TestForEachExecute(t *testing.T) {
 			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
 				inner, err := pipe.NewSingleExpr("amt", "item.amt")
 				require.NoError(t, err)
-				innerPipe, err := pipe.NewPipeline(inner)
+				innerPipe, err := pipe.NewPipeline([]pipe.Stage{inner})
 				require.NoError(t, err)
 
 				fe, err := pipe.NewForEach("lines", "items", innerPipe,
@@ -820,7 +820,7 @@ func TestForEachExecute(t *testing.T) {
 			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
 				inner, err := pipe.NewSingleExpr("amt", "item.amt")
 				require.NoError(t, err)
-				innerPipe, err := pipe.NewPipeline(inner)
+				innerPipe, err := pipe.NewPipeline([]pipe.Stage{inner})
 				require.NoError(t, err)
 
 				fe, err := pipe.NewForEach("lines", "items", innerPipe,
@@ -853,7 +853,7 @@ func TestForEachExecute(t *testing.T) {
 					{ID: "LOW", Condition: "item.ltv < 50", Decisions: map[string]pipe.Decision{"flag": {Expr: `"low"`}}},
 				})
 				require.NoError(t, err)
-				innerPipe, err := pipe.NewPipeline(table)
+				innerPipe, err := pipe.NewPipeline([]pipe.Stage{table})
 				require.NoError(t, err)
 
 				fe, err := pipe.NewForEach("lines", "items", innerPipe)
@@ -899,7 +899,7 @@ func TestForEachExecute(t *testing.T) {
 					{ID: "LOW", Condition: "item.ltv < 50", Decisions: map[string]pipe.Decision{"score": {Expr: "item.ltv"}}},
 				})
 				require.NoError(t, err)
-				innerPipe, err := pipe.NewPipeline(table)
+				innerPipe, err := pipe.NewPipeline([]pipe.Stage{table})
 				require.NoError(t, err)
 				fe, err := pipe.NewForEach("lines", "items", innerPipe)
 				require.NoError(t, err)
@@ -947,7 +947,7 @@ func TestForEachExecute(t *testing.T) {
 					{ID: "HIGH", Condition: "item.ltv > 80", Decisions: map[string]pipe.Decision{"flag": {Expr: `"high"`}}},
 				})
 				require.NoError(t, err)
-				innerPipe, err := pipe.NewPipeline(table)
+				innerPipe, err := pipe.NewPipeline([]pipe.Stage{table})
 				require.NoError(t, err)
 				fe, err := pipe.NewForEach("lines", "items", innerPipe)
 				require.NoError(t, err)
@@ -973,11 +973,11 @@ func TestForEachExecute(t *testing.T) {
 					{ID: "VAT_RED", Condition: "tax.rate < 10", Decisions: map[string]pipe.Decision{"band": {Expr: `"reduced"`}}},
 				})
 				require.NoError(t, err)
-				vatPipe, err := pipe.NewPipeline(vat)
+				vatPipe, err := pipe.NewPipeline([]pipe.Stage{vat})
 				require.NoError(t, err)
 				taxes, err := pipe.NewForEach("taxes", "line.taxes", vatPipe, pipe.WithForEachAs("tax"))
 				require.NoError(t, err)
-				linesPipe, err := pipe.NewPipeline(taxes)
+				linesPipe, err := pipe.NewPipeline([]pipe.Stage{taxes})
 				require.NoError(t, err)
 				lines, err := pipe.NewForEach("lines", "orders", linesPipe, pipe.WithForEachAs("line"))
 				require.NoError(t, err)
@@ -1015,7 +1015,7 @@ func TestForEachExecute(t *testing.T) {
 				// A single-expr inner pipeline fires no decision-table rules.
 				amt, err := pipe.NewSingleExpr("amt", "item.price * 2")
 				require.NoError(t, err)
-				innerPipe, err := pipe.NewPipeline(amt)
+				innerPipe, err := pipe.NewPipeline([]pipe.Stage{amt})
 				require.NoError(t, err)
 				fe, err := pipe.NewForEach("lines", "items", innerPipe)
 				require.NoError(t, err)
@@ -1042,7 +1042,7 @@ func TestForEachExecute(t *testing.T) {
 					{ID: "ANY", Condition: "tax.rate >= 0", Decisions: map[string]pipe.Decision{"amount": {Expr: "tax.rate"}}},
 				})
 				require.NoError(t, err)
-				vatPipe, err := pipe.NewPipeline(vat)
+				vatPipe, err := pipe.NewPipeline([]pipe.Stage{vat})
 				require.NoError(t, err)
 				// Inner rollup: sum each order's per-tax vat.amount into taxes.sumAmt.
 				taxes, err := pipe.NewForEach("taxes", "line.taxes", vatPipe,
@@ -1050,7 +1050,7 @@ func TestForEachExecute(t *testing.T) {
 					pipe.WithRollups(pipe.Rollup{Key: "vat.amount", Agg: pipe.AggregateSum, As: "sumAmt"}),
 				)
 				require.NoError(t, err)
-				linesPipe, err := pipe.NewPipeline(taxes)
+				linesPipe, err := pipe.NewPipeline([]pipe.Stage{taxes})
 				require.NoError(t, err)
 				// Outer rollup over the nested value taxes.sumAmt.
 				lines, err := pipe.NewForEach("lines", "orders", linesPipe,
@@ -1104,11 +1104,11 @@ func TestForEachExecute(t *testing.T) {
 					{ID: "ANY", Condition: "true", Decisions: map[string]pipe.Decision{"band": {Expr: `"x"`}}},
 				})
 				require.NoError(t, err)
-				vatPipe, err := pipe.NewPipeline(vat)
+				vatPipe, err := pipe.NewPipeline([]pipe.Stage{vat})
 				require.NoError(t, err)
 				taxes, err := pipe.NewForEach("taxes", "line.taxes", vatPipe, pipe.WithForEachAs("tax"))
 				require.NoError(t, err)
-				linesPipe, err := pipe.NewPipeline(taxes)
+				linesPipe, err := pipe.NewPipeline([]pipe.Stage{taxes})
 				require.NoError(t, err)
 				lines, err := pipe.NewForEach("lines", "orders", linesPipe, pipe.WithForEachAs("line"))
 				require.NoError(t, err)
@@ -1151,7 +1151,7 @@ func TestForEachExecute(t *testing.T) {
 func TestNewForEachErrors(t *testing.T) {
 	t.Parallel()
 
-	validInner, err := pipe.NewPipeline()
+	validInner, err := pipe.NewPipeline(nil)
 	require.NoError(t, err)
 
 	type testCase struct {
@@ -1238,7 +1238,7 @@ func TestNewForEachErrors(t *testing.T) {
 func TestForEachAccessors(t *testing.T) {
 	t.Parallel()
 
-	inner, err := pipe.NewPipeline()
+	inner, err := pipe.NewPipeline(nil)
 	require.NoError(t, err)
 
 	fe, err := pipe.NewForEach("lines", "items", inner,

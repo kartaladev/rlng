@@ -69,7 +69,7 @@ func TestScopeTiming(t *testing.T) {
 				// Pipeline.Run stamps timing (markStarted/markFinished) around the
 				// stages; an empty pipeline stamps with exactly two clock reads and
 				// no intervening work.
-				p, err := pipe.NewPipeline()
+				p, err := pipe.NewPipeline(nil)
 				require.NoError(t, err)
 				require.NoError(t, p.Run(t.Context(), s))
 			}

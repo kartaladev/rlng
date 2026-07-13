@@ -39,7 +39,7 @@ func Example_pricing() {
 		{Name: "taxed", Expression: "base * 1.1", Priority: 0},
 		{Name: "discounted", Expression: "base * 0.9", Priority: 1},
 	}, pipe.WithDependsOn("base"))
-	p, _ := pipe.NewPipeline(base, calc)
+	p, _ := pipe.NewPipeline([]pipe.Stage{base, calc})
 
 	clock := deterministicClock(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), 5*time.Millisecond)
 	sc := pipe.NewScope(map[string]any{"price": 10, "qty": 2}, pipe.WithClock(clock))

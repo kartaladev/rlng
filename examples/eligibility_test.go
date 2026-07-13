@@ -16,7 +16,7 @@ func Example_eligibility() {
 		{Condition: "score >= 650", Decisions: map[string]pipe.Decision{"tier": {Expr: `"near_prime"`}, "limit": {Expr: "score * 50"}}},
 		{Condition: "true", Decisions: map[string]pipe.Decision{"tier": {Expr: `"subprime"`}, "limit": {Expr: "score * 10"}}},
 	})
-	p, _ := pipe.NewPipeline(grade)
+	p, _ := pipe.NewPipeline([]pipe.Stage{grade})
 
 	sc := pipe.NewScope(map[string]any{"score": 700}, pipe.WithProvenance())
 	_ = p.Run(context.Background(), sc)
@@ -38,7 +38,7 @@ func Example_eligibility_flags() {
 		{Condition: "score < 650", Decisions: map[string]pipe.Decision{"flag": {Expr: `"low_score"`}}},
 		{Condition: "dti > 0.4", Decisions: map[string]pipe.Decision{"flag": {Expr: `"high_dti"`}}},
 	}, pipe.WithHitPolicy(pipe.HitPolicyCollect))
-	p, _ := pipe.NewPipeline(checks)
+	p, _ := pipe.NewPipeline([]pipe.Stage{checks})
 
 	sc := pipe.NewScope(map[string]any{"score": 600, "dti": 0.5})
 	_ = p.Run(context.Background(), sc)

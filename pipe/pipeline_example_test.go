@@ -15,7 +15,7 @@ func ExamplePipeline() {
 	base, _ := pipe.NewSingleExpr("base", "price * qty")
 	taxed, _ := pipe.NewSingleExpr("taxed", "base * 1.1", pipe.WithDependsOn("base"))
 
-	p, _ := pipe.NewPipeline(taxed, base) // declared out of order; ordered by deps
+	p, _ := pipe.NewPipeline([]pipe.Stage{taxed, base}) // declared out of order; ordered by deps
 	sc := pipe.NewScope(map[string]any{"price": 10.0, "qty": 2.0})
 	if err := p.Run(context.Background(), sc); err != nil {
 		fmt.Println("error:", err)
@@ -33,7 +33,7 @@ func ExamplePipeline_cycle() {
 	a, _ := pipe.NewSingleExpr("a", "b", pipe.WithDependsOn("b"))
 	b, _ := pipe.NewSingleExpr("b", "a", pipe.WithDependsOn("a"))
 
-	_, err := pipe.NewPipeline(a, b)
+	_, err := pipe.NewPipeline([]pipe.Stage{a, b})
 	var ce *pipe.CycleError
 	if errors.As(err, &ce) {
 		fmt.Println(err)

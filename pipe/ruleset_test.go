@@ -8,16 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestWithRulesetReturnsReceiver(t *testing.T) {
-	base, err := pipe.NewSingleExpr("base", "price * qty")
-	require.NoError(t, err)
-	p, err := pipe.NewPipeline(base)
-	require.NoError(t, err)
-
-	id := pipe.RulesetIdentity{Hash: "abc123", Version: "v1.2.0"}
-	require.Same(t, p, p.WithRuleset(id), "WithRuleset returns the same pipeline for chaining")
-}
-
 func TestScopeRuleset(t *testing.T) {
 	type testCase struct {
 		name        string
@@ -49,11 +39,12 @@ func TestScopeRuleset(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			base, err := pipe.NewSingleExpr("base", "1 + 1")
 			require.NoError(t, err)
-			p, err := pipe.NewPipeline(base)
-			require.NoError(t, err)
+			var opts []pipe.PipelineOption
 			if tc.withRuleset {
-				p.WithRuleset(id)
+				opts = append(opts, pipe.WithRuleset(id))
 			}
+			p, err := pipe.NewPipeline([]pipe.Stage{base}, opts...)
+			require.NoError(t, err)
 
 			sc := pipe.NewScope(nil)
 			require.NoError(t, p.Run(t.Context(), sc))

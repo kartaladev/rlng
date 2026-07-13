@@ -82,7 +82,7 @@ func BenchmarkForEachScopeCopy(b *testing.B) {
 				seed["lines"] = coll
 				sc := pipe.NewScope(seed)
 
-				inner, err := pipe.NewPipeline()
+				inner, err := pipe.NewPipeline(nil)
 				if err != nil {
 					b.Fatalf("build inner pipeline: %v", err)
 				}

@@ -12,7 +12,7 @@ import (
 func ExampleScope_explain() {
 	base, _ := pipe.NewSingleExpr("base", "price * qty")
 	taxed, _ := pipe.NewSingleExpr("taxed", "base * 1.1", pipe.WithDependsOn("base"))
-	p, _ := pipe.NewPipeline(base, taxed)
+	p, _ := pipe.NewPipeline([]pipe.Stage{base, taxed})
 
 	sc := pipe.NewScope(map[string]any{"price": 10, "qty": 2}, pipe.WithProvenance())
 	if err := p.Run(context.Background(), sc); err != nil {

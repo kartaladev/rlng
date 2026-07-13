@@ -20,7 +20,7 @@ type result struct {
 func ExampleTypedEngine() {
 	base, _ := pipe.NewSingleExpr("base", "price * qty")
 	taxed, _ := pipe.NewSingleExpr("taxed", "base * 1.1", pipe.WithDependsOn("base"))
-	pipeline, _ := pipe.NewPipeline(base, taxed)
+	pipeline, _ := pipe.NewPipeline([]pipe.Stage{base, taxed})
 
 	mapper, _ := rlng.NewMapper[result](rlng.MappingTemplate{"total": "taxed"})
 	engine, _ := rlng.NewTypedEngine[input, result](pipeline, mapper)

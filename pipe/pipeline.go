@@ -37,18 +37,32 @@ func (e *CycleError) Error() string {
 
 // Pipeline runs a set of Stages in dependency order. NewPipeline validates the
 // set and computes the execution order once; Run only evaluates. Execution is
-// sequential and deterministic (see ADR-0006).
+// sequential and deterministic by default (ADR-0006); WithConcurrency /
+// WithMaxParallel opt into deterministic parallel execution (ADR-0052).
 type Pipeline struct {
 	ordered []Stage
+	ruleset RulesetIdentity
+}
+
+// PipelineOption configures a Pipeline at construction. Options are applied in
+// order; where two set the same knob, the last wins.
+type PipelineOption func(*pipelineConfig)
+
+type pipelineConfig struct {
 	ruleset RulesetIdentity
 }
 
 // NewPipeline validates stages and computes their execution order. Stage names
 // must be unique; every DependsOn target must name a stage in the set; and the
 // dependency graph must be acyclic. It returns a *DuplicateStageError,
-// *UnknownDependencyError, or *CycleError otherwise. An empty set is valid; its
-// Run is a no-op.
-func NewPipeline(stages ...Stage) (*Pipeline, error) {
+// *UnknownDependencyError, or *CycleError otherwise. An empty (or nil) set is
+// valid; its Run is a no-op. Options (e.g. WithRuleset) configure the pipeline.
+func NewPipeline(stages []Stage, opts ...PipelineOption) (*Pipeline, error) {
+	cfg := &pipelineConfig{}
+	for _, o := range opts {
+		o(cfg)
+	}
+
 	index := make(map[string]Stage, len(stages))
 	for _, s := range stages {
 		name := s.Name()
@@ -70,7 +84,7 @@ func NewPipeline(stages ...Stage) (*Pipeline, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Pipeline{ordered: ordered}, nil
+	return &Pipeline{ordered: ordered, ruleset: cfg.ruleset}, nil
 }
 
 // topoSort returns stages in dependency order, preserving input order among

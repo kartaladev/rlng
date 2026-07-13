@@ -65,10 +65,6 @@ func (d *PipelineDef) Build(opts ...BuildOption) (*pipe.Pipeline, error) {
 		}
 		stages = append(stages, st)
 	}
-	p, err := pipe.NewPipeline(stages...)
-	if err != nil {
-		return nil, &ConfigError{Cause: err}
-	}
 	version := cfg.version
 	if version == "" {
 		version = d.Version
@@ -82,7 +78,11 @@ func (d *PipelineDef) Build(opts ...BuildOption) (*pipe.Pipeline, error) {
 	if err != nil {
 		return nil, &ConfigError{Cause: fmt.Errorf("%w: %v", ErrUnhashableDef, err)}
 	}
-	return p.WithRuleset(pipe.RulesetIdentity{Hash: hash, Version: version}), nil
+	p, err := pipe.NewPipeline(stages, pipe.WithRuleset(pipe.RulesetIdentity{Hash: hash, Version: version}))
+	if err != nil {
+		return nil, &ConfigError{Cause: err}
+	}
+	return p, nil
 }
 
 func (sd StageDef) build(constants, schema map[string]any, strict bool) (pipe.Stage, error) {
@@ -316,7 +316,7 @@ func (sd StageDef) buildForEach(base []pipe.Option, constants, schema map[string
 		inner = append(inner, st)
 	}
 
-	innerPipe, err := pipe.NewPipeline(inner...)
+	innerPipe, err := pipe.NewPipeline(inner)
 	if err != nil {
 		return nil, &ConfigError{Stage: sd.Name, Cause: err}
 	}

@@ -106,7 +106,7 @@ func TestFiringRulesAll(t *testing.T) {
 		{ID: "RB", Condition: "true", Decisions: map[string]pipe.Decision{"y": {Expr: "2"}}},
 	})
 	require.NoError(t, err)
-	p, err := pipe.NewPipeline(a, b)
+	p, err := pipe.NewPipeline([]pipe.Stage{a, b})
 	require.NoError(t, err)
 
 	sc := pipe.NewScope(map[string]any{})

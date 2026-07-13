@@ -28,7 +28,7 @@ func buildTypedEngine(tb testing.TB, opts ...rlng.Option) *rlng.TypedEngine[orde
 	require.NoError(tb, err)
 	taxed, err := pipe.NewSingleExpr("taxed", "base * 1.1", pipe.WithDependsOn("base"))
 	require.NoError(tb, err)
-	p, err := pipe.NewPipeline(base, taxed)
+	p, err := pipe.NewPipeline([]pipe.Stage{base, taxed})
 	require.NoError(tb, err)
 	m, err := rlng.NewMapper[quote](rlng.MappingTemplate{"total": "taxed"})
 	require.NoError(tb, err)
@@ -64,7 +64,7 @@ func TestTypedEngineEvaluate(t *testing.T) {
 				// boom uses modulo by zero on a seeded int, failing at eval.
 				boom, err := pipe.NewSingleExpr("taxed", "qty % 0")
 				require.NoError(tb, err)
-				p, err := pipe.NewPipeline(boom)
+				p, err := pipe.NewPipeline([]pipe.Stage{boom})
 				require.NoError(tb, err)
 				m, err := rlng.NewMapper[quote](rlng.MappingTemplate{"total": "taxed"})
 				require.NoError(tb, err)
@@ -143,7 +143,7 @@ func TestTypedEngineWithScopeOptions(t *testing.T) {
 			t.Parallel()
 			base, err := pipe.NewSingleExpr("base", "1")
 			require.NoError(t, err)
-			p, err := pipe.NewPipeline(base)
+			p, err := pipe.NewPipeline([]pipe.Stage{base})
 			require.NoError(t, err)
 			m, err := rlng.NewMapper[map[string]any](rlng.MappingTemplate{})
 			require.NoError(t, err)
@@ -163,7 +163,7 @@ func TestTypedEngineEvaluateMapInput(t *testing.T) {
 
 	base, err := pipe.NewSingleExpr("base", "price * qty")
 	require.NoError(t, err)
-	p, err := pipe.NewPipeline(base)
+	p, err := pipe.NewPipeline([]pipe.Stage{base})
 	require.NoError(t, err)
 	m, err := rlng.NewMapper[map[string]any](rlng.MappingTemplate{"out": "base"})
 	require.NoError(t, err)
@@ -179,7 +179,7 @@ func TestTypedEngineEvaluateMapInput(t *testing.T) {
 func TestTypedEngineEvaluateFlattenError(t *testing.T) {
 	t.Parallel()
 
-	p, err := pipe.NewPipeline()
+	p, err := pipe.NewPipeline(nil)
 	require.NoError(t, err)
 	m, err := rlng.NewMapper[map[string]any](rlng.MappingTemplate{})
 	require.NoError(t, err)
@@ -197,7 +197,7 @@ func TestTypedEngineEvaluateNilInput(t *testing.T) {
 
 	base, err := pipe.NewSingleExpr("base", "1")
 	require.NoError(t, err)
-	p, err := pipe.NewPipeline(base)
+	p, err := pipe.NewPipeline([]pipe.Stage{base})
 	require.NoError(t, err)
 	m, err := rlng.NewMapper[quote](rlng.MappingTemplate{"total": "base"})
 	require.NoError(t, err)
@@ -214,7 +214,7 @@ func TestTypedEngineEvaluateNilInput(t *testing.T) {
 func TestNewTypedEngineRejectsNilArgs(t *testing.T) {
 	t.Parallel()
 
-	p, err := pipe.NewPipeline()
+	p, err := pipe.NewPipeline(nil)
 	require.NoError(t, err)
 	m, err := rlng.NewMapper[quote](rlng.MappingTemplate{})
 	require.NoError(t, err)

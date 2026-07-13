@@ -43,7 +43,7 @@ func TestScopeJSONRoundTrip(t *testing.T) {
 			name: "timing present after a run",
 			build: func() *pipe.Scope {
 				sc := pipe.NewScope(map[string]any{"a": 1}, pipe.WithClock(fixedClock{t: start}))
-				p, _ := pipe.NewPipeline()
+				p, _ := pipe.NewPipeline(nil)
 				_ = p.Run(context.Background(), sc)
 				return sc
 			},
@@ -80,7 +80,7 @@ func TestScopeJSONRoundTrip(t *testing.T) {
 			name: "byte-stable round-trip (marshal->unmarshal->marshal)",
 			build: func() *pipe.Scope {
 				sc := pipe.NewScope(map[string]any{"a": 1.5, "b": "y"}, pipe.WithClock(fixedClock{t: start}))
-				p, _ := pipe.NewPipeline()
+				p, _ := pipe.NewPipeline(nil)
 				_ = p.Run(context.Background(), sc)
 				return sc
 			},
@@ -129,9 +129,9 @@ func TestScopeJSONRoundTripsRulesetAndFiring(t *testing.T) {
 					{ID: "R1", Message: "too low", Condition: "score < 650", Decisions: map[string]pipe.Decision{"deny": {Expr: "true"}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicySingle))
 				require.NoError(t, err)
-				p, err := pipe.NewPipeline(tbl)
+				p, err := pipe.NewPipeline([]pipe.Stage{tbl},
+					pipe.WithRuleset(pipe.RulesetIdentity{Hash: "h123", Version: "v1"}))
 				require.NoError(t, err)
-				p = p.WithRuleset(pipe.RulesetIdentity{Hash: "h123", Version: "v1"})
 
 				sc := pipe.NewScope(map[string]any{"score": 600})
 				require.NoError(t, p.Run(t.Context(), sc))

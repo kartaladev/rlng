@@ -10,12 +10,10 @@ type RulesetIdentity struct {
 	Version string `json:"version,omitempty"`
 }
 
-// WithRuleset records which ruleset this Pipeline evaluates, so Run can stamp
-// the identity onto each Scope. It returns the Pipeline for chaining. Configure
-// it once, before Run — it is not safe to call concurrently with Run.
-func (p *Pipeline) WithRuleset(id RulesetIdentity) *Pipeline {
-	p.ruleset = id
-	return p
+// WithRuleset records which ruleset the Pipeline evaluates, so Run stamps the
+// identity onto each Scope. The zero identity leaves Ruleset reporting absent.
+func WithRuleset(id RulesetIdentity) PipelineOption {
+	return func(c *pipelineConfig) { c.ruleset = id }
 }
 
 // stampRuleset records id on the Scope. The zero identity is a no-op, so an
