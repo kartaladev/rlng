@@ -3,14 +3,17 @@ package config
 import (
 	"fmt"
 	"strings"
+
+	"github.com/kartaladev/rlng/pipe"
 )
 
 // buildConfig holds Build-time toggles assembled from BuildOption values.
 type buildConfig struct {
-	lintErrors bool
-	schema     map[string]any // set by WithSchema; overrides PipelineDef.Schema when non-nil
-	strict     bool           // set by WithStrict; also implied whenever a schema is present
-	version    string         // set by WithRulesetVersion; overrides PipelineDef.Version
+	lintErrors  bool
+	schema      map[string]any        // set by WithSchema; overrides PipelineDef.Schema when non-nil
+	strict      bool                  // set by WithStrict; also implied whenever a schema is present
+	version     string                // set by WithRulesetVersion; overrides PipelineDef.Version
+	concurrency []pipe.PipelineOption // set by WithConcurrency/WithMaxParallel; applied to the built Pipeline
 }
 
 // BuildOption configures (*PipelineDef).Build.
@@ -43,6 +46,20 @@ func WithSchema(env map[string]any) BuildOption {
 // the release.
 func WithRulesetVersion(v string) BuildOption {
 	return func(c *buildConfig) { c.version = v }
+}
+
+// WithConcurrency builds a Pipeline that runs independent stages concurrently
+// (unbounded). It is the config-path equivalent of pipe.WithConcurrency;
+// execution stays fully deterministic (ADR-0052).
+func WithConcurrency() BuildOption {
+	return func(c *buildConfig) { c.concurrency = append(c.concurrency, pipe.WithConcurrency()) }
+}
+
+// WithMaxParallel builds a Pipeline that runs independent stages concurrently,
+// capped at n. Build fails with a wrapped *pipe.InvalidMaxParallelError if n < 1.
+// It is the config-path equivalent of pipe.WithMaxParallel.
+func WithMaxParallel(n int) BuildOption {
+	return func(c *buildConfig) { c.concurrency = append(c.concurrency, pipe.WithMaxParallel(n)) }
 }
 
 // LintError reports Lint findings promoted to a Build error by WithLintErrors.

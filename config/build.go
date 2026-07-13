@@ -78,7 +78,10 @@ func (d *PipelineDef) Build(opts ...BuildOption) (*pipe.Pipeline, error) {
 	if err != nil {
 		return nil, &ConfigError{Cause: fmt.Errorf("%w: %v", ErrUnhashableDef, err)}
 	}
-	p, err := pipe.NewPipeline(stages, pipe.WithRuleset(pipe.RulesetIdentity{Hash: hash, Version: version}))
+	pipeOpts := make([]pipe.PipelineOption, 0, 1+len(cfg.concurrency))
+	pipeOpts = append(pipeOpts, pipe.WithRuleset(pipe.RulesetIdentity{Hash: hash, Version: version}))
+	pipeOpts = append(pipeOpts, cfg.concurrency...)
+	p, err := pipe.NewPipeline(stages, pipeOpts...)
 	if err != nil {
 		return nil, &ConfigError{Cause: err}
 	}
