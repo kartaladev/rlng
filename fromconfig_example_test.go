@@ -7,9 +7,9 @@ import (
 	"github.com/kartaladev/rlng"
 )
 
-// Example_newFromYAML builds an engine from a YAML ruleset in a single call and
+// ExampleNewFromYAML builds an engine from a YAML ruleset in a single call and
 // evaluates it.
-func Example_newFromYAML() {
+func ExampleNewFromYAML() {
 	const ruleset = `
 stages:
   - name: total
