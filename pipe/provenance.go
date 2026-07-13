@@ -73,6 +73,20 @@ func (s *Scope) deriveOrSet(path string, v any, build func() Derivation) error {
 	return s.Derive(path, v, build())
 }
 
+// prefixKey joins prefix and key with a dot; the composite-key convention used
+// when merging a per-element scope's derivations/firings into an outer scope.
+func prefixKey(prefix, key string) string { return prefix + "." + key }
+
+// mergePrefixed copies each src entry into dst under prefixKey(prefix, key),
+// applying transform to the value. dst must be non-nil and is mutated in place.
+// Shared by recordElementDerivations and recordElementFirings; the caller holds
+// the lock and pre-allocates dst.
+func mergePrefixed[V, W any](dst map[string]W, prefix string, src map[string]V, transform func(key string, v V) W) {
+	for k, v := range src {
+		dst[prefixKey(prefix, k)] = transform(k, v)
+	}
+}
+
 // recordElementDerivations merges src (a per-element scope's derivations) into s
 // under prefix, rewriting each derivation's Path and its Inputs keys to
 // prefix + "." + <original> so the element's subgraph reconciles within s (via
@@ -86,18 +100,18 @@ func (s *Scope) recordElementDerivations(prefix string, src map[string]Derivatio
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, d := range src {
+	mergePrefixed(s.derivations, prefix, src, func(_ string, d Derivation) Derivation {
 		nd := d
-		nd.Path = prefix + "." + d.Path
+		nd.Path = prefixKey(prefix, d.Path)
 		if len(d.Inputs) > 0 {
 			ins := make(map[string]any, len(d.Inputs))
 			for k, v := range d.Inputs {
-				ins[prefix+"."+k] = v
+				ins[prefixKey(prefix, k)] = v
 			}
 			nd.Inputs = ins
 		}
-		s.derivations[nd.Path] = nd
-	}
+		return nd
+	})
 }
 
 // Derivation returns the recorded derivation of the value at path, or false if

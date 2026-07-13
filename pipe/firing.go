@@ -62,9 +62,7 @@ func (s *Scope) recordElementFirings(prefix string, src map[string][]FiringRule)
 	if s.firing == nil {
 		s.firing = make(map[string][]FiringRule, len(src))
 	}
-	for k, rules := range src {
-		s.firing[prefix+"."+k] = rules
-	}
+	mergePrefixed(s.firing, prefix, src, func(_ string, rules []FiringRule) []FiringRule { return rules })
 }
 
 // FiringRule returns the first rule that fired for the named decision-table
