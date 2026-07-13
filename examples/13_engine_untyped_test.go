@@ -12,6 +12,7 @@ package examples_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/kartaladev/rlng"
@@ -143,4 +144,46 @@ stages:
 	// Output:
 	// small order fee: 6.99
 	// large order fee: 0
+}
+
+// Example_engineEvaluateNilInput demonstrates the rlng.ErrNilInput quirk:
+// Evaluate treats a genuinely absent input differently from an empty one. An
+// untyped nil (or a nil pointer) is rejected as ErrNilInput — if it were
+// accepted, it would silently seed an empty Scope and hand back a bogus zero
+// result instead of surfacing the caller's mistake. A non-nil empty
+// map[string]any{}, by contrast, is a perfectly valid empty seed: a stage
+// that doesn't read the seed at all, like the constant expression below,
+// evaluates normally against it.
+func Example_engineEvaluateNilInput() {
+	greeting, err := pipe.NewSingleExpr("greeting", `"hello"`)
+	if err != nil {
+		fmt.Println("compile:", err)
+		return
+	}
+	pipeline, err := pipe.NewPipeline([]pipe.Stage{greeting})
+	if err != nil {
+		fmt.Println("build:", err)
+		return
+	}
+	engine, err := rlng.New(pipeline)
+	if err != nil {
+		fmt.Println("engine:", err)
+		return
+	}
+
+	// nil input: rejected outright, never silently treated as empty.
+	_, err = engine.Evaluate(context.Background(), nil)
+	fmt.Println("nil input is ErrNilInput:", errors.Is(err, rlng.ErrNilInput))
+
+	// A non-nil empty map, by contrast, is a valid empty seed.
+	out, err := engine.Evaluate(context.Background(), map[string]any{})
+	if err != nil {
+		fmt.Println("evaluate:", err)
+		return
+	}
+	fmt.Println("empty map seed greeting:", out["greeting"])
+
+	// Output:
+	// nil input is ErrNilInput: true
+	// empty map seed greeting: hello
 }
