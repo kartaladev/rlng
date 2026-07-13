@@ -1,76 +1,66 @@
 # HANDOVER — rlng (updated 2026-07-13)
 
 > **To the next session (READ FIRST, trust these over any memory):** `CLAUDE.md`, then the SDD
-> ledger `.superpowers/sdd/progress.md` (durable per-task record with commit SHAs), then the active
-> spec/ADRs. Trust the ledger + `git log` over any recollection.
+> ledger `.superpowers/sdd/progress.md` (durable per-task record with commit SHAs + the exact Task 4
+> migration recipe), then the active spec/plan/ADR. Trust the ledger + `git log` over any recollection.
 
 ## Objective & roadmap position
 
 `rlng` is a pure-Go rule + calculation engine on `expr-lang/expr` (debuggability-first, no cgo, typed
-wrapping errors). Executing the post-010 audit remediation as focused specs (011–015).
+wrapping errors). Post-010 audit-remediation increments 011–015 are all merged & pushed to `main`
+(015 foreach shipped at `main@20465d5`). **Increment 016 (config source Provider abstraction) is IN
+PROGRESS on branch `claude/config-provider-016`.**
 
-- **Increment 014 (value serde consistency): COMPLETE, merged to `main`, pushed.**
-- **Increment 015 (foreach line-item stage): COMPLETE — merged to `main` and pushed per explicit
-  user authorization (2026-07-13: "Do this to completion, commit then merge to main, push to
-  remote").** Branch `claude/foreach-015` deleted after merge.
+## ⏸ PAUSE POINT (2026-07-13) — session limit; resume in a fresh session (reset 10:10am Asia/Jakarta)
 
-## Increment 015 — DONE (foreach line-item stage)
+Stopped at a **clean safepoint**: increment 016 Tasks 1–3 committed & green; tree clean; `HEAD 05b7225`;
+`go build ./...` + `go test ./... -race` green. Paused because subagents began failing on the session
+limit and Task 4 (a large atomic migration) + Task 5 (gate) are too large to do well on the remaining
+budget — per CLAUDE.md, hand over only from a safepoint; don't push a large change under pressure.
 
-Adds a `foreach` stage that adjudicates collections: per element it runs an inner sub-`Pipeline`
-against a fresh per-element `Scope` (element bound as `item`, outer scope readable), writes structured
-per-element output at `<stage>.items`, optionally rolls a per-element key up to a header value
-(`<stage>.<As>`, reusing the 014-hardened int64/decimal-faithful `aggregate`), and records each
-element's firing under `<stage>[i]` (`FiringRulesFor("<stage>[i]")` answers "line i denied by rule X").
-Config surface: `type: foreach` with nested inner `StageDef`s; nested foreach rejected at build
-(`ErrNestedForEach`). Governing artifacts: `docs/specs/015-foreach-line-item-stage.md` (Accepted, D1–D9),
-`docs/plans/015-foreach-line-item-stage.md`, `docs/adrs/0040-foreach-stage.md`.
+## Increment 016 — governing artifacts (read first)
+- Spec: `docs/specs/016-config-source-provider.md` (Draft; decisions D1–D10). Committed `8a6e862`.
+- Plan: `docs/plans/016-config-source-provider.md` (5 tasks). Rode in Task 1's commit.
+- ADR: `docs/adrs/0041-config-source-provider.md` (Accepted). Rode in Task 1's commit.
 
-SDD execution (4 tasks, each task-reviewed clean): `aec9e63` T1 ForEach core · `d98d435` T2 roll-up +
-per-element firing · `7051ae0` T3 config surface + nested guard · `0736291` T4 acceptance example +
-README · `f3a1ec8` whole-branch gate fixes. Base `main@45c2d81`.
+## What's DONE (016, branch `claude/config-provider-016`, base `main@20465d5`)
+- **Task 1 `02c1bdc`** — `config/source.go` (`SourceKind` enum+`String()`, `Provider`/`Source` interfaces,
+  `ErrUnknownSourceKind`), `config/parse.go` rewrite (`Parse(ctx, Provider)` + shared
+  `decodeYAML`/`decodeJSON(io.Reader)`; `ParseYAML`/`ParseJSON` **kept, delegating**; `LoadFile` kept),
+  `config/providers.go` (bytes/string/reader providers; `nopReader` hides a caller's closer). Reviewed clean.
+- **Task 2 `4495512`** (amended after a review fix) — file providers `FromFile` (ext-inference),
+  `FromYAMLFile`/`FromJSONFile`, `ErrUnsupportedExtension`, trust-boundary godoc; `fileSource` returns
+  the `*os.File` so `Parse` closes it. `providers.go` 100%. Reviewed clean (1 fix: `FromJSONFile` test).
+- **Task 3 `05b72259`** — `config/urlsource.go` hardened URL providers `FromYAMLURL`/`FromJSONURL` +
+  `URLOption` (`WithHTTPClient`/`WithMaxBytes`), sentinels `ErrUnsupportedScheme`/`ErrUnexpectedStatus`/
+  `ErrMaxBytesExceeded`. Scheme checked before dialing; `LimitReader(body, max+1)`+`len>max` cap;
+  `NewRequestWithContext`; `defer body.Close()`; default client 10s timeout; `bytesSource` reuse.
+  8 `httptest` cases. Reviewed **in-context** by the controller (subagent reviewer hit the limit) — Approved.
 
-### Whole-branch gate (main..HEAD)
-`/code-review` (high) — 2 Important findings fixed: (1) the four new `StageDef` foreach fields gained
-`json:",omitempty"` so `Hash()` is unchanged for pre-015 rulesets → `MatchesRuleset` replay-safety holds
-across the upgrade (golden-hash test pins the pre-015 value, verified against `main`); (2) `NewForEach`
-now rejects an empty-`Key`/`As` `Rollup` (`ErrForEachEmptyRollup`) fail-loud at construction.
-`/security-review` — clean. `go test ./... -race` green; `go vet`/`gofmt`/`CGO_ENABLED=0 build` clean;
-`go mod tidy` no-op, `go mod verify` passes. No new dependencies.
+## What's REMAINING (the ledger `.superpowers/sdd/progress.md` has the full step-by-step)
+- **Task 4 — remove `ParseYAML`/`ParseJSON`/`LoadFile`; migrate all call sites** (NOT STARTED, base
+  `05b72259`). The atomic breaking cut: delete the 3 funcs from `config/parse.go`; migrate ~45 call
+  sites (`grep -rn 'ParseYAML\|ParseJSON\|LoadFile' --include='*.go'` → 60 hits) across 13 test files +
+  `examples/` per the mapping in the ledger (`config.ParseYAML([]byte(s))` → `config.Parse(ctx,
+  config.FromYAMLString(s))`, etc.; `ctx` = `t.Context()` in tests, `context.Background()` in examples);
+  **rewrite the dedicated `TestParseYAML`/`TestParseJSON`/`TestLoadFile`/`ExampleParseYAML`** (they test
+  the removed symbols); update `config/doc.go` + `config/hash.go` godoc + `README.md`; **add a synthetic
+  fake-`Provider` test** covering `Parse`'s raw-error-wrap fallback (closes the last hot-path branch —
+  carried finding). Commit `feat(config)!: remove ParseYAML/ParseJSON/LoadFile for Parse(ctx, Provider)`.
+- **Task 5 — whole-branch gate** (NOT STARTED): `/code-review high main..HEAD` + `/security-review`
+  (focus the URL provider), fix/triage, full green gate, then **present for merge/push — 016 is GATED,
+  do NOT push** (015's merge/push authorization did NOT carry over to 016).
 
-### New exported API shipped in 015
-`pipe.TypeForEach`, `pipe.ForEach`, `pipe.NewForEach` + `WithForEachAs`/`WithForEachOutput`/
-`WithForEachDependsOn`/`WithRollups`, `pipe.Rollup{Key,Agg,As}`; sentinels `pipe.ErrForEachNotList`,
-`pipe.ErrForEachNoCollection`, `pipe.ErrForEachEmptyRollup`. Config: `StageDef` foreach fields
-(`Collection`/`As`/`Stages`/`Rollups`, all `omitempty`), `config.RollupDef`, `config.ErrNestedForEach`.
-
-### Carried-Minor backlog (triaged, non-blocking — address in a future increment)
-Recorded in ADR-0040 "Whole-branch gate outcome":
-- **Dot-path roll-up keys.** `Rollup.Key` is a flat top-level lookup in each element's result map, so
-  rolling up a decision-table output (namespaced `<table>.<key>`) needs a companion `single-expr` to
-  surface the value top-level (the acceptance example shows this). Make `Key` dot-path-aware
-  (backward-compatible) in a future increment.
-- **Per-element lineage beyond firing (D5).** Each element's full derivation graph (built when the
-  outer scope tracks provenance) is discarded — only the data `Snapshot()` survives in `items`. Firing
-  is retrievable; deeper per-element lineage is not yet surfaced.
-- **Per-element `Snapshot()`+`NewScope` cost.** O(elements × outer-scope size) map-spine clone per
-  element; benchmark before large collections.
-- Pre-existing (Plan-013 leftover): a `golangci-lint`/`staticcheck` finding in
-  `config/ruleset_example_test.go:58` — unrelated; clean up when convenient.
-- 014 Carried-Minor items (see git history of this file) remain open.
-
-## Next increment
-Post-010 audit remediation specs 011–015 are all shipped. No 016 is planned yet — pick the next audit
-gap or a backlog item above; brainstorm → spec(Accepted) → plan → SDD → gate, per CLAUDE.md.
+## Carried findings for the Task 5 gate
+- `config/parse.go` raw-error-wrap fallback (a `Provider.Source` returning a non-`*ConfigError`) is
+  unreachable by all in-repo providers → add the fake-`Provider` test in Task 4 to cover it.
+- `config/urlsource.go` `http.NewRequestWithContext` error branch is defensive/untested (unreachable via
+  the public API: constant GET, URL already `url.Parse`d) — acknowledge, no fix needed.
 
 ## Gotchas / environment
-- `govulncheck`/`golangci-lint` are NOT installed locally — CI (`.github/workflows/ci.yml`) runs them
-  across a Go 1.25/1.26 matrix. Let CI go green after the push.
-- **Verified expr/decimal facts (do not re-derive):** operator overloading resolves at COMPILE time by
-  static type → `decimal(...)` wrapping is universal, bare arithmetic needs strict-env (`expr.WithEnv`);
-  YAML `!decimal` tag collapses to string in `map[string]any` → use object form `{"$dec":"…"}`.
-- **Verified foreach facts (do not re-derive):** `Hash()` fingerprints the canonical JSON of the parsed
-  `PipelineDef`, so any new always-emitted `StageDef` field changes every ruleset's hash — new fields
-  MUST carry `json:",omitempty"` to preserve cross-version replay-matching. A decision-table writes its
-  outputs namespaced under the table name, so a flat roll-up key can't reach them (see backlog).
-- SDD hand-off files (`.superpowers/sdd/*`) are gitignored scratch; the ledger `progress.md` is the
-  durable record. `git clean -fdx` would destroy it — recover from `git log`.
+- **Session-limit behavior:** subagents fail with a session-limit error near the cap; the controller's
+  own in-context work may still run. Prefer in-context work or wait for the reset. Task 4 is best done
+  fresh (subagent capacity restored) as one green unit; commit only when the WHOLE repo is green.
+- `govulncheck`/`golangci-lint` are NOT installed locally — CI runs them on push.
+- SDD hand-off files (`.superpowers/sdd/*`) are gitignored scratch; `progress.md` is the durable record
+  (has the full Task 4 recipe). `git clean -fdx` would destroy it — recover from this file + `git log`.
