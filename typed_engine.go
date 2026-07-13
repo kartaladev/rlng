@@ -24,10 +24,7 @@ func NewTypedEngine[I any, R any](pipeline *pipe.Pipeline, mapper *Mapper[R], op
 	if mapper == nil {
 		return nil, ErrNilMapper
 	}
-	cfg := &engineConfig{}
-	for _, o := range opts {
-		o(cfg)
-	}
+	cfg := newEngineConfig(opts)
 	if len(cfg.buildOpts) > 0 {
 		return nil, ErrConcurrencyRequiresConfig
 	}

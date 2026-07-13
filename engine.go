@@ -55,6 +55,17 @@ func WithMaxParallel(n int) Option {
 	return func(c *engineConfig) { c.buildOpts = append(c.buildOpts, config.WithMaxParallel(n)) }
 }
 
+// newEngineConfig applies opts into a fresh engineConfig. Shared by New,
+// NewTypedEngine, and the NewFrom* constructors so option handling lives in one
+// place.
+func newEngineConfig(opts []Option) *engineConfig {
+	cfg := &engineConfig{}
+	for _, o := range opts {
+		o(cfg)
+	}
+	return cfg
+}
+
 // New constructs an Engine from a compiled pipeline. Options configure the
 // per-Evaluate Scope (e.g. WithScopeOptions(pipe.WithProvenance())). It returns
 // ErrNilPipeline if pipeline is nil, failing fast at construction rather than
@@ -63,10 +74,7 @@ func New(pipeline *pipe.Pipeline, opts ...Option) (*Engine, error) {
 	if pipeline == nil {
 		return nil, ErrNilPipeline
 	}
-	cfg := &engineConfig{}
-	for _, o := range opts {
-		o(cfg)
-	}
+	cfg := newEngineConfig(opts)
 	if len(cfg.buildOpts) > 0 {
 		return nil, ErrConcurrencyRequiresConfig
 	}

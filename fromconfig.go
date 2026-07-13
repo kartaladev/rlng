@@ -4,7 +4,19 @@ import (
 	"context"
 
 	"github.com/kartaladev/rlng/config"
+	"github.com/kartaladev/rlng/pipe"
 )
+
+// parseAndBuild parses p and builds the pipeline with cfg's build options. It is
+// the shared body of NewFromProvider/NewTypedFromProvider. Parse and build errors
+// are returned unwrapped (a *config.ConfigError).
+func parseAndBuild(ctx context.Context, p config.Provider, cfg *engineConfig) (*pipe.Pipeline, error) {
+	def, err := config.Parse(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	return def.Build(cfg.buildOpts...)
+}
 
 // NewFromProvider builds an Engine directly from a config source: it parses the
 // provider, compiles the definition with the default build options, and wraps
@@ -15,15 +27,8 @@ import (
 // (strict schema, lint-as-error, version override) use the explicit
 // config.Parse -> Build -> New path.
 func NewFromProvider(ctx context.Context, p config.Provider, opts ...Option) (*Engine, error) {
-	cfg := &engineConfig{}
-	for _, o := range opts {
-		o(cfg)
-	}
-	def, err := config.Parse(ctx, p)
-	if err != nil {
-		return nil, err
-	}
-	pipeline, err := def.Build(cfg.buildOpts...)
+	cfg := newEngineConfig(opts)
+	pipeline, err := parseAndBuild(ctx, p, cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -49,15 +54,8 @@ func NewTypedFromProvider[I, R any](ctx context.Context, p config.Provider, mapp
 	if mapper == nil {
 		return nil, ErrNilMapper
 	}
-	cfg := &engineConfig{}
-	for _, o := range opts {
-		o(cfg)
-	}
-	def, err := config.Parse(ctx, p)
-	if err != nil {
-		return nil, err
-	}
-	pipeline, err := def.Build(cfg.buildOpts...)
+	cfg := newEngineConfig(opts)
+	pipeline, err := parseAndBuild(ctx, p, cfg)
 	if err != nil {
 		return nil, err
 	}
