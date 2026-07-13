@@ -18,7 +18,7 @@ spec+plan+ADR chain).
 | ID | Title | Source | Category | Altitude | Priority |
 |----|-------|--------|----------|----------|----------|
 | ~~**B1**~~ | ~~Dot-path roll-up keys~~ | — | — | — | ✅ **Done** (incr 017, ADR-0042) |
-| **B2** | `foreach` per-element scope-copy benchmark | ADR-0040 | perf/benchmark | contained | **P1** |
+| ~~**B2**~~ | ~~`foreach` per-element scope-copy benchmark~~ | — | — | — | ✅ **Done** (incr 018, ADR-0043) |
 | **B3** | Numeric-coercing Scope getters | Spec 006 non-goal; `pipe/get.go` | feature-gap (ergonomics) | additive | **P2** |
 | **B4** | `Hash()` rejects non-marshalable hand-built defs | ADR-0037 | hardening/tech-debt | contained (edge case) | **P2** |
 | **B5** | Per-decision options in decision-table config | ADR-0007; Spec 004; `config/build.go:358` | feature-gap | new ADR | **P2** |
@@ -37,10 +37,11 @@ spec+plan+ADR chain).
 rolls up directly with no companion `single-expr`. Backward-compatible (dot-free key unchanged); no
 `Hash()`/schema change.
 
-**B2 — `foreach` scope-copy benchmark.** Each element deep-copies the outer scope's map spine via
-`Snapshot()`+`NewScope` — O(elements × outer-scope size). Fine for typical line-item counts; ADR-0040
-flags a benchmark before large collections. Measure first (`cc-skills-golang:golang-benchmark`); optimize
-only if it regresses.
+**B2 — `foreach` scope-copy benchmark. ✅ DONE (increment 018, ADR-0043).** `BenchmarkForEachScopeCopy`
+(`pipe/foreach_bench_test.go`) measured the per-element `Snapshot()`+`NewScope` cost across collection size
+× outer-scope shape: linear in both axes, sub-millisecond for typical line-item counts (~5 ms only at a
+1000-element × 64-key extreme). Accepted as the price of the per-element isolation invariant; no
+optimization now (ADR-0043 records the direction if a very-large-collection need ever arises).
 
 **B3 — Coercing Scope getters.** Typed getters (`GetInt`/`GetFloat64`/…) are strict: a `float64` at an int
 path or a numeric string is a `*ScopeTypeError`. A coercing variant was deferred as additive — can be added
@@ -91,6 +92,7 @@ Deferrals found in the docs but confirmed already implemented — excluded from 
 | Deferral (as originally recorded) | Closed by |
 |-----------------------------------|-----------|
 | Dot-path roll-up keys (B1; ADR-0040) | Increment 017 / ADR-0042 |
+| `foreach` per-element scope-copy benchmark (B2; ADR-0040) | Increment 018 / ADR-0043 |
 | Exact decimal money (ADR-0030) | Increment 014 / ADR-0038 + ADR-0039 |
 | `foreach` stage (ADR-0030) | Increment 015 / ADR-0040 |
 | Config-declared output mapping (ADR-0009; Spec 005/008 non-goals) | Increment 010 / ADR-0028 |

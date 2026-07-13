@@ -128,10 +128,11 @@ landed on this core. The final `main..HEAD` review settled three more points:
     (built when the outer scope tracks provenance) is discarded — only the data
     `Snapshot()` survives in `items`. "Line i denied by rule X" is answerable;
     the deeper per-element lineage is not yet surfaced.
-  - *Per-element `Snapshot()`+`NewScope` cost.* Each element deep-copies the
-    outer scope's map spine (O(elements × outer-scope size)); acceptable for
-    typical line-item counts, a candidate for a benchmark before large
-    collections.
+  - *Per-element `Snapshot()`+`NewScope` cost.* **RESOLVED in increment 018 (ADR-0043).** Each element
+    deep-copies the outer scope's map spine (O(elements × outer-scope size)); a benchmark
+    (`BenchmarkForEachScopeCopy`) confirmed the cost is linear in both axes and sub-millisecond for typical
+    line-item counts (~5 ms only at a deliberately extreme 1000-element × 64-key corner). Accepted as the
+    price of the per-element isolation invariant (D2); no optimization now.
 
 ## Traceability
 
