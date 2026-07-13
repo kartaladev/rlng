@@ -20,6 +20,18 @@ import (
 // error (via errors.Is/errors.As) so the offending cause is inspectable.
 var ErrMalformedScopeValue = errors.New("pipe: malformed scope value")
 
+// ErrScopeValueTooDeep is returned by MarshalJSON/UnmarshalJSON when a scope
+// value nests deeper than maxScopeValueDepth. It bounds the encode/decode
+// recursion so a pathologically deep list/map (e.g. from adversarial JSON) fails
+// loud rather than overflowing the stack — matching the maxCloneDepth /
+// MaxLineageDepth hardening elsewhere in the package.
+var ErrScopeValueTooDeep = errors.New("pipe: scope value nests too deep to (de)serialize")
+
+// maxScopeValueDepth bounds encodeValue/decodeValue recursion. It matches
+// maxCloneDepth so any structure a Scope can deep-copy in also (de)serializes,
+// while a deeper structure fails loud instead of overflowing the stack.
+const maxScopeValueDepth = maxCloneDepth
+
 // The wire kind tags for a Scope JSON v2 tagged value. These are the eight
 // canonical value kinds of ADR-0038 (D1), plus "null" for an absent value.
 const (
@@ -54,7 +66,10 @@ type taggedValue struct {
 // downgrading to a lossy float64 — this is a fail-closed, not fail-lossy,
 // path. A uint value exceeding math.MaxInt64 is likewise out of the int64
 // contract and returns an error rather than silently truncating/wrapping.
-func encodeValue(v any) (any, error) {
+func encodeValue(v any, depth int) (any, error) {
+	if depth > maxScopeValueDepth {
+		return nil, fmt.Errorf("%w: exceeded %d levels", ErrScopeValueTooDeep, maxScopeValueDepth)
+	}
 	switch val := v.(type) {
 	case nil:
 		return taggedValue{Kind: kindTagNull, V: json.RawMessage("null")}, nil
@@ -130,7 +145,7 @@ func encodeValue(v any) (any, error) {
 	case []any:
 		out := make([]any, len(val))
 		for i, elem := range val {
-			enc, err := encodeValue(elem)
+			enc, err := encodeValue(elem, depth+1)
 			if err != nil {
 				return nil, err
 			}
@@ -150,7 +165,7 @@ func encodeValue(v any) (any, error) {
 		sort.Strings(keys)
 		out := make(map[string]any, len(val))
 		for _, k := range keys {
-			enc, err := encodeValue(val[k])
+			enc, err := encodeValue(val[k], depth+1)
 			if err != nil {
 				return nil, err
 			}
@@ -194,7 +209,10 @@ func encodeTagged(kind string, payload any) (any, error) {
 // path — so a v1 field embedded in an otherwise-v2 structure still loads. A
 // malformed tag (unknown kind, missing payload, unparseable payload) returns
 // ErrMalformedScopeValue.
-func decodeValue(v any) (any, error) {
+func decodeValue(v any, depth int) (any, error) {
+	if depth > maxScopeValueDepth {
+		return nil, fmt.Errorf("%w: exceeded %d levels", ErrScopeValueTooDeep, maxScopeValueDepth)
+	}
 	m, ok := v.(map[string]any)
 	if !ok {
 		return v, nil
@@ -281,7 +299,7 @@ func decodeValue(v any) (any, error) {
 		}
 		out := make([]any, len(list))
 		for i, elem := range list {
-			dec, err := decodeValue(elem)
+			dec, err := decodeValue(elem, depth+1)
 			if err != nil {
 				return nil, err
 			}
@@ -296,7 +314,7 @@ func decodeValue(v any) (any, error) {
 		}
 		out := make(map[string]any, len(obj))
 		for k, elem := range obj {
-			dec, err := decodeValue(elem)
+			dec, err := decodeValue(elem, depth+1)
 			if err != nil {
 				return nil, err
 			}

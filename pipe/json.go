@@ -55,7 +55,7 @@ func (s *Scope) MarshalJSON() ([]byte, error) {
 
 	taggedData := make(map[string]any, len(s.data))
 	for k, v := range s.data {
-		tagged, err := encodeValue(v)
+		tagged, err := encodeValue(v, 0)
 		if err != nil {
 			return nil, err
 		}
@@ -113,7 +113,7 @@ func (s *Scope) UnmarshalJSON(b []byte) error {
 	if env.Version >= 2 {
 		untagged := make(map[string]any, len(env.Data))
 		for k, v := range env.Data {
-			decoded, err := decodeValue(v)
+			decoded, err := decodeValue(v, 0)
 			if err != nil {
 				return err
 			}

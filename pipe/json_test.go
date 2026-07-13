@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -901,4 +902,41 @@ func TestScopeJSONDecimalScalePreserved(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int32(-2), d.Exponent(), "scale (exponent) must be preserved")
 	assert.Equal(t, "18125.00", d.StringFixed(2))
+}
+
+// TestScopeMarshalJSONBoundsDepth guards MarshalJSON against unbounded recursion
+// on a pathologically deep scope value: rather than overflowing the stack, a
+// structure nested past maxScopeValueDepth must fail loud with a typed error.
+// Regression for the audit finding (encodeValue had no depth bound, unlike
+// cloneValue/Lineage).
+func TestScopeMarshalJSONBoundsDepth(t *testing.T) {
+	t.Parallel()
+
+	// Nest well past the depth bound (but far short of a real stack overflow, so
+	// the pre-fix behavior is a clean "no error" rather than a crash).
+	var deep any = "leaf"
+	for range 1200 {
+		deep = []any{deep}
+	}
+	sc := pipe.NewScope(map[string]any{"deep": deep})
+
+	_, err := json.Marshal(sc)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, pipe.ErrScopeValueTooDeep)
+}
+
+// TestScopeUnmarshalJSONBoundsDepth guards the decode side of the depth bound: a
+// v2 blob whose tagged value nests past maxScopeValueDepth must fail loud rather
+// than overflow the stack in decodeValue.
+func TestScopeUnmarshalJSONBoundsDepth(t *testing.T) {
+	t.Parallel()
+
+	const n = 1200
+	blob := strings.Repeat(`{"$k":"list","v":[`, n) + `{"$k":"string","v":"x"}` + strings.Repeat(`]}`, n)
+	env := `{"v":2,"data":{"deep":` + blob + `}}`
+
+	var sc pipe.Scope
+	err := json.Unmarshal([]byte(env), &sc)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, pipe.ErrScopeValueTooDeep)
 }
