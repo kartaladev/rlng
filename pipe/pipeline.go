@@ -153,7 +153,9 @@ func NewPipeline(stages []Stage, opts ...PipelineOption) (*Pipeline, error) {
 	}
 
 	p := &Pipeline{ordered: ordered, ruleset: cfg.ruleset, maxParallel: maxParallel}
-	if maxParallel != 0 {
+	// maxParallel == 1 serializes stages via the semaphore, so no two ever
+	// overlap; skip the wide (concurrent-Snapshot deep-copy) path in that case.
+	if maxParallel != 0 && maxParallel != 1 {
 		p.levels = computeLevels(ordered)
 		for _, lvl := range p.levels {
 			if len(lvl) > 1 {
@@ -161,6 +163,8 @@ func NewPipeline(stages []Stage, opts ...PipelineOption) (*Pipeline, error) {
 				break
 			}
 		}
+	} else if maxParallel == 1 {
+		p.levels = computeLevels(ordered) // waves still run (maxParallel != 0), just not wide
 	}
 	return p, nil
 }

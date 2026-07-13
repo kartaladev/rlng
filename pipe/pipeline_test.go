@@ -2,6 +2,7 @@ package pipe_test
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
 
@@ -9,6 +10,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// mustGet fetches key from sc, failing the test if the key is absent.
+func mustGet(t *testing.T, sc *pipe.Scope, key string) any {
+	t.Helper()
+	v, ok := sc.Get(key)
+	if !ok {
+		t.Fatalf("key %q not found in scope", key)
+	}
+	return v
+}
 
 // recordStage is a minimal Stage that appends its name to *order when executed
 // and writes a marker into the Scope, so tests can observe execution order and
@@ -278,5 +289,32 @@ func TestPipelineRun(t *testing.T) {
 			runErr := p.Run(ctx, sc)
 			tc.assert(t, order, sc, runErr)
 		})
+	}
+}
+
+// TestPipelineMaxParallelOneEqualsSequential characterizes WithMaxParallel(1)
+// as behaviorally identical to sequential execution: a size-1 parallel cap
+// serializes stages via the semaphore, so no two stages ever overlap. This
+// pins output equality (and race-cleanliness) both before and after the R7
+// refactor that suppresses the wide (concurrent-Snapshot) flag for this case.
+func TestPipelineMaxParallelOneEqualsSequential(t *testing.T) {
+	mk := func(opts ...pipe.PipelineOption) *pipe.Scope {
+		s1, err := pipe.NewSingleExpr("a", "1 + 1")
+		require.NoError(t, err)
+		s2, err := pipe.NewSingleExpr("b", "2 + 2")
+		require.NoError(t, err)
+		p, err := pipe.NewPipeline([]pipe.Stage{s1, s2}, opts...)
+		require.NoError(t, err)
+		sc := pipe.NewScope(map[string]any{})
+		require.NoError(t, p.Run(t.Context(), sc))
+		return sc
+	}
+
+	seq := mk()
+	one := mk(pipe.WithMaxParallel(1))
+
+	for _, key := range []string{"a", "b"} {
+		assert.True(t, reflect.DeepEqual(mustGet(t, seq, key), mustGet(t, one, key)),
+			"key %q: WithMaxParallel(1) differs from sequential", key)
 	}
 }
