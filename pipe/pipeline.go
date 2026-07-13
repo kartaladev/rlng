@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 )
 
 // DuplicateStageError reports two stages sharing a Name within a Pipeline.
@@ -40,16 +41,52 @@ func (e *CycleError) Error() string {
 // sequential and deterministic by default (ADR-0006); WithConcurrency /
 // WithMaxParallel opt into deterministic parallel execution (ADR-0052).
 type Pipeline struct {
-	ordered []Stage
-	ruleset RulesetIdentity
+	ordered     []Stage
+	levels      [][]Stage // ordered grouped by dependency depth; used by the wave runner
+	ruleset     RulesetIdentity
+	maxParallel int // 0 = sequential; -1 = unbounded; n>0 = bounded at n
 }
 
 // PipelineOption configures a Pipeline at construction. Options are applied in
 // order; where two set the same knob, the last wins.
 type PipelineOption func(*pipelineConfig)
 
+// concurrencyMode selects the execution strategy. The default zero value is
+// sequential, so an unconfigured pipeline runs exactly as before (ADR-0006).
+type concurrencyMode int8
+
+const (
+	concSequential concurrencyMode = iota
+	concUnbounded
+	concBounded
+)
+
 type pipelineConfig struct {
 	ruleset RulesetIdentity
+	mode    concurrencyMode
+	boundN  int // requested cap when mode == concBounded; validated in NewPipeline
+}
+
+// WithConcurrency runs independent stages of each dependency level concurrently,
+// unbounded. Execution stays fully deterministic: the final Scope, the surfaced
+// error, and the reported stage order are identical to sequential execution
+// (ADR-0052). The default (no concurrency option) is sequential.
+func WithConcurrency() PipelineOption {
+	return func(c *pipelineConfig) { c.mode = concUnbounded }
+}
+
+// WithMaxParallel is like WithConcurrency but caps the number of stages running
+// at once to n. NewPipeline returns an *InvalidMaxParallelError if n < 1.
+func WithMaxParallel(n int) PipelineOption {
+	return func(c *pipelineConfig) { c.mode = concBounded; c.boundN = n }
+}
+
+// InvalidMaxParallelError reports a WithMaxParallel bound below 1.
+type InvalidMaxParallelError struct{ N int }
+
+// Error renders `pipeline: max parallel must be >= 1, got N`.
+func (e *InvalidMaxParallelError) Error() string {
+	return fmt.Sprintf("pipeline: max parallel must be >= 1, got %d", e.N)
 }
 
 // NewPipeline validates stages and computes their execution order. Stage names
@@ -61,6 +98,9 @@ func NewPipeline(stages []Stage, opts ...PipelineOption) (*Pipeline, error) {
 	cfg := &pipelineConfig{}
 	for _, o := range opts {
 		o(cfg)
+	}
+	if cfg.mode == concBounded && cfg.boundN < 1 {
+		return nil, &InvalidMaxParallelError{N: cfg.boundN}
 	}
 
 	index := make(map[string]Stage, len(stages))
@@ -84,7 +124,43 @@ func NewPipeline(stages []Stage, opts ...PipelineOption) (*Pipeline, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Pipeline{ordered: ordered, ruleset: cfg.ruleset}, nil
+
+	maxParallel := 0
+	switch cfg.mode {
+	case concUnbounded:
+		maxParallel = -1
+	case concBounded:
+		maxParallel = cfg.boundN
+	}
+
+	p := &Pipeline{ordered: ordered, ruleset: cfg.ruleset, maxParallel: maxParallel}
+	if maxParallel != 0 {
+		p.levels = computeLevels(ordered)
+	}
+	return p, nil
+}
+
+// computeLevels groups ordered stages by dependency depth (level = 1 + max dep
+// level). Because ordered is a topological sort, every dependency precedes its
+// dependents, so the levels concatenated equal ordered — i.e. the reported and
+// topo order. Each level's stages are mutually independent.
+func computeLevels(ordered []Stage) [][]Stage {
+	lvlOf := make(map[string]int, len(ordered))
+	var levels [][]Stage
+	for _, s := range ordered {
+		lvl := 0
+		for _, dep := range s.DependsOn() {
+			if d := lvlOf[dep] + 1; d > lvl {
+				lvl = d
+			}
+		}
+		lvlOf[s.Name()] = lvl
+		for len(levels) <= lvl {
+			levels = append(levels, nil)
+		}
+		levels[lvl] = append(levels[lvl], s)
+	}
+	return levels
 }
 
 // topoSort returns stages in dependency order, preserving input order among
@@ -171,6 +247,15 @@ func (p *Pipeline) Run(ctx context.Context, sc *Scope) error {
 	sc.markStarted()
 	defer sc.markFinished()
 	sc.stampRuleset(p.ruleset)
+	if p.maxParallel == 0 {
+		return p.runSequential(ctx, sc)
+	}
+	return p.runWaves(ctx, sc)
+}
+
+// runSequential walks stages one at a time in topological order — the default,
+// unchanged execution path (ADR-0006).
+func (p *Pipeline) runSequential(ctx context.Context, sc *Scope) error {
 	for _, st := range p.ordered {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -180,4 +265,87 @@ func (p *Pipeline) Run(ctx context.Context, sc *Scope) error {
 		}
 	}
 	return nil
+}
+
+// runWaves executes each dependency level concurrently, with a barrier between
+// levels. A stage runs only when all its dependencies (in earlier levels)
+// succeeded, so a dep-failed subtree is pruned exactly as in sequential
+// execution. If a level has any failure, later levels do not launch and the
+// topo-earliest failure is returned — the same error a sequential Run would
+// surface (ADR-0052).
+//
+// Cancellation matches the sequential semantics: ctx is checked before each
+// level (as sequential checks before each stage), so a caller cancellation
+// between levels short-circuits with ctx.Err(); a cancellation observed while a
+// level runs surfaces through a stage's own ctx.Canceled return, which
+// topoMinError then selects — no separate ctx re-check is needed (and re-adding
+// one would wrongly mask a real stage error, since sequential does not re-check
+// ctx after running a stage). The reported stage order is reconstructed to topo
+// order, never completion order.
+func (p *Pipeline) runWaves(ctx context.Context, sc *Scope) error {
+	defer sc.reorderStages(p.orderedNames())
+	for _, level := range p.levels {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if errs := p.runLevel(ctx, sc, level); len(errs) > 0 {
+			return topoMinError(p.ordered, errs)
+		}
+	}
+	return nil
+}
+
+// runLevel executes a level's (mutually independent) stages concurrently,
+// bounded by a semaphore when maxParallel > 0, and returns the errors keyed by
+// stage name. Every stage in the level runs to completion even if a sibling
+// fails (no internal fail-fast), so the topo-earliest failure can be selected
+// deterministically.
+func (p *Pipeline) runLevel(ctx context.Context, sc *Scope, level []Stage) map[string]error {
+	var (
+		mu   sync.Mutex
+		errs = make(map[string]error)
+		wg   sync.WaitGroup
+		sem  chan struct{}
+	)
+	if p.maxParallel > 0 {
+		sem = make(chan struct{}, p.maxParallel)
+	}
+	for _, st := range level {
+		if sem != nil {
+			sem <- struct{}{}
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if sem != nil {
+				defer func() { <-sem }()
+			}
+			if err := sc.timeStage(st.Name(), func() error { return st.Execute(ctx, sc) }); err != nil {
+				mu.Lock()
+				errs[st.Name()] = err
+				mu.Unlock()
+			}
+		}()
+	}
+	wg.Wait()
+	return errs
+}
+
+// topoMinError returns the error of the topo-earliest failing stage — exactly
+// the error a sequential Run would surface.
+func topoMinError(ordered []Stage, errs map[string]error) error {
+	for _, s := range ordered {
+		if e, ok := errs[s.Name()]; ok {
+			return e
+		}
+	}
+	return nil
+}
+
+func (p *Pipeline) orderedNames() []string {
+	names := make([]string, len(p.ordered))
+	for i, s := range p.ordered {
+		names[i] = s.Name()
+	}
+	return names
 }

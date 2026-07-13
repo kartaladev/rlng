@@ -52,6 +52,25 @@ func (s *Scope) markFinished() {
 	s.mu.Unlock()
 }
 
+// reorderStages rewrites the reported stage order to topo order (intersected
+// with the stages that actually executed), so concurrent completion order does
+// not leak into StageTimings/StageDuration. The wave runner calls it after
+// execution; the sequential path already records topo order.
+func (s *Scope) reorderStages(topo []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.stageTimes) == 0 {
+		return
+	}
+	out := make([]string, 0, len(s.stageOrder))
+	for _, name := range topo {
+		if _, ran := s.stageTimes[name]; ran {
+			out = append(out, name)
+		}
+	}
+	s.stageOrder = out
+}
+
 // StageTiming pairs a stage name with how long its Execute took.
 type StageTiming struct {
 	Stage    string
