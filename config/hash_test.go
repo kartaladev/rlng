@@ -141,6 +141,26 @@ func TestHashPlaceholderForUnmarshalableDef(t *testing.T) {
 	assert.Equal(t, h1, h2)
 }
 
+// TestBuildMemoizedHashIsStableAndEqual pins R11: Build memoizes the content
+// hash so repeated Hash() calls after Build return the same value without
+// recomputing it, and the memoized value is byte-identical to the fresh
+// pre-Build hash (a characterization test — pre and post already agree per
+// TestHashStableAcrossBuildDecimal; this pins the memoized read path too).
+func TestBuildMemoizedHashIsStableAndEqual(t *testing.T) {
+	def, err := config.Parse(t.Context(), config.FromYAMLString(hashYAML))
+	require.NoError(t, err)
+
+	pre := def.Hash() // computed fresh (pre-Build)
+	_, err = def.Build()
+	require.NoError(t, err)
+	post1 := def.Hash() // memoized after Build
+	post2 := def.Hash()
+
+	assert.Equal(t, pre, post1, "memoized post-Build hash must equal the fresh pre-Build hash")
+	assert.Equal(t, post1, post2, "memoized hash must be stable across repeated calls")
+	assert.True(t, def.MatchesRuleset(pipe.RulesetIdentity{Hash: post1}), "MatchesRuleset must hold for the def's own hash")
+}
+
 func TestPipelineDefMatchesRuleset(t *testing.T) {
 	d, err := config.Parse(t.Context(), config.FromYAMLString(hashYAML))
 	require.NoError(t, err)

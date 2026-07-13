@@ -268,9 +268,6 @@ func assertConfigErr(t *testing.T, p *pipe.Pipeline, err error) {
 func TestBuildStampsRulesetIdentity(t *testing.T) {
 	t.Parallel()
 
-	d, err := config.Parse(t.Context(), config.FromYAMLString(hashYAML+"version: v1.0.0\n"))
-	require.NoError(t, err)
-
 	tests := []struct {
 		name   string
 		opts   []config.BuildOption
@@ -294,6 +291,12 @@ func TestBuildStampsRulesetIdentity(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			// Each subtest parses its own def rather than sharing one across
+			// parallel subtests: Build mutates its receiver (hydrateConstants,
+			// and now the memoized hashMemo), so two Build() calls on the same
+			// *PipelineDef from concurrent subtests would race.
+			d, err := config.Parse(t.Context(), config.FromYAMLString(hashYAML+"version: v1.0.0\n"))
+			require.NoError(t, err)
 			p, err := d.Build(tt.opts...)
 			require.NoError(t, err)
 			sc := pipe.NewScope(map[string]any{"price": 1, "qty": 1})

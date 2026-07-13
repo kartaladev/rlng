@@ -174,6 +174,9 @@ func (d *PipelineDef) hashCanonical() (string, error) {
 // supplying a marshalable def. Parse (any Provider) can never produce such a
 // value, so this affects only hand-built definitions.
 func (d *PipelineDef) Hash() string {
+	if d.hashMemo != nil {
+		return *d.hashMemo
+	}
 	h, err := d.hashCanonical()
 	if err != nil {
 		// Stable hash of empty content rather than a panic on caller input.

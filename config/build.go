@@ -78,6 +78,7 @@ func (d *PipelineDef) Build(opts ...BuildOption) (*pipe.Pipeline, error) {
 	if err != nil {
 		return nil, &ConfigError{Cause: fmt.Errorf("%w: %v", ErrUnhashableDef, err)}
 	}
+	d.hashMemo = &hash // memoize for later Hash()/MatchesRuleset on this def
 	pipeOpts := make([]pipe.PipelineOption, 0, 1+len(cfg.concurrency))
 	pipeOpts = append(pipeOpts, pipe.WithRuleset(pipe.RulesetIdentity{Hash: hash, Version: version}))
 	pipeOpts = append(pipeOpts, cfg.concurrency...)

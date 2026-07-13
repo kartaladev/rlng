@@ -28,6 +28,14 @@ type PipelineDef struct {
 	// WHAT it contains — so Version is deliberately excluded from the content
 	// hash. Empty is valid; it is not an error.
 	Version string `yaml:"version" json:"version"`
+
+	// hashMemo caches the Build-computed content hash so repeated Hash()/
+	// MatchesRuleset calls do not re-run canonicalJSON's deep walk. Set once by
+	// Build (single-threaded construction), read-only after; nil for a def that
+	// has not been Built, which then computes Hash() fresh each call. A plain
+	// pointer (not sync.Once/atomic) so canonicalJSON's `canonical := *d` copy
+	// triggers no copylocks vet warning.
+	hashMemo *string
 }
 
 // StageDef is a flat union over the four stage types, selected by Type. Fields
