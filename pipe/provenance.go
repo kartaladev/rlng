@@ -60,6 +60,19 @@ func (s *Scope) Derive(path string, v any, d Derivation) error {
 	return nil
 }
 
+// deriveOrSet stores v at path, recording a derivation when provenance is
+// tracked and plainly setting it otherwise. build is the lazy Derivation
+// constructor — invoked ONLY when provenance is on, so an expensive
+// snapshotRefs(...) never runs on the provenance-off hot path. It collapses the
+// repeated "if TracksProvenance { Derive } else { Set }" branch across the
+// single/multi/decision-table write sites.
+func (s *Scope) deriveOrSet(path string, v any, build func() Derivation) error {
+	if !s.provenance {
+		return s.Set(path, v)
+	}
+	return s.Derive(path, v, build())
+}
+
 // recordElementDerivations merges src (a per-element scope's derivations) into s
 // under prefix, rewriting each derivation's Path and its Inputs keys to
 // prefix + "." + <original> so the element's subgraph reconciles within s (via

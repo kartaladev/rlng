@@ -237,16 +237,15 @@ func (d *DecisionTable) matches(env map[string]any) ([]int, error) {
 // writeDecision writes one decision value under name.<key>, recording provenance
 // when the Scope tracks it.
 func (d *DecisionTable) writeDecision(env map[string]any, sc *Scope, dec compiledDecision, v any, op string) error {
-	if sc.TracksProvenance() {
-		return sc.Derive(d.name+"."+dec.key, v, Derivation{
+	return sc.deriveOrSet(d.name+"."+dec.key, v, func() Derivation {
+		return Derivation{
 			Stage:      d.name,
 			StageType:  TypeDecisionTable,
 			Operation:  op,
 			Expression: dec.fn.Source(),
 			Inputs:     snapshotRefs(env, dec.fn.References()),
-		})
-	}
-	return sc.Set(d.name+"."+dec.key, v)
+		}
+	})
 }
 
 // applyRule evaluates and writes every decision of a single rule, recording it
@@ -434,30 +433,28 @@ func (d *DecisionTable) executeCollect(env map[string]any, sc *Scope) error {
 // writeCollected writes an aggregated collect value under name.<key>, recording
 // the joined source expressions and unioned inputs when provenance is tracked.
 func (d *DecisionTable) writeCollected(sc *Scope, key string, v any, op string, exprs []string, inputs map[string]any) error {
-	if sc.TracksProvenance() {
-		return sc.Derive(d.name+"."+key, v, Derivation{
+	return sc.deriveOrSet(d.name+"."+key, v, func() Derivation {
+		return Derivation{
 			Stage:      d.name,
 			StageType:  TypeDecisionTable,
 			Operation:  op,
 			Expression: strings.Join(exprs, "; "),
 			Inputs:     inputs,
-		})
-	}
-	return sc.Set(d.name+"."+key, v)
+		}
+	})
 }
 
 // writeAgg writes an agreed value (HitPolicyAny) under name.<key>. It is
 // provenance-aware but carries no single source expression, since the value is
 // shared across several matching rules.
 func (d *DecisionTable) writeAgg(sc *Scope, key string, v any, op string) error {
-	if sc.TracksProvenance() {
-		return sc.Derive(d.name+"."+key, v, Derivation{
+	return sc.deriveOrSet(d.name+"."+key, v, func() Derivation {
+		return Derivation{
 			Stage:     d.name,
 			StageType: TypeDecisionTable,
 			Operation: op,
-		})
-	}
-	return sc.Set(d.name+"."+key, v)
+		}
+	})
 }
 
 // aggregate reduces vals per the aggregation policy.

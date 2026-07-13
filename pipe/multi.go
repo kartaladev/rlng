@@ -96,20 +96,20 @@ func (m *MultiExpr) Execute(ctx context.Context, sc *Scope) error {
 		if err != nil {
 			return &StageError{Stage: m.name, Type: TypeMultiExpr, Cause: err}
 		}
-		if tracking {
-			d := Derivation{
+		e := e // capture loop var for the closure
+		if err := sc.deriveOrSet(m.name+"."+e.name, v, func() Derivation {
+			return Derivation{
 				Stage:      m.name,
 				StageType:  TypeMultiExpr,
 				Operation:  "expr:" + e.name,
 				Expression: e.fn.Source(),
 				Inputs:     snapshotRefsKeyed(env, e.fn.References(), m.qualifyLocal(locals)),
 			}
-			if err := sc.Derive(m.name+"."+e.name, v, d); err != nil {
-				return &StageError{Stage: m.name, Type: TypeMultiExpr, Cause: err}
-			}
-			locals[e.name] = struct{}{} // an earlier local alias for later expressions
-		} else if err := sc.Set(m.name+"."+e.name, v); err != nil {
+		}); err != nil {
 			return &StageError{Stage: m.name, Type: TypeMultiExpr, Cause: err}
+		}
+		if tracking {
+			locals[e.name] = struct{}{} // an earlier local alias for later expressions
 		}
 		env[e.name] = v // visible to later expressions within this stage
 	}
