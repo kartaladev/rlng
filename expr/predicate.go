@@ -88,26 +88,15 @@ func truthy(v any) (bool, error) {
 	if v == nil {
 		return false, nil
 	}
-	switch x := v.(type) {
-	case bool:
-		return x, nil
-	case string:
-		s := strings.TrimSpace(x)
-		if b, err := strconv.ParseBool(s); err == nil {
-			return b, nil
-		}
-		return s != "", nil
-	}
 
 	rv := reflect.ValueOf(v)
 	switch rv.Kind() {
 	case reflect.Bool:
-		// A named/defined bool type (e.g. `type Flag bool`) does not match the
-		// exact `case bool` above, so coerce it by kind here.
+		// Native or named bool type (e.g. `type Flag bool`).
 		return rv.Bool(), nil
 	case reflect.String:
-		// A named string type or json.Number ("1"/"true") coerces like a native
-		// string: parse a bool literal, else non-empty is true.
+		// Native or named string type, and json.Number for String: parse a bool
+		// literal, else non-empty is true.
 		s := strings.TrimSpace(rv.String())
 		if b, err := strconv.ParseBool(s); err == nil {
 			return b, nil
