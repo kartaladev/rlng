@@ -158,6 +158,13 @@ func lookupPath(m map[string]any, path string) (any, bool) {
 	if path == "" {
 		return nil, false
 	}
+	// Fast path: a single-segment key (the common case for both Scope.Get and
+	// dot-free roll-up keys) is a direct map lookup, avoiding a strings.Split
+	// allocation on this hot path.
+	if !strings.Contains(path, ".") {
+		v, ok := m[path]
+		return v, ok
+	}
 	var cur any = m
 	for _, k := range strings.Split(path, ".") {
 		mm, ok := cur.(map[string]any)
