@@ -130,6 +130,32 @@ func TestPipelineConcurrency(t *testing.T) {
 	}
 }
 
+// TestPipelineConcurrencyNoSharedNestedMapRace guards the wave runner against a
+// data race between a stage reading a nested map through its eval environment and
+// an independent same-level stage writing into that same nested map. The reader
+// evaluates `customer.tier` (its env holds the customer sub-map); the writer's
+// output path descends into that sub-map (customer.score), so a Set mutates it
+// in place. Both are level-0 (independent), so they run in one wave concurrently.
+// Before per-stage read isolation this raced (expr VM map read vs. setPath map
+// write) and, without -race, could fatal with "concurrent map read and map
+// write". Run under `go test -race` to catch a regression.
+func TestPipelineConcurrencyNoSharedNestedMapRace(t *testing.T) {
+	reader, err := pipe.NewSingleExpr("reader", `customer.tier == "gold"`)
+	require.NoError(t, err)
+	writer, err := pipe.NewSingleExpr("writer", `1`, pipe.WithOutput("customer.score"))
+	require.NoError(t, err)
+
+	p, err := pipe.NewPipeline([]pipe.Stage{reader, writer}, pipe.WithConcurrency())
+	require.NoError(t, err)
+
+	// Loop to widen the race window; each run gets a fresh seed with a shared
+	// nested customer map that the writer mutates and the reader reads.
+	for range 500 {
+		sc := pipe.NewScope(map[string]any{"customer": map[string]any{"tier": "gold"}})
+		require.NoError(t, p.Run(t.Context(), sc))
+	}
+}
+
 func TestPipelineConcurrencyStageCancelSurfacesStageError(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stageErr := errors.New("boom during cancel")

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/go-viper/mapstructure/v2"
+	"github.com/kartaladev/rlng/config"
 	"github.com/kartaladev/rlng/pipe"
 	"github.com/shopspring/decimal"
 )
@@ -19,21 +20,14 @@ type Engine struct {
 	scopeOpts []pipe.ScopeOption
 }
 
-// concurrencyMode records which concurrency Option (if any) was set, so a
-// WithMaxParallel(0) request is distinguishable from "unset" (both would be 0 as
-// a bare int) and can be rejected by the config path.
-type concurrencyMode int8
-
-const (
-	concUnset concurrencyMode = iota
-	concUnbounded
-	concBounded
-)
-
 type engineConfig struct {
 	scopeOpts []pipe.ScopeOption
-	concMode  concurrencyMode
-	concN     int // requested cap when concMode == concBounded
+	// buildOpts captures the concurrency Options (WithConcurrency/WithMaxParallel)
+	// as config.BuildOptions. Only the NewFrom* path consumes them (threading them
+	// into def.Build); New/NewTypedEngine reject a non-empty buildOpts, since they
+	// wrap an already-built pipeline. Its presence — not a value — is the signal,
+	// so WithMaxParallel(0) is naturally distinguishable from "unset".
+	buildOpts []config.BuildOption
 }
 
 // Option configures an Engine or TypedEngine.
@@ -51,14 +45,14 @@ func WithScopeOptions(opts ...pipe.ScopeOption) Option {
 // ErrConcurrencyRequiresConfig — set concurrency on the pipeline via
 // pipe.WithConcurrency instead.
 func WithConcurrency() Option {
-	return func(c *engineConfig) { c.concMode = concUnbounded }
+	return func(c *engineConfig) { c.buildOpts = append(c.buildOpts, config.WithConcurrency()) }
 }
 
 // WithMaxParallel is like WithConcurrency but caps concurrency at n. An n < 1
 // surfaces as a wrapped *pipe.InvalidMaxParallelError from the config
 // constructor.
 func WithMaxParallel(n int) Option {
-	return func(c *engineConfig) { c.concMode = concBounded; c.concN = n }
+	return func(c *engineConfig) { c.buildOpts = append(c.buildOpts, config.WithMaxParallel(n)) }
 }
 
 // New constructs an Engine from a compiled pipeline. Options configure the
@@ -73,7 +67,7 @@ func New(pipeline *pipe.Pipeline, opts ...Option) (*Engine, error) {
 	for _, o := range opts {
 		o(cfg)
 	}
-	if cfg.concMode != concUnset {
+	if len(cfg.buildOpts) > 0 {
 		return nil, ErrConcurrencyRequiresConfig
 	}
 	return &Engine{pipeline: pipeline, scopeOpts: cfg.scopeOpts}, nil

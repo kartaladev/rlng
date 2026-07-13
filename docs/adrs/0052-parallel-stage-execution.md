@@ -50,9 +50,19 @@ preserves every observable of sequential execution.** Sequential remains the def
    error, matching sequential. Reported `stageOrder` is reconstructed from the topo order (∩ executed),
    never completion order.
 
-5. **No `Scope` change.** Every `Scope` mutator already holds `s.mu`; with the Spec 002 disjoint-namespace
-   invariant, parallel execution is race-free with no structural change. `go test -race` over the parallel
-   paths is a gate.
+5. **Per-stage read isolation in `Scope` (amended — see Correction).** Every `Scope` *mutator* already holds
+   `s.mu`, but that alone is **not** sufficient: a stage evaluates against `sc.Snapshot()`, which by default
+   shallow-copies only the top level, leaving nested `map[string]any` values as live references into Scope
+   state. An independent same-level stage whose output path descends into such a map (`Set("customer.score", …)`
+   → `setPath` mutates it in place) then races the reader's `expr` VM (`fatal error: concurrent map read and
+   map write`). The Spec 002 disjoint-*namespace* invariant does not prevent this, because a stage's output
+   path may descend into a pre-existing nested map (seed or an earlier level). **Fix:** when a level actually
+   runs >1 stage, `Pipeline.Run` marks the `Scope` concurrent, and `Snapshot` then deep-copies the map spine
+   (reusing `cloneValue`) so each stage reads a fully isolated environment. Slices — and maps nested inside
+   them — stay shared: `setPath` only traverses `map[string]any` by key and can never reach into a slice
+   element, so those values are effectively immutable and safe to share. The sequential path (and a linear
+   chain configured for concurrency) is unchanged and pays nothing. `go test -race` over the parallel paths —
+   including a stage reading a nested map while a sibling writes into it — is a gate.
 
 ## Consequences
 
@@ -73,3 +83,27 @@ preserves every observable of sequential execution.** Sequential remains the def
   refinement rather than built now.
 - ADR-0006 is superseded, not edited: its Status becomes `Superseded by ADR-0052`, preserving the history of
   why sequential-only was correct for increments 3–26.
+- **Determinism holds only when every cross-stage read is declared via `DependsOn`.** The full-determinism
+  contract (point 1) assumes the DAG is complete: if stage B reads stage A's output without declaring
+  `depends_on: [a]`, sequential Kahn ordering may happen to place A before B, but under concurrency they land
+  in the same level and B may observe A's value or not depending on timing. With read isolation this no longer
+  *crashes*, but B's result is order-sensitive, so it stays non-deterministic. This is the caller's contract
+  (the engine uses `expr.AllowUndefinedVariables`, so an undeclared read yields nil, not a compile error);
+  `WithConcurrency`'s godoc states it. Enabling concurrency is a good way to surface a latent missing-`DependsOn`.
+- **`Scope` after a `Run` error is not part of the contract.** On the error path the wave runner lets
+  independent same-level siblings of the failing stage run to completion (no fail-fast, per point 4), so a
+  post-error `Scope` inspected directly via `pipe.Pipeline.Run` may hold sibling outputs a sequential run
+  would not have written. `rlng.Engine` discards the `Scope` on error (`EvaluateScope` returns `nil`), so this
+  is not observable through the engine API; callers using `pipe` directly must not rely on `Scope` contents
+  after `Run` returns an error. The "identical to sequential" guarantee is a success-path guarantee.
+- **Concurrency does not descend into `foreach`.** A `foreach` stage's inner pipeline is always built and run
+  sequentially (per-element isolation); `WithConcurrency` parallelizes independent top-level stages only, not
+  the stages nested inside a `foreach`. Noted in `WithConcurrency`'s godoc.
+
+## Correction (2026-07-13, during the B11 whole-branch delivery gate)
+
+The original Decision point 5 ("No `Scope` change … race-free with no structural change") was **wrong**: the
+whole-branch `/code-review` found, and a `-race` regression test confirmed, the nested-map read/write race
+described above. Point 5 is amended in place (rather than superseding this same-day ADR) to record the correct
+design — per-stage read isolation via a concurrent-mode deep-copying `Snapshot`. The regression test
+(`TestPipelineConcurrencyNoSharedNestedMapRace`) is the gate against recurrence.

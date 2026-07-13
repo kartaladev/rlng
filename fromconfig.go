@@ -23,28 +23,13 @@ func NewFromProvider(ctx context.Context, p config.Provider, opts ...Option) (*E
 	if err != nil {
 		return nil, err
 	}
-	pipeline, err := def.Build(buildOptsFor(cfg)...)
+	pipeline, err := def.Build(cfg.buildOpts...)
 	if err != nil {
 		return nil, err
 	}
 	// Construct directly (not via New): the concurrency Option was consumed into
 	// the build above, so passing it to New would trip ErrConcurrencyRequiresConfig.
 	return &Engine{pipeline: pipeline, scopeOpts: cfg.scopeOpts}, nil
-}
-
-// buildOptsFor maps engine-level concurrency config to config.BuildOptions, so
-// the concurrency Option threads down to the internally-built pipeline. A
-// WithMaxParallel(n) with n < 1 flows through as config.WithMaxParallel and
-// surfaces as a wrapped *pipe.InvalidMaxParallelError from Build.
-func buildOptsFor(cfg *engineConfig) []config.BuildOption {
-	switch cfg.concMode {
-	case concUnbounded:
-		return []config.BuildOption{config.WithConcurrency()}
-	case concBounded:
-		return []config.BuildOption{config.WithMaxParallel(cfg.concN)}
-	default:
-		return nil
-	}
 }
 
 // NewFromYAML builds an Engine from an in-memory YAML ruleset. It is shorthand
@@ -72,7 +57,7 @@ func NewTypedFromProvider[I, R any](ctx context.Context, p config.Provider, mapp
 	if err != nil {
 		return nil, err
 	}
-	pipeline, err := def.Build(buildOptsFor(cfg)...)
+	pipeline, err := def.Build(cfg.buildOpts...)
 	if err != nil {
 		return nil, err
 	}

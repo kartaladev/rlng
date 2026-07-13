@@ -38,6 +38,17 @@ type Scope struct {
 	stageTimes  map[string]time.Duration
 	stageOrder  []string
 	clock       Clock
+	concurrent  bool // set by Pipeline.Run when a level runs stages concurrently; makes Snapshot deep-copy for per-stage read isolation
+}
+
+// markConcurrent tells the Scope its stages may run concurrently, so Snapshot
+// must return a deep-isolated eval environment (no live references into mutable
+// Scope state). Pipeline.Run calls it once before launching any stage goroutine,
+// so the flag is published before any concurrent Snapshot reads it.
+func (s *Scope) markConcurrent() {
+	s.mu.Lock()
+	s.concurrent = true
+	s.mu.Unlock()
 }
 
 // ScopeOption configures a Scope.
@@ -191,18 +202,30 @@ func (s *Scope) Get(path string) (any, bool) {
 	return lookupPath(s.data, path)
 }
 
-// Snapshot returns a shallow top-level copy of the accumulated data, suitable as
-// an expr evaluation environment.
+// Snapshot returns a copy of the accumulated data, suitable as an expr
+// evaluation environment.
 //
-// The copy is only shallow: nested map or slice values in the returned
+// By default the copy is shallow: nested map or slice values in the returned
 // snapshot are live references into the Scope's internal state; callers must
 // not mutate them, nor read them concurrently with Set without external
-// synchronization.
+// synchronization. Under concurrent execution (Pipeline.WithConcurrency /
+// WithMaxParallel), the Scope is marked concurrent and Snapshot instead
+// deep-copies the map spine so each stage evaluates against an isolated
+// environment — a sibling stage's Set can never mutate a map this stage is
+// reading. Slices (and maps nested inside them) are shared either way: Set only
+// ever traverses map[string]any by key and can never reach into a slice
+// element, so those values are effectively immutable and safe to share.
 func (s *Scope) Snapshot() map[string]any {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	out := make(map[string]any, len(s.data))
+	if s.concurrent {
+		for k, v := range s.data {
+			out[k] = cloneValue(v, 0)
+		}
+		return out
+	}
 	for k, v := range s.data {
 		out[k] = v
 	}

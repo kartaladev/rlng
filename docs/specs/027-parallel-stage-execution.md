@@ -96,16 +96,27 @@ never *what* is observed.
   rather than appended in completion order, so `StageTimings`/`stageOrder` stay deterministic. Per-stage
   `stageTimes` durations are each individually correct (measured around that stage's own `Execute`).
 
-## Concurrency safety (no Scope change)
+## Concurrency safety (per-stage read isolation)
 
-`Scope` needs **no structural change**. Every mutator already holds `s.mu`: `Set` (data), `timeStage`
-(`stageTimes`/`stageOrder`), `recordFirings` (`firing`), `Derive`/`recordElementDerivations` (`derivations`),
-`stampRuleset`/`markStarted`/`markFinished`. Combined with the Spec 002 invariant — independent stages write
-disjoint top-level subtrees, and `Snapshot`/`Get` share only read-only seed values and already-complete
-dependency subtrees, none of which a concurrently-running independent sibling mutates — parallel execution is
-race-free. The whole-`setPath` write is performed under the full lock, so even a (caller-induced, via
-`WithOutput`) shared-parent write is serialized, never corrupting the map spine. `go test -race` over the new
-parallel paths is a delivery gate.
+> **Corrected during the B11 delivery gate.** The original claim below — that mutex-guarded mutators plus the
+> Spec 002 namespace invariant made `Scope` race-free with *no* change — was **wrong**, as the whole-branch
+> `/code-review` and a `-race` regression test proved. See ADR-0052 §5 (amended) and its Correction note.
+
+Every mutator holds `s.mu` (`Set`, `timeStage`, `recordFirings`, `Derive`/`recordElementDerivations`,
+`stampRuleset`/`markStarted`/`markFinished`), and independent stages write disjoint top-level namespaces. But
+that is **not sufficient**: a stage evaluates against `sc.Snapshot()`, whose default shallow copy leaves nested
+`map[string]any` values as **live references** into Scope state. A sibling whose output path descends into a
+pre-existing nested map (a seed sub-object, or an earlier level's output — reachable via `WithOutput`) mutates
+it in place through `setPath`, racing the reader's `expr` VM (a fatal "concurrent map read and map write").
+The namespace invariant does not cover this, because output *paths* can overlap seed/earlier-level *sub-maps*.
+
+**Resolution.** When a level actually runs >1 stage, `Pipeline.Run` marks the `Scope` concurrent, and
+`Snapshot` then deep-copies the map spine (reusing `cloneValue`) so each stage reads a fully isolated eval
+environment; writers stay serialized under `s.mu`. Slices — and maps nested inside them — remain shared, since
+`setPath` only traverses maps by key and can never reach into a slice element (those values are effectively
+immutable). The sequential path, and a linear chain configured for concurrency, are unchanged and pay nothing.
+`go test -race` over the parallel paths — including `TestPipelineConcurrencyNoSharedNestedMapRace`, a stage
+reading a nested map while a sibling writes into it — is a delivery gate.
 
 ## Non-goals
 

@@ -44,7 +44,8 @@ type Pipeline struct {
 	ordered     []Stage
 	levels      [][]Stage // ordered grouped by dependency depth; used by the wave runner
 	ruleset     RulesetIdentity
-	maxParallel int // 0 = sequential; -1 = unbounded; n>0 = bounded at n
+	maxParallel int  // 0 = sequential; -1 = unbounded; n>0 = bounded at n
+	wide        bool // some level holds >1 stage, so the wave runner truly runs stages concurrently
 }
 
 // PipelineOption configures a Pipeline at construction. Options are applied in
@@ -68,9 +69,18 @@ type pipelineConfig struct {
 }
 
 // WithConcurrency runs independent stages of each dependency level concurrently,
-// unbounded. Execution stays fully deterministic: the final Scope, the surfaced
-// error, and the reported stage order are identical to sequential execution
-// (ADR-0052). The default (no concurrency option) is sequential.
+// unbounded. On the success path execution stays fully deterministic: the final
+// Scope, the surfaced error, and the reported stage order are identical to
+// sequential execution (ADR-0052). The default (no concurrency option) is
+// sequential.
+//
+// Determinism assumes a complete DAG: a stage that reads another stage's output
+// must declare it via WithDependsOn. An undeclared cross-stage read may land in
+// the same level and observe the other stage's value or not depending on timing
+// (expr treats a missing value as nil) — so enabling concurrency is a good way to
+// surface a latent missing dependency. Concurrency parallelizes independent
+// top-level stages only; a foreach stage's inner pipeline still runs sequentially
+// (per-element isolation).
 func WithConcurrency() PipelineOption {
 	return func(c *pipelineConfig) { c.mode = concUnbounded }
 }
@@ -136,6 +146,12 @@ func NewPipeline(stages []Stage, opts ...PipelineOption) (*Pipeline, error) {
 	p := &Pipeline{ordered: ordered, ruleset: cfg.ruleset, maxParallel: maxParallel}
 	if maxParallel != 0 {
 		p.levels = computeLevels(ordered)
+		for _, lvl := range p.levels {
+			if len(lvl) > 1 {
+				p.wide = true
+				break
+			}
+		}
 	}
 	return p, nil
 }
@@ -249,6 +265,13 @@ func (p *Pipeline) Run(ctx context.Context, sc *Scope) error {
 	sc.stampRuleset(p.ruleset)
 	if p.maxParallel == 0 {
 		return p.runSequential(ctx, sc)
+	}
+	// Only a level with >1 stage runs stages concurrently. Marking the Scope
+	// concurrent makes Snapshot deep-copy each stage's eval environment (per-stage
+	// read isolation); a linear chain configured for concurrency stays shallow and
+	// pays nothing. Set before any goroutine launches, so the flag is published.
+	if p.wide {
+		sc.markConcurrent()
 	}
 	return p.runWaves(ctx, sc)
 }
