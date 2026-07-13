@@ -1,6 +1,7 @@
 package expr_test
 
 import (
+	"encoding/json"
 	"math"
 	"testing"
 	"time"
@@ -10,6 +11,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// namedBool and namedString are defined (non-native) types whose Kind is
+// Bool/String; truthy must coerce them by kind, not only by exact type.
+type namedBool bool
+
+type namedString string
 
 func TestNewPredicate(t *testing.T) {
 	t.Parallel()
@@ -162,6 +169,13 @@ func TestPredicate_Test_CoerceMatrix(t *testing.T) {
 		{name: "native empty []string is false", val: []string{}, assert: isFalse},
 		{name: "native non-empty map[string]int is true", val: map[string]int{"a": 1}, assert: isTrue},
 		{name: "native empty map[string]int is false", val: map[string]int{}, assert: isFalse},
+		// Named (non-native) types whose Kind is Bool/String must coerce by kind.
+		{name: "named bool true is true", val: namedBool(true), assert: isTrue},
+		{name: "named bool false is false", val: namedBool(false), assert: isFalse},
+		{name: "named non-empty string is true", val: namedString("hello"), assert: isTrue},
+		{name: "named empty string is false", val: namedString(""), assert: isFalse},
+		{name: `json.Number "1" parses true`, val: json.Number("1"), assert: isTrue},
+		{name: `json.Number "0" parses false`, val: json.Number("0"), assert: isFalse},
 	}
 
 	for _, tc := range cases {
