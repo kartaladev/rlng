@@ -175,15 +175,29 @@ func (s *Scope) lineageIndex() map[string][]Derivation {
 	return idx
 }
 
-// derivationsFor returns the derivation recorded exactly at key, or — when there
-// is none — every derivation whose path is under the key namespace (key + "."),
-// taken from the precomputed index. This links an input identifier (a top-level
-// name like "tiers") to the namespaced values a stage wrote under it ("tiers.tag").
+// derivationsFor returns the derivation(s) that produced the value at key, in
+// order of precision: the derivation recorded exactly at key; else every
+// derivation under the key namespace (key + ".", from the precomputed index);
+// else the nearest recorded ancestor (walking a.b.c -> a.b -> a). The exact case
+// links a precise member-path input ("grade.tier") to its own derivation; the
+// descendants case links a bare namespace reference ("grade") to the values a
+// stage wrote under it ("grade.tier"); the ancestor case links a member-path
+// input ("applicant.score") to the top-level seed ("applicant") that contains it.
 func derivationsFor(derivations map[string]Derivation, idx map[string][]Derivation, key string) []Derivation {
 	if d, ok := derivations[key]; ok {
 		return []Derivation{d}
 	}
-	return idx[key]
+	if ds := idx[key]; len(ds) > 0 {
+		return ds
+	}
+	for i := len(key) - 1; i > 0; i-- {
+		if key[i] == '.' {
+			if d, ok := derivations[key[:i]]; ok {
+				return []Derivation{d}
+			}
+		}
+	}
+	return nil
 }
 
 func sortedInputs(inputs map[string]any) []string {
@@ -198,16 +212,18 @@ func sortedInputs(inputs map[string]any) []string {
 	return ids
 }
 
-// snapshotRefs returns the subset of env named by refs (the identifiers an
-// expression reads), as the Inputs of a Derivation. It returns nil when refs is
-// empty so a no-input derivation carries a nil (not empty) Inputs map.
+// snapshotRefs returns the subset of env named by refs (the paths an expression
+// reads), as the Inputs of a Derivation. Each ref is resolved via lookupPath, so
+// a member path ("a.b.c") yields the precise nested value while a single-segment
+// ref stays a direct lookup; an unresolvable ref is omitted. It returns nil when
+// refs is empty so a no-input derivation carries a nil (not empty) Inputs map.
 func snapshotRefs(env map[string]any, refs []string) map[string]any {
 	if len(refs) == 0 {
 		return nil
 	}
 	out := make(map[string]any, len(refs))
 	for _, r := range refs {
-		if v, ok := env[r]; ok {
+		if v, ok := lookupPath(env, r); ok {
 			out[r] = v
 		}
 	}
