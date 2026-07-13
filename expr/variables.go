@@ -31,17 +31,7 @@ func newPatcher(globals, locals map[string]any) *variablePatcher {
 	if len(globals) == 0 && len(locals) == 0 {
 		return nil
 	}
-	return &variablePatcher{globals: copyMap(globals), locals: copyMap(locals)}
-}
-
-// copyMap returns a shallow copy of m so the patcher is insulated from later
-// mutation of the caller's map.
-func copyMap(m map[string]any) map[string]any {
-	cp := make(map[string]any, len(m))
-	for k, v := range m {
-		cp[k] = v
-	}
-	return cp
+	return &variablePatcher{globals: mergeInto(nil, globals), locals: mergeInto(nil, locals)}
 }
 
 func (v *variablePatcher) lookup(name string) (any, bool) {
