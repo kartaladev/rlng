@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"math/big"
 	"reflect"
 	"sort"
 	"strings"
@@ -648,62 +647,40 @@ func foldDecimal(vals []any, op numericOp) (any, error) {
 	return vals[bestIdx], nil
 }
 
-// toInt64 converts a value already classified kindInt to int64. Callers
-// guarantee the classification, so an unrecognized kind (unreachable in
-// practice) reports zero rather than panicking.
+// toInt64 converts a value already classified kindInt to int64 via the shared
+// numeric kernel. Callers guarantee the classification, so an unrecognized
+// kind (unreachable in practice) reports zero rather than panicking.
 func toInt64(v any) int64 {
-	rv := reflect.ValueOf(v)
-	switch rv.Kind() {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return rv.Int()
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return int64(rv.Uint())
-	default:
-		return 0
+	i, err := int64FromNumeric(reflect.ValueOf(v))
+	if err != nil {
+		return 0 // unreachable: classify guaranteed kindInt (uint64 <= MaxInt64)
 	}
+	return i
 }
 
 // toFloat64 converts a value already classified kindInt or kindFloat to
-// float64. Callers guarantee the classification, so an unrecognized kind
-// (unreachable in practice) reports zero rather than panicking.
+// float64 via the shared numeric kernel. Callers guarantee the classification,
+// so an unrecognized kind (unreachable in practice) reports zero rather than
+// panicking.
 func toFloat64(v any) float64 {
-	rv := reflect.ValueOf(v)
-	switch rv.Kind() {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return float64(rv.Int())
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return float64(rv.Uint())
-	case reflect.Float32, reflect.Float64:
-		return rv.Float()
-	default:
-		return 0
+	f, err := float64FromNumeric(reflect.ValueOf(v))
+	if err != nil {
+		return 0 // unreachable: classify guaranteed kindInt or kindFloat
 	}
+	return f
 }
 
 // asDecimal converts a numeric value (int/uint kinds, finite float32/64, or an
-// already-decimal.Decimal) to decimal.Decimal. ok is false for a non-numeric v
-// or a non-finite float (NaN/±Inf), which has no decimal representation —
-// callers must not pass such a value to decimal.NewFromFloat (it panics). Full
-// uint64 range is preserved via big.Int (int64(rv.Uint()) would wrap).
+// already-decimal.Decimal) to decimal.Decimal via the shared numeric kernel. ok
+// is false for a non-numeric v or a non-finite float (NaN/±Inf), which has no
+// decimal representation — callers must not pass such a value to
+// decimal.NewFromFloat (it panics). Full uint64 range is preserved via big.Int
+// (int64(rv.Uint()) would wrap).
 func asDecimal(v any) (decimal.Decimal, bool) {
 	if d, ok := v.(decimal.Decimal); ok {
 		return d, true
 	}
-	rv := reflect.ValueOf(v)
-	switch rv.Kind() {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return decimal.NewFromInt(rv.Int()), true
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return decimal.NewFromBigInt(new(big.Int).SetUint64(rv.Uint()), 0), true
-	case reflect.Float32, reflect.Float64:
-		f := rv.Float()
-		if math.IsNaN(f) || math.IsInf(f, 0) {
-			return decimal.Decimal{}, false
-		}
-		return decimal.NewFromFloat(f), true
-	default:
-		return decimal.Decimal{}, false
-	}
+	return decimalFromNumeric(reflect.ValueOf(v))
 }
 
 // valuesAgree reports whether two decision values agree for HitPolicyAny.

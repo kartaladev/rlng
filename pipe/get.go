@@ -210,14 +210,6 @@ func coerceToInt64(v any) (int64, error) {
 
 	rv := reflect.ValueOf(v)
 	switch rv.Kind() {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return rv.Int(), nil
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-		u := rv.Uint()
-		if u > math.MaxInt64 {
-			return 0, fmt.Errorf("uint64(%d) overflows int64", u)
-		}
-		return int64(u), nil
 	case reflect.Float32, reflect.Float64:
 		f := rv.Float()
 		if math.IsNaN(f) || math.IsInf(f, 0) {
@@ -231,7 +223,11 @@ func coerceToInt64(v any) (int64, error) {
 		}
 		return int64(f), nil
 	default:
-		return 0, fmt.Errorf("%T is not numeric", v)
+		i, err := int64FromNumeric(rv)
+		if errors.Is(err, errNotNumericKind) {
+			return 0, fmt.Errorf("%T is not numeric", v)
+		}
+		return i, err // nil, or the "uint64(...) overflows int64" message
 	}
 }
 
@@ -265,14 +261,9 @@ func coerceToFloat64(v any) (float64, error) {
 	}
 
 	rv := reflect.ValueOf(v)
-	switch rv.Kind() {
-	case reflect.Float32, reflect.Float64:
-		return rv.Float(), nil
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		return float64(rv.Int()), nil
-	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-		return float64(rv.Uint()), nil
-	default:
+	f, err := float64FromNumeric(rv)
+	if errors.Is(err, errNotNumericKind) {
 		return 0, fmt.Errorf("%T is not numeric", v)
 	}
+	return f, err
 }

@@ -628,6 +628,56 @@ func TestGetCoerce(t *testing.T) {
 	}
 }
 
+// TestGetIntCoerceKernelBranches drives GetInt64Coerce across every branch of
+// the shared numeric kernel (pipe/numeric.go): int/uint widening, the
+// overflow-checked uint64->int64 conversion, and the float finite/integral
+// checks that stay in get.go. These pin the exact current behavior — pipe bug
+// #3's overflow check and the float rejection messages — that the R1 kernel
+// extraction (Spec 029 / Plan 029 / ADR-0054) must preserve byte-for-byte.
+func TestGetIntCoerceKernelBranches(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		value  any
+		assert func(t *testing.T, got int64, err error)
+	}{
+		{"uint64 in range", uint64(42), func(t *testing.T, got int64, err error) {
+			require.NoError(t, err)
+			require.Equal(t, int64(42), got)
+		}},
+		{"uint64 overflows int64", uint64(math.MaxInt64) + 1, func(t *testing.T, got int64, err error) {
+			var te *pipe.ScopeTypeError
+			require.ErrorAs(t, err, &te)
+			require.Equal(t, "int64", te.Expected)
+		}},
+		{"int8 widens", int8(-5), func(t *testing.T, got int64, err error) {
+			require.NoError(t, err)
+			require.Equal(t, int64(-5), got)
+		}},
+		{"integral float", 7.0, func(t *testing.T, got int64, err error) {
+			require.NoError(t, err)
+			require.Equal(t, int64(7), got)
+		}},
+		{"non-integral float errors", 7.5, func(t *testing.T, got int64, err error) {
+			var te *pipe.ScopeTypeError
+			require.ErrorAs(t, err, &te)
+		}},
+		{"NaN errors", math.NaN(), func(t *testing.T, got int64, err error) {
+			var te *pipe.ScopeTypeError
+			require.ErrorAs(t, err, &te)
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			sc := pipe.NewScope(map[string]any{"v": tc.value})
+			got, err := sc.GetInt64Coerce("v")
+			tc.assert(t, got, err)
+		})
+	}
+}
+
 func BenchmarkGetInt(b *testing.B) {
 	s := pipe.NewScope(map[string]any{"count": int(42)})
 	b.ReportAllocs()

@@ -3,6 +3,7 @@ package pipe_test
 import (
 	"context"
 	"math"
+	"reflect"
 	"testing"
 
 	"github.com/kartaladev/rlng/pipe"
@@ -541,6 +542,25 @@ func TestDecisionTableCollectAggregationFidelity(t *testing.T) {
 				d, ok := got.(decimal.Decimal)
 				require.True(t, ok, "expected decimal.Decimal, got %T", got)
 				assert.True(t, decimal.RequireFromString("3.5").Equal(d), "got %s", d)
+			},
+		},
+		{
+			// A native uint64 above math.MaxInt64 must promote to an EXACT
+			// decimal.Decimal, never wrap through int64 (pipe bug #3). Guards
+			// the R1 kernel extraction (Spec 029/Plan 029/ADR-0054): the sum
+			// must stay reachable only through decimalFromNumeric's big.Int
+			// path, not int64FromNumeric's overflow-checked path.
+			name:  "uint64 sum above MaxInt64 promotes to exact decimal",
+			agg:   pipe.AggregateSum,
+			exprs: []string{"big", "one"},
+			seed:  map[string]any{"big": uint64(math.MaxUint64), "one": uint64(1)},
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				require.Equal(t, "decimal.Decimal", reflect.TypeOf(got).String())
+				d, ok := got.(decimal.Decimal)
+				require.True(t, ok)
+				want := decimal.RequireFromString("18446744073709551616") // 2^64
+				assert.True(t, want.Equal(d), "got %s, want %s", d, want)
 			},
 		},
 		{
