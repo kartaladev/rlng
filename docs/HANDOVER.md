@@ -11,8 +11,9 @@
 wrapping errors). Increments 011–016 merged & pushed. **Increment 016 (config `Provider`) complete.**
 
 **Active program: execute ALL 12 backlog items (B1–B12) from `docs/BACKLOG.md`,** each as its own
-increment. **B1 DONE (incr 017, `f10a8be`); B2 DONE (incr 018, `934f1b5`); B3 DONE (incr 019, `2af21f2`).**
-Next up: **B4.**
+increment. **B1 (incr 017, `f10a8be`); B2 (incr 018, `934f1b5`); B3 (incr 019, `2af21f2`); B4 DONE
+(incr 020, `4b3089e`).** The autonomous set (B1–B4) is complete. Next up: **B5 — a DESIGN-CHECKPOINT item
+(needs the user's design approval before implementing).**
 
 ## Standing decisions for this program (do NOT re-ask)
 - **Scope = all 12**, including the two deliberate non-goals **B11** (parallel exec; write a superseding
@@ -29,40 +30,40 @@ Next up: **B4.**
   (See memory `rlng-backlog-execution-program` for the full authorization record.)
 
 ## What's DONE this session
-- **B2 / increment 018** (`main@934f1b5`): benchmark-only — `BenchmarkForEachScopeCopy` measures
-  `ForEach.Execute`'s per-element scope-copy cost (linear both axes, sub-ms typical, ~5ms at 1000×64);
-  **accepted, no optimization** (ADR-0043). No production-code change.
-- **B3 / increment 019 shipped** (`main@2af21f2`): added opt-in coercing numeric getters
-  `GetIntCoerce`/`GetInt64Coerce`/`GetFloat64Coerce` (`pipe/get.go`) beside the strict getters. Accept a
-  wider type set — any integer kind (overflow-checked), integral finite floats, `json.Number`, base-10
-  numeric strings — converted safely/honestly per **ADR-0035**: no silent truncation/wrap, never
-  manufacture `NaN`/`±Inf` from text (string OR `json.Number`; a value already stored as a float passes
-  through), fail loud with `*ScopeTypeError`. Two shared helpers `coerceToInt64`/`coerceToFloat64` (stdlib
-  only). **Additive, no SemVer break; strict getters unchanged.** Spec/plan 019, ADR-0044; BACKLOG B3 →
-  resolved. Commits `28defd9`(spec)→`2af21f2`(feat). Code-review found one inconsistency (`json.Number`
-  non-finite handling — fixed, covered, amended in); security-review clean.
+- **B2 / increment 018** (`934f1b5`): benchmark-only — `BenchmarkForEachScopeCopy`; scope-copy cost linear
+  both axes, sub-ms typical → **accepted, no optimization** (ADR-0043). No prod change.
+- **B3 / increment 019** (`2af21f2`): opt-in coercing numeric getters `GetIntCoerce`/`GetInt64Coerce`/
+  `GetFloat64Coerce` (`pipe/get.go`); safe/honest per ADR-0035; additive, no SemVer break (ADR-0044).
+- **B4 / increment 020 shipped** (`main@4b3089e`): `(*config.PipelineDef).Build` now **rejects** a
+  hand-built def carrying a non-JSON-marshalable value (in any `any`-typed field: `Constants`/`Schema`/
+  `Globals`) with a `*ConfigError` wrapping the new exported `config.ErrUnhashableDef`, instead of silently
+  stamping the `{}` placeholder identity. Version-cleared marshal factored into shared
+  `canonicalJSON`/`hashCanonical`. **`Hash()`/`MatchesRuleset` signatures unchanged** (direct-`Hash()`
+  fallback retained + documented); existing hashes byte-identical (golden test green); parse paths
+  unaffected. Spec/plan 020, ADR-0045; BACKLOG B4 → resolved. Commits `311b7db`(spec)→`4b3089e`(fix).
+  Code-review: no findings; security-review: clean.
 
-## Next action — B4 (increment 020)
-**B4 = `Hash()` rejects non-marshalable hand-built defs** (`docs/BACKLOG.md` B4; source ADR-0037).
-**Contained edge case, autonomous** (B1–B4/B10 autonomous set — surface design via the committed spec, no
-live approval pause). A hand-built `config.PipelineDef` carrying a non-JSON-marshalable value (`chan`/`func`)
-currently falls back to a stable placeholder hash and **silently loses change-detection**. Parse paths can
-never produce such values, so this affects only defs built by hand in Go. Design: have `Hash()` (or its
-construction path) **validate/reject** the non-marshalable case with a typed error instead of the silent
-placeholder. Start: `git checkout -b claude/hash-nonmarshalable-020 main`, read the `Hash()` impl + ADR-0037
-+ the `config` hashing code and tests, brainstorm → spec/plan 020 → ADR-0045 → TDD (cover the reject branch
-+ the existing marshalable path stays green) → gate → auto merge+push. **Note:** confirm whether changing
-the silent-fallback to a hard error is a behavior/contract change worth calling out (it changes `Hash()`'s
-error surface); if it adds/returns a new error, document it and keep it additive where possible.
+## Next action — B5 (increment 021) — ⚠ DESIGN CHECKPOINT (needs user approval before implementing)
+**B5 = Per-decision options in decision-table config** (`docs/BACKLOG.md` B5; source ADR-0007, Spec 004,
+`config/build.go:358`). **This is a design-gated item** (B5–B9, B11, B12): brainstorm and write the
+spec, then **PAUSE and get the user's design approval before implementing** — do NOT auto-proceed to
+code/merge as with B1–B4. Today `stage.Rule` carries one rule-level `DecisionOptions` shared across all
+decisions; config **rejects** a decision that declares its own `fallback`/`globals` (`config/build.go`
+~line 358, "per-decision options are not supported; use a bare expression"). Bare-string decisions are
+unaffected. Extending to per-decision options is a **contract change → needs a new ADR (0046)**. Start:
+`git checkout -b claude/per-decision-options-021 main`, read `config/build.go` (the decision-table build +
+the ~line-358 rejection), `docs/adrs/0007-*`, `docs/specs/004-*`, and the `stage` decision-table types;
+brainstorm → **spec 021 → present design for approval** → (on approval) plan 021 + ADR-0046 → TDD → gate →
+merge+push.
 
 ## Exact state
-- On `main`, clean, synced with `origin/main` at `2af21f2`. `git status --short` = empty.
-- Full gate green as of B3 merge: `go build ./...`, `go test ./... -race`, `go vet`, `gofmt -l .`,
-  `CGO_ENABLED=0 go build`, `go mod tidy`(no-op)/`verify` all clean. `pipe` coverage 99.0%.
+- On `main`, clean, synced with `origin/main` at `4b3089e`. `git status --short` = empty.
+- Full gate green as of B4 merge: `go build ./...`, `go test ./... -race`, `go vet`, `gofmt -l .`,
+  `CGO_ENABLED=0 go build`, `go mod tidy`(no-op)/`verify` all clean. `config` coverage 99.8%.
   `benchstat` installed at `$(go env GOPATH)/bin/benchstat`.
 
 ## Gotchas / environment
 - `govulncheck`/`golangci-lint` are NOT installed locally — CI runs them on push.
 - `.superpowers/sdd/*` are gitignored scratch (016's ledger); not used for the 017+ program — track via
   `docs/BACKLOG.md` + git log instead.
-- Artifact numbering is continuous: specs/plans at 019 done, ADRs at 0044 done. **B4 = spec/plan 020, ADR-0045.**
+- Artifact numbering is continuous: specs/plans at 020 done, ADRs at 0045 done. **B5 = spec/plan 021, ADR-0046.**
