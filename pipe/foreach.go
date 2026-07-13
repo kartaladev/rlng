@@ -142,8 +142,9 @@ func (f *ForEach) DependsOn() []string { return f.deps }
 // the inner pipeline fires for element i are recorded on sc under the
 // composite key "<name>[i].<inner stage>" (e.g. "<name>[i].<table>"),
 // preserving the inner stage — and, for a nested foreach, the inner element
-// index (queryable via sc.FiringRulesFor), giving each element its own
-// provenance without disturbing the inner stage's own name. When the outer sc
+// index — so the composite key is queryable via sc.FiringRulesFor, giving
+// each element its own provenance without disturbing the inner stage's own
+// name. When the outer sc
 // tracks provenance, element i's full derivation graph
 // is also merged onto sc under the "<name>[i]." path prefix, so sc.Lineage /
 // sc.Explain answer per-element lineage (e.g. "<name>[i].<inner output>");

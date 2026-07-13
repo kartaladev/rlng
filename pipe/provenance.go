@@ -65,7 +65,8 @@ func (s *Scope) Derive(path string, v any, d Derivation) error {
 // prefix + "." + <original> so the element's subgraph reconciles within s (via
 // derivationsFor's exact/descendants/ancestor logic). It is a no-op when s does
 // not track provenance or src is empty. ForEach uses it to surface per-element
-// lineage under the composite key "<stage>[i]", mirroring per-element firing.
+// lineage under the "<stage>[i]."-prefixed composite key, the same prefixing
+// approach recordElementFirings uses to merge per-element firing.
 func (s *Scope) recordElementDerivations(prefix string, src map[string]Derivation) {
 	if !s.provenance || len(src) == 0 {
 		return

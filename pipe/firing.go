@@ -54,11 +54,9 @@ func (s *Scope) firingMap() map[string][]FiringRule {
 // element's firing under "<stage>[i].<inner stage key>", preserving the inner
 // stage — and, for a nested foreach, the inner element index — instead of
 // flattening it away. Always recorded (independent of provenance, like
-// recordFirings); a no-op when src is empty. Mirrors recordElementDerivations.
+// recordFirings); callers pass a non-empty src (they guard emptiness
+// themselves, as ForEach.Execute does). Mirrors recordElementDerivations.
 func (s *Scope) recordElementFirings(prefix string, src map[string][]FiringRule) {
-	if len(src) == 0 {
-		return
-	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.firing == nil {
