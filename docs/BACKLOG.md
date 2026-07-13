@@ -10,10 +10,37 @@
 > all current contracts fail loud (rejected with a typed error) rather than silently misbehaving.
 >
 > **✅ PROGRAM COMPLETE (2026-07-13): B1–B12 all resolved.** Every tracked backlog item has been executed
-> (or closed as a documented non-goal). No open items remain; the table below is retained as the historical
-> record. New work starts a fresh backlog sweep.
+> (or closed as a documented non-goal). The B1–B12 table below is retained as the historical record.
+>
+> **🔧 POST-AUDIT REFACTOR BACKLOG (2026-07-14, R-items).** A whole-codebase audit (increment 029) fixed a
+> batch of correctness/safety bugs and surfaced a set of **refactor / quality** opportunities. These are
+> quality-only (no behavior change) and are deferred to be revisited after the bug fixes land. See the
+> "Post-audit refactor items" section below.
 
-## Open items (all resolved)
+## Post-audit refactor items (R1–R10)
+
+Quality-only; each is a behavior-preserving refactor (or a small additive guard). Stable IDs `R<n>`. Priority
+is a rough ordering, not a commitment.
+
+| ID | Title | Source (audit finding) | Where | Priority |
+|----|-------|------------------------|-------|----------|
+| **R1** | Unify numeric coercion into one overflow-checked core | pipe #3 / #2 + review C2 | `pipe/table.go` (`toInt64`/`toFloat64`/`asDecimal`/`classify`) vs `pipe/get.go` (`coerceToInt64`/`coerceToFloat64`) | P2 |
+| **R2** | `Scope.DeriveOrSet(path, v, buildDerivation)` helper | review C1 | duplicated `if TracksProvenance(){Derive}else{Set}` + `snapshotRefs` across `single.go`/`multi.go`/`table.go` (5 sites) | P2 |
+| **R3** | Fold `truthy`'s exact `bool`/`string` head into the reflect switch | expr #4 / review C1 | `expr/predicate.go` — the exact-type head is now redundant with the added `reflect.Bool`/`reflect.String` cases | P3 |
+| **R4** | Table-drive `decimalExprOptions` add/sub/mul/div | expr review C2 | `expr/decimal.go` | P3 |
+| **R5** | Extract `newEngineConfig(opts…)` + shared parse→build helper | root review C1/C2 | `engine.go`/`typed_engine.go`/`fromconfig.go` (4 sites) | P3 |
+| **R6** | Hoist known-field map to a package var; collapse `withStrictEnv(withConstants(…))` wrapper | config review C2 | `config/expr_def.go`, `config/build.go` (5 sites) | P3 |
+| **R7** | Gate `p.wide` on `maxParallel != 1` (a size-1 cap never overlaps, yet pays deep-copy cost) | pipe review C3 | `pipe/pipeline.go` | P3 |
+| **R8** | Shared locked prefix-rekey merge helper | pipe review C5 | `pipe/provenance.go` `recordElementDerivations` + `firing.go` `recordElementFirings` | P4 |
+| **R9** | Collapse near-duplicate map-copy helpers (`mergeInto`/`copyMap`) | expr review C4 | `expr/options.go`, `expr/variables.go` | P4 |
+| **R10** | Static same-level output-path collision detection at `NewPipeline` (the deterministic guard for the write-write caveat) | pipe #5 | `pipe/pipeline.go` + a `Stage` output-path surface | P3 (additive feature; needs a small design) |
+| **R11** | Memoize the content hash on the built pipeline (canonicalJSON deep-walks the def on every `Hash()`/`MatchesRuleset`) | incr-029 code-review | `config/hash.go` / `config/build.go` | P4 |
+
+> R1 and R2 are the highest-value: R1 removes the duplicated numeric-reflection paths whose divergence caused
+> pipe bug #3 (a unified overflow-checked core prevents recurrence); R2 removes the most-copied hot-path block.
+> R10 is the only non-trivial one (a small feature + likely an ADR) — the rest are contained refactors.
+
+## Historical: B1–B12 (all resolved)
 
 Stable IDs are `B<n>`. "Altitude" = how deep a change it is: **additive** (non-breaking new surface),
 **contained** (localized change, no contract break), or **new ADR** (contract/behaviour change needing a

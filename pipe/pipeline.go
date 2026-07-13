@@ -81,6 +81,15 @@ type pipelineConfig struct {
 // surface a latent missing dependency. Concurrency parallelizes independent
 // top-level stages only; a foreach stage's inner pipeline still runs sequentially
 // (per-element isolation).
+//
+// Determinism likewise assumes stages write disjoint output paths: two
+// independent stages that write the same Scope path (e.g. two single-expr stages
+// sharing a WithOutput path, or two conditional writers to one key) land in the
+// same level, and which write wins — or, in strict mode, which one gets
+// ErrPathConflict — depends on completion order. The engine's namespace
+// convention (each stage writes under its own name) keeps outputs disjoint by
+// default; a deliberate shared-path write is the caller's responsibility to
+// order via WithDependsOn.
 func WithConcurrency() PipelineOption {
 	return func(c *pipelineConfig) { c.mode = concUnbounded }
 }

@@ -90,6 +90,14 @@ preserves every observable of sequential execution.** Sequential remains the def
   *crashes*, but B's result is order-sensitive, so it stays non-deterministic. This is the caller's contract
   (the engine uses `expr.AllowUndefinedVariables`, so an undeclared read yields nil, not a compile error);
   `WithConcurrency`'s godoc states it. Enabling concurrency is a good way to surface a latent missing-`DependsOn`.
+- **Determinism also assumes disjoint output paths.** The full-determinism contract covers *reads* declared
+  via `DependsOn`; it equally assumes independent stages *write* disjoint Scope paths. Two same-level stages
+  that write the same path (e.g. a shared `WithOutput` path, or two conditional writers to one key) resolve by
+  completion order — the surfaced value (non-strict) or which stage gets `ErrPathConflict` (strict) is then
+  nondeterministic. The namespace convention (each stage writes under its own name) keeps outputs disjoint by
+  default, so this only bites a deliberately shared-path write, which the caller must order via `DependsOn`.
+  A future refinement could detect statically-knowable same-level output-path collisions at `NewPipeline`
+  (tracked in `docs/BACKLOG.md`); it is documentation-only today.
 - **`Scope` after a `Run` error is not part of the contract.** On the error path the wave runner lets
   independent same-level siblings of the failing stage run to completion (no fail-fast, per point 4), so a
   post-error `Scope` inspected directly via `pipe.Pipeline.Run` may hold sibling outputs a sequential run
