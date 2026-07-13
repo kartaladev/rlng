@@ -19,7 +19,7 @@ spec+plan+ADR chain).
 |----|-------|--------|----------|----------|----------|
 | ~~**B1**~~ | ~~Dot-path roll-up keys~~ | — | — | — | ✅ **Done** (incr 017, ADR-0042) |
 | ~~**B2**~~ | ~~`foreach` per-element scope-copy benchmark~~ | — | — | — | ✅ **Done** (incr 018, ADR-0043) |
-| **B3** | Numeric-coercing Scope getters | Spec 006 non-goal; `pipe/get.go` | feature-gap (ergonomics) | additive | **P2** |
+| ~~**B3**~~ | ~~Numeric-coercing Scope getters~~ | — | — | — | ✅ **Done** (incr 019, ADR-0044) |
 | **B4** | `Hash()` rejects non-marshalable hand-built defs | ADR-0037 | hardening/tech-debt | contained (edge case) | **P2** |
 | **B5** | Per-decision options in decision-table config | ADR-0007; Spec 004; `config/build.go:358` | feature-gap | new ADR | **P2** |
 | **B6** | Precise member-path references in provenance | ADR-0011; Spec 006 non-goal | feature-gap/debuggability | new ADR | **P2** |
@@ -43,9 +43,11 @@ rolls up directly with no companion `single-expr`. Backward-compatible (dot-free
 1000-element × 64-key extreme). Accepted as the price of the per-element isolation invariant; no
 optimization now (ADR-0043 records the direction if a very-large-collection need ever arises).
 
-**B3 — Coercing Scope getters.** Typed getters (`GetInt`/`GetFloat64`/…) are strict: a `float64` at an int
-path or a numeric string is a `*ScopeTypeError`. A coercing variant was deferred as additive — can be added
-without breaking the strict API.
+**B3 — Coercing Scope getters. ✅ DONE (increment 019, ADR-0044).** Added `GetIntCoerce`/`GetInt64Coerce`/
+`GetFloat64Coerce` (`pipe/get.go`): opt-in coercing variants accepting a wider type set (integer kinds
+overflow-checked, integral finite floats, `json.Number`, numeric strings) converted safely/honestly per
+ADR-0035 (no silent truncation, never manufacture `NaN`/`±Inf`, fail loud with `*ScopeTypeError`). Strict
+getters unchanged (additive, no SemVer break).
 
 **B4 — `Hash()` non-marshalable fallback.** A hand-built `PipelineDef` carrying a non-JSON-marshalable
 value (`chan`/`func`) falls back to a stable placeholder hash and loses change-detection. Parse paths can
@@ -93,6 +95,7 @@ Deferrals found in the docs but confirmed already implemented — excluded from 
 |-----------------------------------|-----------|
 | Dot-path roll-up keys (B1; ADR-0040) | Increment 017 / ADR-0042 |
 | `foreach` per-element scope-copy benchmark (B2; ADR-0040) | Increment 018 / ADR-0043 |
+| Numeric-coercing Scope getters (B3; Spec 006 non-goal) | Increment 019 / ADR-0044 |
 | Exact decimal money (ADR-0030) | Increment 014 / ADR-0038 + ADR-0039 |
 | `foreach` stage (ADR-0030) | Increment 015 / ADR-0040 |
 | Config-declared output mapping (ADR-0009; Spec 005/008 non-goals) | Increment 010 / ADR-0028 |
