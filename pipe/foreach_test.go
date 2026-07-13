@@ -715,7 +715,7 @@ func TestForEachExecute(t *testing.T) {
 			},
 		},
 		{
-			name: "per-element firing recorded under the composite stage key <stage>[i]",
+			name: "per-element firing recorded under the composite key <stage>[i].<inner>",
 			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
 				table, err := pipe.NewDecisionTable("check", []pipe.Rule{
 					{ID: "HIGH", Condition: "item.ltv > 80", Decisions: map[string]pipe.Decision{"flag": {Expr: `"high"`}}},
@@ -740,15 +740,15 @@ func TestForEachExecute(t *testing.T) {
 			assert: func(t *testing.T, sc *pipe.Scope, err error) {
 				require.NoError(t, err)
 
-				f0 := sc.FiringRulesFor("lines[0]")
+				f0 := sc.FiringRulesFor("lines[0].check")
 				require.Len(t, f0, 1)
 				assert.Equal(t, "check", f0[0].Stage)
 				assert.Equal(t, "HIGH", f0[0].RuleID)
 
-				f1 := sc.FiringRulesFor("lines[1]")
+				f1 := sc.FiringRulesFor("lines[1].check")
 				assert.Empty(t, f1, "no rule matched element 1, so nothing should be recorded")
 
-				f2 := sc.FiringRulesFor("lines[2]")
+				f2 := sc.FiringRulesFor("lines[2].check")
 				require.Len(t, f2, 1)
 				assert.Equal(t, "check", f2[0].Stage)
 				assert.Equal(t, "LOW", f2[0].RuleID)
@@ -804,7 +804,7 @@ func TestForEachExecute(t *testing.T) {
 				assert.NotEmpty(t, sc.Lineage("lines[1].check.score"))
 
 				// Per-element firing is still recorded (regression).
-				f0 := sc.FiringRulesFor("lines[0]")
+				f0 := sc.FiringRulesFor("lines[0].check")
 				require.Len(t, f0, 1)
 				assert.Equal(t, "HIGH", f0[0].RuleID)
 			},
@@ -831,7 +831,74 @@ func TestForEachExecute(t *testing.T) {
 				assert.False(t, ok, "no per-element derivations when provenance is off")
 				assert.Empty(t, sc.Derivations())
 				// Firing is independent of provenance and still recorded.
-				assert.Len(t, sc.FiringRulesFor("lines[0]"), 1)
+				assert.Len(t, sc.FiringRulesFor("lines[0].check"), 1)
+			},
+		},
+		{
+			name: "nested foreach preserves the inner element index in the firing key",
+			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
+				vat, err := pipe.NewDecisionTable("vat", []pipe.Rule{
+					{ID: "VAT_STD", Condition: "tax.rate >= 10", Decisions: map[string]pipe.Decision{"band": {Expr: `"standard"`}}},
+					{ID: "VAT_RED", Condition: "tax.rate < 10", Decisions: map[string]pipe.Decision{"band": {Expr: `"reduced"`}}},
+				})
+				require.NoError(t, err)
+				vatPipe, err := pipe.NewPipeline(vat)
+				require.NoError(t, err)
+				taxes, err := pipe.NewForEach("taxes", "line.taxes", vatPipe, pipe.WithForEachAs("tax"))
+				require.NoError(t, err)
+				linesPipe, err := pipe.NewPipeline(taxes)
+				require.NoError(t, err)
+				lines, err := pipe.NewForEach("lines", "orders", linesPipe, pipe.WithForEachAs("line"))
+				require.NoError(t, err)
+
+				sc := pipe.NewScope(map[string]any{
+					"orders": []any{
+						map[string]any{"taxes": []any{
+							map[string]any{"rate": 5},  // element [0][0] -> VAT_RED
+							map[string]any{"rate": 20}, // element [0][1] -> VAT_STD
+						}},
+					},
+				})
+				return lines, sc
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				require.NoError(t, err)
+
+				f00 := sc.FiringRulesFor("lines[0].taxes[0].vat")
+				require.Len(t, f00, 1)
+				assert.Equal(t, "VAT_RED", f00[0].RuleID)
+				assert.Equal(t, "vat", f00[0].Stage) // .Stage stays the bare DT name
+
+				f01 := sc.FiringRulesFor("lines[0].taxes[1].vat")
+				require.Len(t, f01, 1)
+				assert.Equal(t, "VAT_STD", f01[0].RuleID)
+
+				// The flat prefix keys are NOT firing keys (only leaf DT keys are).
+				assert.Empty(t, sc.FiringRulesFor("lines[0]"))
+				assert.Empty(t, sc.FiringRulesFor("lines[0].taxes[1]"))
+			},
+		},
+		{
+			name: "no firing keys recorded when no inner rule fires",
+			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
+				// A single-expr inner pipeline fires no decision-table rules.
+				amt, err := pipe.NewSingleExpr("amt", "item.price * 2")
+				require.NoError(t, err)
+				innerPipe, err := pipe.NewPipeline(amt)
+				require.NoError(t, err)
+				fe, err := pipe.NewForEach("lines", "items", innerPipe)
+				require.NoError(t, err)
+				sc := pipe.NewScope(map[string]any{
+					"items": []any{map[string]any{"price": int64(3)}},
+				})
+				return fe, sc
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				require.NoError(t, err)
+				assert.Empty(t, sc.FiringRules(), "no rules fired, so no firing keys recorded")
+				// The data output is still written.
+				_, ok := sc.Get("lines.items")
+				assert.True(t, ok)
 			},
 		},
 		provenancePropagationCase(),

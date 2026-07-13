@@ -140,9 +140,11 @@ func (f *ForEach) DependsOn() []string { return f.deps }
 // never mutated during iteration. Each element's resulting Snapshot is
 // appended, in order, to a list written to sc at "<name>.<output>". Any rules
 // the inner pipeline fires for element i are recorded on sc under the
-// composite stage key "<name>[i]" (queryable via sc.FiringRulesFor), giving
-// each element its own provenance without disturbing the inner stage's own
-// name. When the outer sc tracks provenance, element i's full derivation graph
+// composite key "<name>[i].<inner stage>" (e.g. "<name>[i].<table>"),
+// preserving the inner stage — and, for a nested foreach, the inner element
+// index (queryable via sc.FiringRulesFor), giving each element its own
+// provenance without disturbing the inner stage's own name. When the outer sc
+// tracks provenance, element i's full derivation graph
 // is also merged onto sc under the "<name>[i]." path prefix, so sc.Lineage /
 // sc.Explain answer per-element lineage (e.g. "<name>[i].<inner output>");
 // nothing is recorded per-element when provenance is off. After every element
@@ -189,8 +191,8 @@ func (f *ForEach) Execute(ctx context.Context, sc *Scope) error {
 			return f.stageErr(fmt.Errorf("element %d: %w", i, err))
 		}
 
-		if elemFirings := esc.FiringRules(); len(elemFirings) > 0 {
-			sc.recordFirings(fmt.Sprintf("%s[%d]", f.name, i), elemFirings)
+		if elemFirings := esc.firingMap(); len(elemFirings) > 0 {
+			sc.recordElementFirings(fmt.Sprintf("%s[%d]", f.name, i), elemFirings)
 		}
 		if sc.TracksProvenance() {
 			sc.recordElementDerivations(fmt.Sprintf("%s[%d]", f.name, i), esc.Derivations())

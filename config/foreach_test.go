@@ -112,11 +112,11 @@ stages:
 				require.True(t, ok)
 				require.Len(t, items, 2)
 
-				f0 := sc.FiringRulesFor("lines[0]")
+				f0 := sc.FiringRulesFor("lines[0].check")
 				require.Len(t, f0, 1)
 				assert.Equal(t, "HIGH", f0[0].RuleID)
 
-				f1 := sc.FiringRulesFor("lines[1]")
+				f1 := sc.FiringRulesFor("lines[1].check")
 				require.Len(t, f1, 1)
 				assert.Equal(t, "LOW", f1[0].RuleID)
 			},

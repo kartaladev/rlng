@@ -26,7 +26,7 @@ import (
 //   - structured per-element output ("lines.items")
 //   - an exact-decimal roll-up of only the approved lines' amounts
 //   - per-element explainability: which rule denied a specific line, via
-//     FiringRulesFor("lines[i]")
+//     FiringRulesFor("lines[i].check")
 func Example_foreachLineItemAdjudication() {
 	const rules = `
 stages:
@@ -102,7 +102,7 @@ stages:
 	fmt.Printf("total approved: %s\n", total.StringFixed(2))
 
 	// Per-element explainability: which rule denied line 3.
-	firings := sc.FiringRulesFor("lines[2]")
+	firings := sc.FiringRulesFor("lines[2].check")
 	if len(firings) != 1 {
 		panic(fmt.Sprintf("expected exactly one firing for line 3, got %d", len(firings)))
 	}

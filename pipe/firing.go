@@ -32,6 +32,43 @@ func (s *Scope) recordFirings(stage string, rules []FiringRule) {
 	s.firing[stage] = rules
 }
 
+// firingMap returns a shallow copy of the raw firing map (composite stage key ->
+// firing rules) so a caller can re-key it without holding the lock. The
+// FiringRule slices are shared (recorded firings are treated as immutable).
+// Returns nil when nothing has fired.
+func (s *Scope) firingMap() map[string][]FiringRule {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if len(s.firing) == 0 {
+		return nil
+	}
+	out := make(map[string][]FiringRule, len(s.firing))
+	for k, v := range s.firing {
+		out[k] = v
+	}
+	return out
+}
+
+// recordElementFirings merges src (a per-element scope's firing map) into s,
+// re-keying each entry to prefix + "." + key. A foreach uses it to surface each
+// element's firing under "<stage>[i].<inner stage key>", preserving the inner
+// stage — and, for a nested foreach, the inner element index — instead of
+// flattening it away. Always recorded (independent of provenance, like
+// recordFirings); a no-op when src is empty. Mirrors recordElementDerivations.
+func (s *Scope) recordElementFirings(prefix string, src map[string][]FiringRule) {
+	if len(src) == 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.firing == nil {
+		s.firing = make(map[string][]FiringRule, len(src))
+	}
+	for k, rules := range src {
+		s.firing[prefix+"."+k] = rules
+	}
+}
+
 // FiringRule returns the first rule that fired for the named decision-table
 // stage, or false if that stage did not run, matched nothing, and had no
 // default. For a policy that can fire several rules (collect, any), use
