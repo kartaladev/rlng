@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"math/big"
 	"reflect"
 	"sort"
 	"strings"
@@ -66,6 +68,12 @@ var ErrNonNumericAggregate = errors.New("decision-table: non-numeric value in nu
 // aggregation exceeds the range of int64. The engine errors rather than
 // silently wrapping or degrading to float64.
 var ErrAggregateOverflow = errors.New("decision-table: integer aggregation overflows int64")
+
+// ErrNonFiniteAggregate is the Cause of a StageError when a NaN or ±Inf float
+// would participate in exact-decimal aggregation. A non-finite float has no
+// decimal representation (decimal.NewFromFloat panics on it), so the engine
+// fails loud rather than crash.
+var ErrNonFiniteAggregate = errors.New("decision-table: non-finite float in decimal aggregation")
 
 // Decision is one output of a decision-table Rule: its value expression and the
 // compile options (fallback, globals, coerce) that apply to that output alone. A
@@ -489,10 +497,17 @@ const (
 )
 
 // classify reports the numeric kind of v, or kindNonNumeric when v is not one
-// of the supported numeric types.
+// of the supported numeric types. A uint above math.MaxInt64 is classified
+// kindDecimal (not kindInt) because it cannot fold in int64 without wrapping —
+// promoting it keeps the aggregation exact.
 func classify(v any) numKind {
-	switch v.(type) {
-	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
+	switch x := v.(type) {
+	case int, int8, int16, int32, int64:
+		return kindInt
+	case uint, uint8, uint16, uint32, uint64:
+		if reflect.ValueOf(x).Uint() > math.MaxInt64 {
+			return kindDecimal
+		}
 		return kindInt
 	case float32, float64:
 		return kindFloat
@@ -599,13 +614,21 @@ func foldFloat(vals []any, op numericOp) (any, error) {
 }
 
 // foldDecimal folds vals (any decimal present) in decimal.Decimal for exact
-// arithmetic. min/max return the actual matched element.
+// arithmetic. min/max return the actual matched element. A non-finite float
+// among vals has no decimal representation and is ErrNonFiniteAggregate rather
+// than a panic.
 func foldDecimal(vals []any, op numericOp) (any, error) {
-	acc, _ := asDecimal(vals[0])
+	acc, ok := asDecimal(vals[0])
+	if !ok {
+		return nil, fmt.Errorf("%w: %v (%T)", ErrNonFiniteAggregate, vals[0], vals[0])
+	}
 	best := acc
 	bestIdx := 0
 	for i := 1; i < len(vals); i++ {
-		d, _ := asDecimal(vals[i])
+		d, ok := asDecimal(vals[i])
+		if !ok {
+			return nil, fmt.Errorf("%w: %v (%T)", ErrNonFiniteAggregate, vals[i], vals[i])
+		}
 		switch op {
 		case aggSum:
 			acc = acc.Add(d)
@@ -657,10 +680,11 @@ func toFloat64(v any) float64 {
 	}
 }
 
-// asDecimal converts a numeric value (int/uint kinds, float32/64, or an
-// already-decimal.Decimal) to decimal.Decimal. ok is false only for a
-// non-numeric v; callers that have already classified v as numeric can
-// disregard it.
+// asDecimal converts a numeric value (int/uint kinds, finite float32/64, or an
+// already-decimal.Decimal) to decimal.Decimal. ok is false for a non-numeric v
+// or a non-finite float (NaN/±Inf), which has no decimal representation —
+// callers must not pass such a value to decimal.NewFromFloat (it panics). Full
+// uint64 range is preserved via big.Int (int64(rv.Uint()) would wrap).
 func asDecimal(v any) (decimal.Decimal, bool) {
 	if d, ok := v.(decimal.Decimal); ok {
 		return d, true
@@ -670,9 +694,13 @@ func asDecimal(v any) (decimal.Decimal, bool) {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		return decimal.NewFromInt(rv.Int()), true
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return decimal.NewFromInt(int64(rv.Uint())), true
+		return decimal.NewFromBigInt(new(big.Int).SetUint64(rv.Uint()), 0), true
 	case reflect.Float32, reflect.Float64:
-		return decimal.NewFromFloat(rv.Float()), true
+		f := rv.Float()
+		if math.IsNaN(f) || math.IsInf(f, 0) {
+			return decimal.Decimal{}, false
+		}
+		return decimal.NewFromFloat(f), true
 	default:
 		return decimal.Decimal{}, false
 	}
@@ -685,9 +713,13 @@ func asDecimal(v any) (decimal.Decimal, bool) {
 func valuesAgree(a, b any) bool {
 	ka, kb := classify(a), classify(b)
 	if ka != kindNonNumeric && kb != kindNonNumeric {
-		da, _ := asDecimal(a)
-		db, _ := asDecimal(b)
-		return da.Equal(db)
+		da, oka := asDecimal(a)
+		db, okb := asDecimal(b)
+		if oka && okb {
+			return da.Equal(db)
+		}
+		// A non-finite float has no decimal form; fall through to identity
+		// comparison rather than panic (it will simply not agree with a decimal).
 	}
 	return reflect.DeepEqual(a, b)
 }

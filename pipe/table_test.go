@@ -625,3 +625,86 @@ func TestDecisionTableAccessors(t *testing.T) {
 	assert.Equal(t, pipe.TypeDecisionTable, d.Type())
 	assert.Equal(t, []string{"amount"}, d.DependsOn())
 }
+
+// TestDecisionTableAggregationNonFiniteFloat guards the decimal-aggregation path
+// against a non-finite float: decimal.NewFromFloat panics on NaN/±Inf, so a
+// collect+sum table mixing a decimal decision with a 1.0/0.0 (=+Inf) decision
+// must fail loud with a typed error rather than crash the process. Regression
+// for the audit finding (asDecimal reached NewFromFloat unguarded).
+func TestDecisionTableAggregationNonFiniteFloat(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name  string
+		exprs []string
+	}{
+		{name: "positive infinity", exprs: []string{`decimal("1.0")`, `1.0/0.0`}},
+		{name: "nan", exprs: []string{`decimal("1.0")`, `0.0/0.0`}},
+		{name: "negative infinity", exprs: []string{`decimal("1.0")`, `-1.0/0.0`}},
+		// Non-finite as the FIRST value (accumulator seed) must also fail loud.
+		{name: "infinity first then decimal", exprs: []string{`1.0/0.0`, `decimal("1.0")`}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rules := make([]pipe.Rule, len(tc.exprs))
+			for i, e := range tc.exprs {
+				rules[i] = pipe.Rule{Condition: "true", Decisions: map[string]pipe.Decision{"v": {Expr: e}}}
+			}
+			d, err := pipe.NewDecisionTable("agg", rules,
+				pipe.WithHitPolicy(pipe.HitPolicyCollect), pipe.WithCollectAggregation(pipe.AggregateSum))
+			require.NoError(t, err)
+
+			sc := pipe.NewScope(nil)
+			var execErr error
+			require.NotPanics(t, func() { execErr = d.Execute(t.Context(), sc) })
+			assert.ErrorIs(t, execErr, pipe.ErrNonFiniteAggregate)
+		})
+	}
+}
+
+// TestDecisionTableAggregationUint64Overflow guards against silent int64 wrap
+// when a decision value is a uint64 above math.MaxInt64: the sum must be exact
+// (promoted to decimal) rather than wrapping via int64(rv.Uint()). Regression
+// for the audit finding (toInt64/asDecimal cast uint64 through int64).
+func TestDecisionTableAggregationUint64Overflow(t *testing.T) {
+	t.Parallel()
+
+	rules := []pipe.Rule{
+		{Condition: "true", Decisions: map[string]pipe.Decision{"v": {Expr: "big"}}},
+		{Condition: "true", Decisions: map[string]pipe.Decision{"v": {Expr: "one"}}},
+	}
+	d, err := pipe.NewDecisionTable("agg", rules,
+		pipe.WithHitPolicy(pipe.HitPolicyCollect), pipe.WithCollectAggregation(pipe.AggregateSum))
+	require.NoError(t, err)
+
+	sc := pipe.NewScope(map[string]any{"big": uint64(math.MaxUint64), "one": uint64(1)})
+	require.NoError(t, d.Execute(t.Context(), sc))
+	got, ok := sc.Get("agg.v")
+	require.True(t, ok)
+
+	// MaxUint64 + 1 = 2^64, exact in decimal; the int64 path would wrap to 0.
+	want := decimal.RequireFromString("18446744073709551616")
+	d2, isDec := got.(decimal.Decimal)
+	require.True(t, isDec, "expected exact decimal, got %T (%v) — int64 wrap not fixed", got, got)
+	assert.True(t, want.Equal(d2), "got %s, want %s", d2, want)
+}
+
+// TestDecisionTableAnyNonFiniteFloatNoPanic guards valuesAgree (HitPolicyAny)
+// against a non-finite float compared with a decimal: it must fall back to
+// identity comparison rather than panic in asDecimal, so the values are reported
+// as conflicting rather than crashing.
+func TestDecisionTableAnyNonFiniteFloatNoPanic(t *testing.T) {
+	t.Parallel()
+
+	d, err := pipe.NewDecisionTable("agg", []pipe.Rule{
+		{Condition: "true", Decisions: map[string]pipe.Decision{"v": {Expr: `1.0/0.0`}}},
+		{Condition: "true", Decisions: map[string]pipe.Decision{"v": {Expr: `decimal("1.0")`}}},
+	}, pipe.WithHitPolicy(pipe.HitPolicyAny))
+	require.NoError(t, err)
+
+	sc := pipe.NewScope(nil)
+	var execErr error
+	require.NotPanics(t, func() { execErr = d.Execute(t.Context(), sc) })
+	assert.ErrorIs(t, execErr, pipe.ErrConflictingMatches)
+}
