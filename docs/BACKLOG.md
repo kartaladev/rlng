@@ -17,7 +17,7 @@ spec+plan+ADR chain).
 
 | ID | Title | Source | Category | Altitude | Priority |
 |----|-------|--------|----------|----------|----------|
-| **B1** | Dot-path roll-up keys | ADR-0040; `pipe/foreach.go:211` (`applyRollup`) | feature-gap | contained (backward-compat) | **P1** |
+| ~~**B1**~~ | ~~Dot-path roll-up keys~~ | — | — | — | ✅ **Done** (incr 017, ADR-0042) |
 | **B2** | `foreach` per-element scope-copy benchmark | ADR-0040 | perf/benchmark | contained | **P1** |
 | **B3** | Numeric-coercing Scope getters | Spec 006 non-goal; `pipe/get.go` | feature-gap (ergonomics) | additive | **P2** |
 | **B4** | `Hash()` rejects non-marshalable hand-built defs | ADR-0037 | hardening/tech-debt | contained (edge case) | **P2** |
@@ -32,10 +32,10 @@ spec+plan+ADR chain).
 
 ### Details
 
-**B1 — Dot-path roll-up keys.** `Rollup.Key` is looked up as a flat top-level key in each element's result
-map (`m[r.Key]`). Rolling up a decision-table output (namespaced `<table>.<key>`) currently needs a
-companion `single-expr` to surface the value top-level. Making `Key` dot-path-aware is backward-compatible
-(a dot-free key is unchanged). *Highest value / lowest cost — the most self-contained enhancement.*
+**B1 — Dot-path roll-up keys. ✅ DONE (increment 017, ADR-0042).** `Rollup.Key` is now dot-path-aware —
+`applyRollup` resolves it via the shared `lookupPath` helper, so a decision-table output (`<table>.<key>`)
+rolls up directly with no companion `single-expr`. Backward-compatible (dot-free key unchanged); no
+`Hash()`/schema change.
 
 **B2 — `foreach` scope-copy benchmark.** Each element deep-copies the outer scope's map spine via
 `Snapshot()`+`NewScope` — O(elements × outer-scope size). Fine for typical line-item counts; ADR-0040
@@ -90,6 +90,7 @@ Deferrals found in the docs but confirmed already implemented — excluded from 
 
 | Deferral (as originally recorded) | Closed by |
 |-----------------------------------|-----------|
+| Dot-path roll-up keys (B1; ADR-0040) | Increment 017 / ADR-0042 |
 | Exact decimal money (ADR-0030) | Increment 014 / ADR-0038 + ADR-0039 |
 | `foreach` stage (ADR-0030) | Increment 015 / ADR-0040 |
 | Config-declared output mapping (ADR-0009; Spec 005/008 non-goals) | Increment 010 / ADR-0028 |

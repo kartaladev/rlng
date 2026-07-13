@@ -35,11 +35,16 @@ type ForEach struct {
 }
 
 // Rollup reduces a per-element output key across all elements into a single
-// header value, written to the outer Scope at "<stage name>.<As>". Key is
-// looked up in each element's result map (produced by the inner pipeline);
-// elements missing Key are skipped. Agg is the same CollectAggregation used
-// by a HitPolicyCollect DecisionTable, so a Rollup carries the same int64/
-// decimal.Decimal/float64 fidelity as decision-table aggregation.
+// header value, written to the outer Scope at "<stage name>.<As>". Key is a
+// dot-separated path resolved in each element's result map (produced by the
+// inner pipeline): a dot-free key is a top-level lookup, while a nested key
+// such as "grade.score" reads a value an inner stage namespaced under its own
+// name — e.g. a decision-table output "<table>.<key>" — without a companion
+// single-expr to surface it. An element whose path is missing, or whose
+// intermediate segment is not a map, is skipped. Agg is the same
+// CollectAggregation used by a HitPolicyCollect DecisionTable, so a Rollup
+// carries the same int64/decimal.Decimal/float64 fidelity as decision-table
+// aggregation.
 type Rollup struct {
 	Key string
 	Agg CollectAggregation
@@ -208,7 +213,7 @@ func (f *ForEach) applyRollup(sc *Scope, r Rollup, items []any) error {
 	vals := make([]any, 0, len(items))
 	for _, item := range items {
 		m := item.(map[string]any) //nolint:errcheck // items are always esc.Snapshot() results
-		if v, ok := m[r.Key]; ok {
+		if v, ok := lookupPath(m, r.Key); ok {
 			vals = append(vals, v)
 		}
 	}

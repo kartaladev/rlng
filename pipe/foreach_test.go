@@ -415,6 +415,99 @@ func TestForEachExecute(t *testing.T) {
 			},
 		},
 		{
+			// B1 (spec 017): a dot-path Rollup.Key rolls up a decision-table
+			// output (<table>.<key>) directly. Only elements the table matched
+			// supply "grade.score", so the sum folds over the matched subset.
+			name: "rollup Key resolves a decision-table dot-path output, folding matched elements",
+			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
+				grade, err := pipe.NewDecisionTable("grade", []pipe.Rule{
+					{ID: "OK", Condition: "item.amt >= 20", Decisions: map[string]string{"score": "item.amt"}},
+				})
+				require.NoError(t, err)
+				innerPipe, err := pipe.NewPipeline(grade)
+				require.NoError(t, err)
+
+				fe, err := pipe.NewForEach("lines", "items", innerPipe,
+					pipe.WithRollups(pipe.Rollup{Key: "grade.score", Agg: pipe.AggregateSum, As: "total"}))
+				require.NoError(t, err)
+
+				sc := pipe.NewScope(map[string]any{
+					"items": []any{
+						map[string]any{"amt": int64(10)}, // below threshold: no grade.score
+						map[string]any{"amt": int64(30)},
+						map[string]any{"amt": int64(40)},
+					},
+				})
+				return fe, sc
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				require.NoError(t, err)
+				got, ok := sc.Get("lines.total")
+				require.True(t, ok)
+				assert.Equal(t, int64(70), got, "sum over the two matched elements' grade.score")
+			},
+		},
+		{
+			// A dot-path whose intermediate segment is a scalar (not a map) is
+			// unresolvable, so every element is skipped — Sum over an empty fold
+			// leaves the output key absent (same contract as a missing flat key).
+			name: "rollup dot-path into a non-map intermediate skips every element",
+			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
+				inner, err := pipe.NewSingleExpr("amt", "item.amt")
+				require.NoError(t, err)
+				innerPipe, err := pipe.NewPipeline(inner)
+				require.NoError(t, err)
+
+				fe, err := pipe.NewForEach("lines", "items", innerPipe,
+					pipe.WithRollups(pipe.Rollup{Key: "amt.score", Agg: pipe.AggregateSum, As: "total"}))
+				require.NoError(t, err)
+
+				sc := pipe.NewScope(map[string]any{
+					"items": []any{
+						map[string]any{"amt": int64(10)},
+						map[string]any{"amt": int64(20)},
+					},
+				})
+				return fe, sc
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				require.NoError(t, err)
+				_, ok := sc.Get("lines.total")
+				assert.False(t, ok, "Sum over an empty fold leaves the key absent")
+			},
+		},
+		{
+			// A dot-path whose top segment no element produces (the table never
+			// matches) is skipped for all; Count over an empty fold writes 0.
+			name: "rollup dot-path missing on every element yields Count 0",
+			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
+				grade, err := pipe.NewDecisionTable("grade", []pipe.Rule{
+					{ID: "NEVER", Condition: "false", Decisions: map[string]string{"score": "item.amt"}},
+				})
+				require.NoError(t, err)
+				innerPipe, err := pipe.NewPipeline(grade)
+				require.NoError(t, err)
+
+				fe, err := pipe.NewForEach("lines", "items", innerPipe,
+					pipe.WithRollups(pipe.Rollup{Key: "grade.score", Agg: pipe.AggregateCount, As: "n"}))
+				require.NoError(t, err)
+
+				sc := pipe.NewScope(map[string]any{
+					"items": []any{
+						map[string]any{"amt": int64(10)},
+						map[string]any{"amt": int64(20)},
+					},
+				})
+				return fe, sc
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				require.NoError(t, err)
+				got, ok := sc.Get("lines.n")
+				require.True(t, ok)
+				assert.Equal(t, 0, got, "Count over an empty fold is 0")
+			},
+		},
+		{
 			name: "rollup min over decimal outputs returns the exact matched element",
 			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
 				inner, err := pipe.NewSingleExpr("amt", "item.amt")

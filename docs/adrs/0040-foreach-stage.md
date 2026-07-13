@@ -117,12 +117,12 @@ landed on this core. The final `main..HEAD` review settled three more points:
   `Key` a silently-empty roll-up. The config builder surfaces it as a
   `*ConfigError` naming the stage.
 - **Deferred to a later increment (backlog, not blocking):**
-  - *Dot-path roll-up keys.* `Rollup.Key` is looked up as a flat top-level key
-    in each element's result map, so rolling up a **decision-table** output
-    (namespaced `<table>.<key>`) currently needs a companion `single-expr` to
-    surface the value top-level (as the acceptance example shows). A future
-    increment may make `Key` dot-path-aware (backward-compatible: a dot-free
-    key is unchanged). Documented as the roll-up contract for now.
+  - *Dot-path roll-up keys.* **RESOLVED in increment 017 (ADR-0042).** `Rollup.Key`
+    was originally looked up as a flat top-level key in each element's result map,
+    so rolling up a **decision-table** output (namespaced `<table>.<key>`) needed a
+    companion `single-expr` to surface the value top-level. `Key` is now
+    dot-path-aware (backward-compatible: a dot-free key is unchanged), so the
+    companion stage is no longer required.
   - *Per-element lineage (D5 beyond firing).* Per-element firing is recorded on
     the outer scope under `<stage>[i]`, but each element's full derivation graph
     (built when the outer scope tracks provenance) is discarded — only the data
