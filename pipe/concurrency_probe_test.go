@@ -103,6 +103,21 @@ func (s *cancelThenErrStage) Execute(context.Context, *pipe.Scope) error {
 	return s.err
 }
 
+// panicStage panics with a fixed value, exercising that the wave runner recovers
+// the goroutine panic (no process crash) and re-raises it to Run's caller.
+type panicStage struct {
+	name  string
+	deps  []string
+	value any
+}
+
+func (s *panicStage) Name() string        { return s.name }
+func (s *panicStage) Type() string        { return "test-panic" }
+func (s *panicStage) DependsOn() []string { return s.deps }
+func (s *panicStage) Execute(context.Context, *pipe.Scope) error {
+	panic(s.value)
+}
+
 // setStage records that it ran by setting a bool at its own name.
 type setStage struct {
 	name string

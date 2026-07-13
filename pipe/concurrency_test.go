@@ -146,6 +146,68 @@ func TestPipelineConcurrencyStageCancelSurfacesStageError(t *testing.T) {
 	assert.NotErrorIs(t, runErr, context.Canceled)
 }
 
+func TestPipelineConcurrencyRecoversAndReRaisesStagePanic(t *testing.T) {
+	// A panicking stage under concurrency must not crash the process: the wave
+	// runner recovers the goroutine panic and re-raises it to Run's caller, who
+	// can recover — matching sequential panic propagation.
+	p, err := pipe.NewPipeline([]pipe.Stage{&panicStage{name: "a", value: "boom"}}, pipe.WithConcurrency())
+	require.NoError(t, err)
+
+	var recovered any
+	func() {
+		defer func() { recovered = recover() }()
+		_ = p.Run(t.Context(), pipe.NewScope(nil))
+	}()
+	assert.Equal(t, "boom", recovered)
+}
+
+func TestPipelineConcurrencyPanicErrorPrecedence(t *testing.T) {
+	stageErr := errors.New("b failed")
+
+	tests := []struct {
+		name   string
+		stages []pipe.Stage
+		assert func(t *testing.T, recovered any, runErr error)
+	}{
+		{
+			name: "topo-earlier panic beats a later error",
+			stages: []pipe.Stage{
+				&panicStage{name: "a", value: "boom-a"},
+				&erroringStage{name: "b", err: stageErr},
+			},
+			assert: func(t *testing.T, recovered any, runErr error) {
+				assert.Equal(t, "boom-a", recovered) // "a" is topo-first: re-panic
+			},
+		},
+		{
+			name: "topo-earlier error beats a later panic",
+			stages: []pipe.Stage{
+				&erroringStage{name: "a", err: stageErr},
+				&panicStage{name: "b", value: "boom-b"},
+			},
+			assert: func(t *testing.T, recovered any, runErr error) {
+				assert.Nil(t, recovered) // "a" is topo-first: error, no panic
+				assert.ErrorIs(t, runErr, stageErr)
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p, err := pipe.NewPipeline(tc.stages, pipe.WithConcurrency())
+			require.NoError(t, err)
+
+			var recovered any
+			var runErr error
+			func() {
+				defer func() { recovered = recover() }()
+				runErr = p.Run(t.Context(), pipe.NewScope(nil))
+			}()
+			tc.assert(t, recovered, runErr)
+		})
+	}
+}
+
 func TestPipelineConcurrencyContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel() // pre-cancelled

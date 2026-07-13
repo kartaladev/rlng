@@ -277,35 +277,53 @@ func (p *Pipeline) runSequential(ctx context.Context, sc *Scope) error {
 // Cancellation matches the sequential semantics: ctx is checked before each
 // level (as sequential checks before each stage), so a caller cancellation
 // between levels short-circuits with ctx.Err(); a cancellation observed while a
-// level runs surfaces through a stage's own ctx.Canceled return, which
-// topoMinError then selects — no separate ctx re-check is needed (and re-adding
-// one would wrongly mask a real stage error, since sequential does not re-check
-// ctx after running a stage). The reported stage order is reconstructed to topo
-// order, never completion order.
+// level runs surfaces through a stage's own ctx.Canceled return, which the
+// topo-earliest-failure selection then picks — no separate ctx re-check is
+// needed (and re-adding one would wrongly mask a real stage error, since
+// sequential does not re-check ctx after running a stage). The reported stage
+// order is reconstructed to topo order, never completion order.
 func (p *Pipeline) runWaves(ctx context.Context, sc *Scope) error {
 	defer sc.reorderStages(p.orderedNames())
 	for _, level := range p.levels {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if errs := p.runLevel(ctx, sc, level); len(errs) > 0 {
-			return topoMinError(p.ordered, errs)
+		errs, panics := p.runLevel(ctx, sc, level)
+		if len(errs) == 0 && len(panics) == 0 {
+			continue
+		}
+		// The failing stages are all in this (topo-earliest failing) level, so
+		// the topo-earliest failure overall is the first ordered stage present in
+		// either map. If it panicked, re-panic from here — Run's own goroutine —
+		// so the panic reaches Run's caller exactly as sequential execution would
+		// (a stage goroutine's own recover already stopped the process crash).
+		for _, s := range p.ordered {
+			name := s.Name()
+			if v, ok := panics[name]; ok {
+				panic(v)
+			}
+			if e, ok := errs[name]; ok {
+				return e
+			}
 		}
 	}
 	return nil
 }
 
 // runLevel executes a level's (mutually independent) stages concurrently,
-// bounded by a semaphore when maxParallel > 0, and returns the errors keyed by
-// stage name. Every stage in the level runs to completion even if a sibling
-// fails (no internal fail-fast), so the topo-earliest failure can be selected
-// deterministically.
-func (p *Pipeline) runLevel(ctx context.Context, sc *Scope, level []Stage) map[string]error {
+// bounded by a semaphore when maxParallel > 0. It returns the stage errors and
+// recovered stage panics, each keyed by stage name. Every stage in the level
+// runs to completion even if a sibling fails (no internal fail-fast), so the
+// topo-earliest failure can be selected deterministically. A panicking stage is
+// recovered here (so an unrecovered goroutine panic never crashes the process)
+// and re-raised by runWaves to preserve sequential panic semantics.
+func (p *Pipeline) runLevel(ctx context.Context, sc *Scope, level []Stage) (map[string]error, map[string]any) {
 	var (
-		mu   sync.Mutex
-		errs = make(map[string]error)
-		wg   sync.WaitGroup
-		sem  chan struct{}
+		mu     sync.Mutex
+		errs   = make(map[string]error)
+		panics = make(map[string]any)
+		wg     sync.WaitGroup
+		sem    chan struct{}
 	)
 	if p.maxParallel > 0 {
 		sem = make(chan struct{}, p.maxParallel)
@@ -320,6 +338,13 @@ func (p *Pipeline) runLevel(ctx context.Context, sc *Scope, level []Stage) map[s
 			if sem != nil {
 				defer func() { <-sem }()
 			}
+			defer func() {
+				if r := recover(); r != nil {
+					mu.Lock()
+					panics[st.Name()] = r
+					mu.Unlock()
+				}
+			}()
 			if err := sc.timeStage(st.Name(), func() error { return st.Execute(ctx, sc) }); err != nil {
 				mu.Lock()
 				errs[st.Name()] = err
@@ -328,18 +353,7 @@ func (p *Pipeline) runLevel(ctx context.Context, sc *Scope, level []Stage) map[s
 		}()
 	}
 	wg.Wait()
-	return errs
-}
-
-// topoMinError returns the error of the topo-earliest failing stage — exactly
-// the error a sequential Run would surface.
-func topoMinError(ordered []Stage, errs map[string]error) error {
-	for _, s := range ordered {
-		if e, ok := errs[s.Name()]; ok {
-			return e
-		}
-	}
-	return nil
+	return errs, panics
 }
 
 func (p *Pipeline) orderedNames() []string {
