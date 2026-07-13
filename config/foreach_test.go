@@ -1,7 +1,6 @@
 package config_test
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/kartaladev/rlng/config"
@@ -339,7 +338,52 @@ stages:
 			},
 		},
 		{
-			name: "nested foreach is rejected naming both outer and inner stage",
+			name: "nested foreach builds, runs, and fires per inner element",
+			yaml: `
+stages:
+  - name: lines
+    type: foreach
+    collection: orders
+    as: line
+    stages:
+      - name: taxes
+        type: foreach
+        collection: line.taxes
+        as: tax
+        stages:
+          - name: vat
+            type: decision-table
+            rules:
+              - id: VAT_STD
+                condition: tax.rate >= 10
+                decisions:
+                  band: '"standard"'
+              - id: VAT_RED
+                condition: tax.rate < 10
+                decisions:
+                  band: '"reduced"'
+`,
+			assert: func(t *testing.T, d *config.PipelineDef, buildErr error) {
+				require.NoError(t, buildErr)
+				p, err := d.Build()
+				require.NoError(t, err)
+
+				sc := pipe.NewScope(map[string]any{
+					"orders": []any{
+						map[string]any{"taxes": []any{
+							map[string]any{"rate": int64(5)},
+							map[string]any{"rate": int64(20)},
+						}},
+					},
+				})
+				require.NoError(t, p.Run(t.Context(), sc))
+
+				assert.Equal(t, "VAT_RED", sc.FiringRulesFor("lines[0].taxes[0].vat")[0].RuleID)
+				assert.Equal(t, "VAT_STD", sc.FiringRulesFor("lines[0].taxes[1].vat")[0].RuleID)
+			},
+		},
+		{
+			name: "nested foreach reusing `as` down the chain is rejected naming both stages",
 			yaml: `
 stages:
   - name: outer
@@ -348,23 +392,48 @@ stages:
     stages:
       - name: inner
         type: foreach
-        collection: sub
+        collection: item.sub
         stages:
           - name: amt
             type: single-expr
-            expr: line.price
+            expr: item.price
 `,
 			assert: func(t *testing.T, d *config.PipelineDef, buildErr error) {
 				require.NoError(t, buildErr)
 				_, err := d.Build()
 				require.Error(t, err)
-				assert.ErrorIs(t, err, config.ErrNestedForEach)
-
+				assert.ErrorIs(t, err, config.ErrForEachAsCollision)
 				var ce *config.ConfigError
 				require.ErrorAs(t, err, &ce)
-				assert.Equal(t, "outer", ce.Stage)
-				assert.Contains(t, err.Error(), "outer")
-				assert.Contains(t, err.Error(), "inner")
+				assert.Equal(t, "inner", ce.Stage)
+				assert.Equal(t, "as", ce.Field)
+				assert.Contains(t, err.Error(), "outer") // enclosing stage named
+				assert.Contains(t, err.Error(), "inner") // colliding stage named
+			},
+		},
+		{
+			name: "sibling foreach stages may reuse the same `as` (independent chains)",
+			yaml: `
+stages:
+  - name: a
+    type: foreach
+    collection: xs
+    stages:
+      - name: ax
+        type: single-expr
+        expr: item.v
+  - name: b
+    type: foreach
+    collection: ys
+    stages:
+      - name: bx
+        type: single-expr
+        expr: item.v
+`,
+			assert: func(t *testing.T, d *config.PipelineDef, buildErr error) {
+				require.NoError(t, buildErr)
+				_, err := d.Build()
+				require.NoError(t, err, "siblings default `as: item` on independent chains must build")
 			},
 		},
 	}
@@ -404,5 +473,4 @@ func TestBuildForEachRollupAggregationError(t *testing.T) {
 	require.ErrorAs(t, err, &ce)
 	assert.Equal(t, "lines", ce.Stage)
 	assert.Equal(t, "rollups", ce.Field)
-	assert.False(t, errors.Is(err, config.ErrNestedForEach))
 }

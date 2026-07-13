@@ -54,11 +54,13 @@ type StageDef struct {
 	// foreach: Collection is the Scope path to a []any; As names the
 	// per-element binding (default "item", see pipe.WithForEachAs); Stages are
 	// the inner sub-pipeline's stage definitions, built and topologically
-	// sorted the same way as the top-level pipeline (a nested foreach among
-	// them is rejected — see ErrNestedForEach); Rollups reduce a per-element
-	// output key across all elements into a header value. Output (shared with
-	// single-expr, above) names the per-element results list key (default
-	// "items", see pipe.WithForEachOutput).
+	// sorted the same way as the top-level pipeline (an inner stage may itself
+	// be a foreach — nesting is supported; each foreach in a nesting chain must
+	// bind its element under a distinct `as`, see ErrForEachAsCollision, and
+	// nested fan-out is multiplicative in the collection sizes); Rollups reduce
+	// a per-element output key across all elements into a header value. Output
+	// (shared with single-expr, above) names the per-element results list key
+	// (default "items", see pipe.WithForEachOutput).
 	//
 	// These four carry `omitempty` on the JSON tag (unlike the older fields
 	// above) so a stage that uses none of them serializes exactly as it did

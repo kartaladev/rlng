@@ -12,12 +12,13 @@ import (
 // stages (e.g. an empty or truncated config document).
 var ErrNoStages = errors.New("pipeline has no stages")
 
-// ErrNestedForEach is the Cause of the ConfigError returned when a foreach
-// stage's inner Stages list contains another foreach stage. Nesting is
-// rejected at build time (D7): a foreach's inner pipeline runs once per
-// element, and a nested foreach would compound that fan-out in a way the
-// config surface does not yet support.
-var ErrNestedForEach = errors.New("foreach: nested foreach is not supported")
+// ErrForEachAsCollision is the Cause of the ConfigError returned when a foreach
+// nesting chain reuses an `as` element-binding name (e.g. an outer and inner
+// foreach both defaulting to "item"). A reused name would silently shadow the
+// enclosing element in the inner per-element scope, so it is rejected at build
+// time. Sibling foreach stages on different root-to-leaf chains may reuse a
+// name (they run in independent scopes).
+var ErrForEachAsCollision = errors.New("foreach: `as` element binding reused by a nested foreach")
 
 // Build compiles the definition into a *pipe.Pipeline, mapping each StageDef to
 // the matching stage constructor in list order. Expression and name validation
@@ -38,6 +39,9 @@ func (d *PipelineDef) Build(opts ...BuildOption) (*pipe.Pipeline, error) {
 		return nil, &ConfigError{Cause: ErrNoStages}
 	}
 	if err := d.hydrateConstants(); err != nil {
+		return nil, err
+	}
+	if err := validateForEachAsChains(d.Stages, nil); err != nil {
 		return nil, err
 	}
 	if cfg.lintErrors {
@@ -292,11 +296,12 @@ func (sd StageDef) buildTable(base []pipe.Option, constants, schema map[string]a
 // buildForEach builds a foreach stage: each inner StageDef is built via the
 // same StageDef.build path used for top-level stages (so an inner stage sees
 // the same constants/schema/strict-env), assembled into a *pipe.Pipeline, and
-// wrapped by pipe.NewForEach. A nested foreach among sd.Stages is rejected
-// before it is built (ErrNestedForEach), naming both the outer and inner
-// stage. depends-on comes from sd.DependsOn via WithForEachDependsOn rather
-// than base, since base carries a pipe.Option (WithDependsOn), not a
-// pipe.ForEachOption.
+// wrapped by pipe.NewForEach. An inner stage may itself be a foreach — the
+// isd.build dispatch recurses back into buildForEach, so nesting composes
+// without any special-casing here; the as-chain collision guard runs once,
+// up front, in Build (validateForEachAsChains). depends-on comes from
+// sd.DependsOn via WithForEachDependsOn rather than base, since base carries
+// a pipe.Option (WithDependsOn), not a pipe.ForEachOption.
 func (sd StageDef) buildForEach(base []pipe.Option, constants, schema map[string]any, strict bool) (pipe.Stage, error) { //nolint:unparam // base is part of the shared build-dispatch signature; see doc comment.
 	if len(sd.Stages) == 0 {
 		return nil, &ConfigError{Stage: sd.Name, Field: "stages", Cause: errors.New("foreach requires at least one inner stage")}
@@ -304,9 +309,6 @@ func (sd StageDef) buildForEach(base []pipe.Option, constants, schema map[string
 
 	inner := make([]pipe.Stage, 0, len(sd.Stages))
 	for _, isd := range sd.Stages {
-		if isd.Type == pipe.TypeForEach {
-			return nil, &ConfigError{Stage: sd.Name, Field: "stages", Cause: fmt.Errorf("inner stage %q: %w", isd.Name, ErrNestedForEach)}
-		}
 		st, err := isd.build(constants, schema, strict)
 		if err != nil {
 			return nil, err // already a *ConfigError naming the inner stage
@@ -344,6 +346,45 @@ func (sd StageDef) buildForEach(base []pipe.Option, constants, schema map[string
 		return nil, &ConfigError{Cause: err} // stage error already names the stage
 	}
 	return s, nil
+}
+
+// asBinding pairs a foreach stage name with its effective `as` element binding,
+// used to detect an `as` reused down a nesting chain.
+type asBinding struct{ stage, as string }
+
+// validateForEachAsChains walks the foreach nesting tree in stages and rejects
+// any root-to-leaf chain that reuses an `as` element binding, which would
+// silently shadow an enclosing element in the inner per-element scope. chain
+// holds the (stage, effective-as) of the enclosing foreach ancestors; sibling
+// foreaches on different chains may reuse a name. Non-foreach stages are
+// skipped (their own inner Stages, if any, belong to a foreach handled here).
+func validateForEachAsChains(stages []StageDef, chain []asBinding) error {
+	for _, sd := range stages {
+		if sd.Type != pipe.TypeForEach {
+			continue
+		}
+		as := sd.As
+		if as == "" {
+			as = "item" // must match pipe.NewForEach's default (WithForEachAs)
+		}
+		for _, prior := range chain {
+			if prior.as == as {
+				return &ConfigError{
+					Stage: sd.Name, Field: "as",
+					Cause: fmt.Errorf("%w: inner foreach %q reuses element binding %q of enclosing foreach %q",
+						ErrForEachAsCollision, sd.Name, as, prior.stage),
+				}
+			}
+		}
+		// Copy the chain so sibling recursions cannot alias the backing array.
+		child := make([]asBinding, len(chain), len(chain)+1)
+		copy(child, chain)
+		child = append(child, asBinding{stage: sd.Name, as: as})
+		if err := validateForEachAsChains(sd.Stages, child); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // decisionsFrom converts a key->ExprDef decision set to key->pipe.Decision,
