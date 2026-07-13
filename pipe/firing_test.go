@@ -23,8 +23,8 @@ func TestFiringRule(t *testing.T) {
 			name: "single: firing rule id and message recorded",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("grade", []pipe.Rule{
-					{ID: "PRIME", Message: "prime tier", Condition: "score >= 750", Decisions: map[string]string{"tier": `"prime"`}},
-					{ID: "SUB", Condition: "true", Decisions: map[string]string{"tier": `"sub"`}},
+					{ID: "PRIME", Message: "prime tier", Condition: "score >= 750", Decisions: map[string]pipe.Decision{"tier": {Expr: `"prime"`}}},
+					{ID: "SUB", Condition: "true", Decisions: map[string]pipe.Decision{"tier": {Expr: `"sub"`}}},
 				})
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"score": 800})
@@ -41,8 +41,8 @@ func TestFiringRule(t *testing.T) {
 			name: "unique: firing rule recorded",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("g", []pipe.Rule{
-					{ID: "A", Condition: "score >= 750", Decisions: map[string]string{"x": "1"}},
-					{ID: "B", Condition: "score < 600", Decisions: map[string]string{"x": "2"}},
+					{ID: "A", Condition: "score >= 750", Decisions: map[string]pipe.Decision{"x": {Expr: "1"}}},
+					{ID: "B", Condition: "score < 600", Decisions: map[string]pipe.Decision{"x": {Expr: "2"}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyUnique))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"score": 800})
@@ -57,8 +57,8 @@ func TestFiringRule(t *testing.T) {
 			name: "default fired is flagged",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("g", []pipe.Rule{
-					{ID: "A", Condition: "false", Decisions: map[string]string{"x": "1"}},
-				}, pipe.WithDefault(map[string]string{"x": "9"}))
+					{ID: "A", Condition: "false", Decisions: map[string]pipe.Decision{"x": {Expr: "1"}}},
+				}, pipe.WithDefault(map[string]pipe.Decision{"x": {Expr: "9"}}))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{})
 			},
@@ -73,7 +73,7 @@ func TestFiringRule(t *testing.T) {
 			name: "no match and no default records nothing",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("g", []pipe.Rule{
-					{ID: "A", Condition: "false", Decisions: map[string]string{"x": "1"}},
+					{ID: "A", Condition: "false", Decisions: map[string]pipe.Decision{"x": {Expr: "1"}}},
 				})
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{})
@@ -99,11 +99,11 @@ func TestFiringRulesAll(t *testing.T) {
 	t.Parallel()
 
 	a, err := pipe.NewDecisionTable("a", []pipe.Rule{
-		{ID: "RA", Condition: "true", Decisions: map[string]string{"x": "1"}},
+		{ID: "RA", Condition: "true", Decisions: map[string]pipe.Decision{"x": {Expr: "1"}}},
 	})
 	require.NoError(t, err)
 	b, err := pipe.NewDecisionTable("b", []pipe.Rule{
-		{ID: "RB", Condition: "true", Decisions: map[string]string{"y": "2"}},
+		{ID: "RB", Condition: "true", Decisions: map[string]pipe.Decision{"y": {Expr: "2"}}},
 	})
 	require.NoError(t, err)
 	p, err := pipe.NewPipeline(a, b)
@@ -125,7 +125,7 @@ func TestScopeFiringRulesForSingleMatch(t *testing.T) {
 	// A first-match (single) table records the matched rule; FiringRulesFor
 	// returns it as a one-element slice, and FiringRule returns that first rule.
 	tbl, err := pipe.NewDecisionTable("t", []pipe.Rule{
-		{ID: "R1", Condition: "x > 0", Decisions: map[string]string{"tag": `"a"`}},
+		{ID: "R1", Condition: "x > 0", Decisions: map[string]pipe.Decision{"tag": {Expr: `"a"`}}},
 	}, pipe.WithHitPolicy(pipe.HitPolicySingle))
 	require.NoError(t, err)
 	sc := pipe.NewScope(map[string]any{"x": 2})

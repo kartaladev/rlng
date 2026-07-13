@@ -116,10 +116,13 @@ func TestBuild(t *testing.T) {
 			assert: assertConfigErr,
 		},
 		{
-			name: "per-decision options rejected",
+			name: "per-decision options now build (B5)",
 			def: sd(config.StageDef{Name: "x", Type: "decision-table",
 				Rules: []config.RuleDef{{Condition: config.ExprDef{Expr: "true"}, Decisions: map[string]config.ExprDef{"k": {Expr: "1", Fallback: "0"}}}}}),
-			assert: assertConfigErr,
+			assert: func(t *testing.T, p *pipe.Pipeline, err error) {
+				require.NoError(t, err)
+				require.NotNil(t, p)
+			},
 		},
 		{
 			name: "multi-expr constructor error surfaces ConfigError",

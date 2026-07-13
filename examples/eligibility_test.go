@@ -12,9 +12,9 @@ import (
 // through the decision expression back to the seed input it reads from.
 func Example_eligibility() {
 	grade, _ := pipe.NewDecisionTable("grade", []pipe.Rule{
-		{Condition: "score >= 750", Decisions: map[string]string{"tier": `"prime"`, "limit": "score * 100"}},
-		{Condition: "score >= 650", Decisions: map[string]string{"tier": `"near_prime"`, "limit": "score * 50"}},
-		{Condition: "true", Decisions: map[string]string{"tier": `"subprime"`, "limit": "score * 10"}},
+		{Condition: "score >= 750", Decisions: map[string]pipe.Decision{"tier": {Expr: `"prime"`}, "limit": {Expr: "score * 100"}}},
+		{Condition: "score >= 650", Decisions: map[string]pipe.Decision{"tier": {Expr: `"near_prime"`}, "limit": {Expr: "score * 50"}}},
+		{Condition: "true", Decisions: map[string]pipe.Decision{"tier": {Expr: `"subprime"`}, "limit": {Expr: "score * 10"}}},
 	})
 	p, _ := pipe.NewPipeline(grade)
 
@@ -35,8 +35,8 @@ func Example_eligibility() {
 // rule contributes to a slice of risk flags.
 func Example_eligibility_flags() {
 	checks, _ := pipe.NewDecisionTable("checks", []pipe.Rule{
-		{Condition: "score < 650", Decisions: map[string]string{"flag": `"low_score"`}},
-		{Condition: "dti > 0.4", Decisions: map[string]string{"flag": `"high_dti"`}},
+		{Condition: "score < 650", Decisions: map[string]pipe.Decision{"flag": {Expr: `"low_score"`}}},
+		{Condition: "dti > 0.4", Decisions: map[string]pipe.Decision{"flag": {Expr: `"high_dti"`}}},
 	}, pipe.WithHitPolicy(pipe.HitPolicyCollect))
 	p, _ := pipe.NewPipeline(checks)
 

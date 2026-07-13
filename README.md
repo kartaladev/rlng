@@ -209,9 +209,9 @@ Ordered `condition → decisions` rules, first match wins. With `WithProvenance`
 
 ```go
 grade, _ := pipe.NewDecisionTable("grade", []pipe.Rule{
-	{Condition: "score >= 750", Decisions: map[string]string{"tier": `"prime"`, "limit": "score * 100"}},
-	{Condition: "score >= 650", Decisions: map[string]string{"tier": `"near_prime"`, "limit": "score * 50"}},
-	{Condition: "true", Decisions: map[string]string{"tier": `"subprime"`, "limit": "score * 10"}},
+	{Condition: "score >= 750", Decisions: map[string]pipe.Decision{"tier": {Expr: `"prime"`}, "limit": {Expr: "score * 100"}}},
+	{Condition: "score >= 650", Decisions: map[string]pipe.Decision{"tier": {Expr: `"near_prime"`}, "limit": {Expr: "score * 50"}}},
+	{Condition: "true", Decisions: map[string]pipe.Decision{"tier": {Expr: `"subprime"`}, "limit": {Expr: "score * 10"}}},
 })
 p, _ := pipe.NewPipeline(grade)
 
@@ -224,12 +224,17 @@ fmt.Print(sc.Explain("grade.limit"))
 //   score = 700 [seed]
 ```
 
+Each `Decision` carries its own options, so one output can declare a `fallback`
+(or `globals`/`coerce`) that a sibling output does not — e.g.
+`{"limit": {Expr: "score * f", Options: []expr.Option{expr.WithFallback("0")}}}`
+recovers `limit` to `0` on a value error while a fallback-less `tier` still fails.
+
 `WithHitPolicy(pipe.HitPolicyCollect)` accumulates every matching rule's decisions into a slice:
 
 ```go
 checks, _ := pipe.NewDecisionTable("checks", []pipe.Rule{
-	{Condition: "score < 650", Decisions: map[string]string{"flag": `"low_score"`}},
-	{Condition: "dti > 0.4", Decisions: map[string]string{"flag": `"high_dti"`}},
+	{Condition: "score < 650", Decisions: map[string]pipe.Decision{"flag": {Expr: `"low_score"`}}},
+	{Condition: "dti > 0.4", Decisions: map[string]pipe.Decision{"flag": {Expr: `"high_dti"`}}},
 }, pipe.WithHitPolicy(pipe.HitPolicyCollect))
 // ...run over {"score": 600, "dti": 0.5}...
 flags, _ := sc.GetSlice("checks.flag") // [low_score high_dti]

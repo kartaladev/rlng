@@ -421,7 +421,7 @@ func TestForEachExecute(t *testing.T) {
 			name: "rollup Key resolves a decision-table dot-path output, folding matched elements",
 			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
 				grade, err := pipe.NewDecisionTable("grade", []pipe.Rule{
-					{ID: "OK", Condition: "item.amt >= 20", Decisions: map[string]string{"score": "item.amt"}},
+					{ID: "OK", Condition: "item.amt >= 20", Decisions: map[string]pipe.Decision{"score": {Expr: "item.amt"}}},
 				})
 				require.NoError(t, err)
 				innerPipe, err := pipe.NewPipeline(grade)
@@ -482,7 +482,7 @@ func TestForEachExecute(t *testing.T) {
 			name: "rollup dot-path missing on every element yields Count 0",
 			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
 				grade, err := pipe.NewDecisionTable("grade", []pipe.Rule{
-					{ID: "NEVER", Condition: "false", Decisions: map[string]string{"score": "item.amt"}},
+					{ID: "NEVER", Condition: "false", Decisions: map[string]pipe.Decision{"score": {Expr: "item.amt"}}},
 				})
 				require.NoError(t, err)
 				innerPipe, err := pipe.NewPipeline(grade)
@@ -718,8 +718,8 @@ func TestForEachExecute(t *testing.T) {
 			name: "per-element firing recorded under the composite stage key <stage>[i]",
 			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
 				table, err := pipe.NewDecisionTable("check", []pipe.Rule{
-					{ID: "HIGH", Condition: "item.ltv > 80", Decisions: map[string]string{"flag": `"high"`}},
-					{ID: "LOW", Condition: "item.ltv < 50", Decisions: map[string]string{"flag": `"low"`}},
+					{ID: "HIGH", Condition: "item.ltv > 80", Decisions: map[string]pipe.Decision{"flag": {Expr: `"high"`}}},
+					{ID: "LOW", Condition: "item.ltv < 50", Decisions: map[string]pipe.Decision{"flag": {Expr: `"low"`}}},
 				})
 				require.NoError(t, err)
 				innerPipe, err := pipe.NewPipeline(table)

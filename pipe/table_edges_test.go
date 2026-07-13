@@ -28,7 +28,7 @@ func TestDecisionTablePolicyEdges(t *testing.T) {
 			name: "unique: condition eval error surfaces as StageError",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("u", []pipe.Rule{
-					{Condition: badCond, Decisions: map[string]string{"x": "1"}},
+					{Condition: badCond, Decisions: map[string]pipe.Decision{"x": {Expr: "1"}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyUnique))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"a": 1, "b": 0})
@@ -42,7 +42,7 @@ func TestDecisionTablePolicyEdges(t *testing.T) {
 			name: "any: condition eval error surfaces as StageError",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("an", []pipe.Rule{
-					{Condition: badCond, Decisions: map[string]string{"x": "1"}},
+					{Condition: badCond, Decisions: map[string]pipe.Decision{"x": {Expr: "1"}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyAny))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"a": 1, "b": 0})
@@ -56,7 +56,7 @@ func TestDecisionTablePolicyEdges(t *testing.T) {
 			name: "any: decision eval error surfaces as StageError",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("an", []pipe.Rule{
-					{Condition: "true", Decisions: map[string]string{"x": "a % b"}},
+					{Condition: "true", Decisions: map[string]pipe.Decision{"x": {Expr: "a % b"}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyAny))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"a": 1, "b": 0})
@@ -70,8 +70,8 @@ func TestDecisionTablePolicyEdges(t *testing.T) {
 			name: "default decision eval error surfaces as StageError",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("s", []pipe.Rule{
-					{Condition: "false", Decisions: map[string]string{"x": "1"}},
-				}, pipe.WithDefault(map[string]string{"x": "a % b"}))
+					{Condition: "false", Decisions: map[string]pipe.Decision{"x": {Expr: "1"}}},
+				}, pipe.WithDefault(map[string]pipe.Decision{"x": {Expr: "a % b"}}))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"a": 1, "b": 0})
 			},
@@ -84,8 +84,8 @@ func TestDecisionTablePolicyEdges(t *testing.T) {
 			name: "collect min over floats yields a float",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("m", []pipe.Rule{
-					{Condition: "true", Decisions: map[string]string{"r": "0.2"}},
-					{Condition: "true", Decisions: map[string]string{"r": "0.05"}},
+					{Condition: "true", Decisions: map[string]pipe.Decision{"r": {Expr: "0.2"}}},
+					{Condition: "true", Decisions: map[string]pipe.Decision{"r": {Expr: "0.05"}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyCollect), pipe.WithCollectAggregation(pipe.AggregateMin))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{})
@@ -100,7 +100,7 @@ func TestDecisionTablePolicyEdges(t *testing.T) {
 			name: "collect sum over uint seed value",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("c", []pipe.Rule{
-					{Condition: "true", Decisions: map[string]string{"r": "u"}},
+					{Condition: "true", Decisions: map[string]pipe.Decision{"r": {Expr: "u"}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyCollect), pipe.WithCollectAggregation(pipe.AggregateSum))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"u": uint(7)})
@@ -115,7 +115,7 @@ func TestDecisionTablePolicyEdges(t *testing.T) {
 			name: "out-of-range aggregation does not panic under provenance",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("x", []pipe.Rule{
-					{Condition: "true", Decisions: map[string]string{"v": "1"}},
+					{Condition: "true", Decisions: map[string]pipe.Decision{"v": {Expr: "1"}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyCollect), pipe.WithCollectAggregation(pipe.CollectAggregation(99)))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{}, pipe.WithProvenance())
@@ -132,8 +132,8 @@ func TestDecisionTablePolicyEdges(t *testing.T) {
 			name: "provenance: aggregated collect labels the reducer",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("fees", []pipe.Rule{
-					{Condition: "true", Decisions: map[string]string{"fee": "25"}},
-					{Condition: "true", Decisions: map[string]string{"fee": "15"}},
+					{Condition: "true", Decisions: map[string]pipe.Decision{"fee": {Expr: "25"}}},
+					{Condition: "true", Decisions: map[string]pipe.Decision{"fee": {Expr: "15"}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyCollect), pipe.WithCollectAggregation(pipe.AggregateSum))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{}, pipe.WithProvenance())
@@ -149,8 +149,8 @@ func TestDecisionTablePolicyEdges(t *testing.T) {
 			name: "provenance: any policy records the agreed value",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("g", []pipe.Rule{
-					{Condition: "true", Decisions: map[string]string{"ok": "true"}},
-					{Condition: "true", Decisions: map[string]string{"ok": "true"}},
+					{Condition: "true", Decisions: map[string]pipe.Decision{"ok": {Expr: "true"}}},
+					{Condition: "true", Decisions: map[string]pipe.Decision{"ok": {Expr: "true"}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyAny))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{}, pipe.WithProvenance())
@@ -168,8 +168,8 @@ func TestDecisionTablePolicyEdges(t *testing.T) {
 			name: "unique: no match applies default",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("u", []pipe.Rule{
-					{Condition: "false", Decisions: map[string]string{"x": "1"}},
-				}, pipe.WithHitPolicy(pipe.HitPolicyUnique), pipe.WithDefault(map[string]string{"x": "9"}))
+					{Condition: "false", Decisions: map[string]pipe.Decision{"x": {Expr: "1"}}},
+				}, pipe.WithHitPolicy(pipe.HitPolicyUnique), pipe.WithDefault(map[string]pipe.Decision{"x": {Expr: "9"}}))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{})
 			},
@@ -183,8 +183,8 @@ func TestDecisionTablePolicyEdges(t *testing.T) {
 			name: "any: no match applies default",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("an", []pipe.Rule{
-					{Condition: "false", Decisions: map[string]string{"x": "1"}},
-				}, pipe.WithHitPolicy(pipe.HitPolicyAny), pipe.WithDefault(map[string]string{"x": "9"}))
+					{Condition: "false", Decisions: map[string]pipe.Decision{"x": {Expr: "1"}}},
+				}, pipe.WithHitPolicy(pipe.HitPolicyAny), pipe.WithDefault(map[string]pipe.Decision{"x": {Expr: "9"}}))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{})
 			},
@@ -198,8 +198,8 @@ func TestDecisionTablePolicyEdges(t *testing.T) {
 			name: "collect: no match applies default",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("c", []pipe.Rule{
-					{Condition: "false", Decisions: map[string]string{"x": "1"}},
-				}, pipe.WithHitPolicy(pipe.HitPolicyCollect), pipe.WithDefault(map[string]string{"x": "9"}))
+					{Condition: "false", Decisions: map[string]pipe.Decision{"x": {Expr: "1"}}},
+				}, pipe.WithHitPolicy(pipe.HitPolicyCollect), pipe.WithDefault(map[string]pipe.Decision{"x": {Expr: "9"}}))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{})
 			},
@@ -215,8 +215,8 @@ func TestDecisionTablePolicyEdges(t *testing.T) {
 				// keys "x" (scalar) then "x.y" collide: x is written first
 				// (sorted), then x.y cannot traverse a scalar.
 				d, err := pipe.NewDecisionTable("s", []pipe.Rule{
-					{Condition: "false", Decisions: map[string]string{"z": "1"}},
-				}, pipe.WithDefault(map[string]string{"x": "1", "x.y": "2"}))
+					{Condition: "false", Decisions: map[string]pipe.Decision{"z": {Expr: "1"}}},
+				}, pipe.WithDefault(map[string]pipe.Decision{"x": {Expr: "1"}, "x.y": {Expr: "2"}}))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{})
 			},
@@ -229,7 +229,7 @@ func TestDecisionTablePolicyEdges(t *testing.T) {
 			name: "any decision path conflict surfaces as StageError",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("an", []pipe.Rule{
-					{Condition: "true", Decisions: map[string]string{"x": "1", "x.y": "2"}},
+					{Condition: "true", Decisions: map[string]pipe.Decision{"x": {Expr: "1"}, "x.y": {Expr: "2"}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyAny))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{})
@@ -274,8 +274,8 @@ func TestCollectAggregationProvenanceLabels(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			d, err := pipe.NewDecisionTable("x", []pipe.Rule{
-				{Condition: "true", Decisions: map[string]string{"v": "10"}},
-				{Condition: "true", Decisions: map[string]string{"v": "20"}},
+				{Condition: "true", Decisions: map[string]pipe.Decision{"v": {Expr: "10"}}},
+				{Condition: "true", Decisions: map[string]pipe.Decision{"v": {Expr: "20"}}},
 			}, pipe.WithHitPolicy(pipe.HitPolicyCollect), pipe.WithCollectAggregation(tc.agg))
 			require.NoError(t, err)
 			sc := pipe.NewScope(map[string]any{}, pipe.WithProvenance())
@@ -306,8 +306,8 @@ func TestNewDecisionTableDefaultErrors(t *testing.T) {
 			name: "invalid default expression is a construction error",
 			build: func() error {
 				_, err := pipe.NewDecisionTable("t", []pipe.Rule{
-					{Condition: "true", Decisions: map[string]string{"x": "1"}},
-				}, pipe.WithDefault(map[string]string{"x": "1 +"}))
+					{Condition: "true", Decisions: map[string]pipe.Decision{"x": {Expr: "1"}}},
+				}, pipe.WithDefault(map[string]pipe.Decision{"x": {Expr: "1 +"}}))
 				return err
 			},
 			assert: func(t *testing.T, err error) {
@@ -319,8 +319,8 @@ func TestNewDecisionTableDefaultErrors(t *testing.T) {
 			name: "empty default output key is a construction error",
 			build: func() error {
 				_, err := pipe.NewDecisionTable("t", []pipe.Rule{
-					{Condition: "true", Decisions: map[string]string{"x": "1"}},
-				}, pipe.WithDefault(map[string]string{"": "1"}))
+					{Condition: "true", Decisions: map[string]pipe.Decision{"x": {Expr: "1"}}},
+				}, pipe.WithDefault(map[string]pipe.Decision{"": {Expr: "1"}}))
 				return err
 			},
 			assert: func(t *testing.T, err error) {

@@ -67,16 +67,25 @@ var ErrNonNumericAggregate = errors.New("decision-table: non-numeric value in nu
 // silently wrapping or degrading to float64.
 var ErrAggregateOverflow = errors.New("decision-table: integer aggregation overflows int64")
 
+// Decision is one output of a decision-table Rule: its value expression and the
+// compile options (fallback, globals, coerce) that apply to that output alone. A
+// bare output with no options is Decision{Expr: "..."}.
+type Decision struct {
+	Expr    string
+	Options []expr.Option
+}
+
 // Rule is one row of a DecisionTable: a boolean condition and a set of
-// output-key -> value-expression decisions. Optional ID and Message make a
-// firing rule identifiable for explainable decisions.
+// output-key -> Decision entries. Each decision carries its own options, so one
+// output can declare a fallback/globals/coerce that a sibling output does not.
+// Optional ID and Message make a firing rule identifiable for explainable
+// decisions.
 type Rule struct {
 	ID               string
 	Message          string
 	Condition        string
-	Decisions        map[string]string
+	Decisions        map[string]Decision
 	ConditionOptions []expr.Option
-	DecisionOptions  []expr.Option
 }
 
 // DecisionTable evaluates ordered rules against a Scope snapshot, writing
@@ -124,7 +133,7 @@ func NewDecisionTable(name string, rules []Rule, opts ...Option) (*DecisionTable
 		if err != nil {
 			return nil, &StageError{Stage: name, Type: TypeDecisionTable, Cause: fmt.Errorf("rule %d condition: %w", i, err)}
 		}
-		decisions, err := compileDecisions(name, fmt.Sprintf("rule %d", i), r.Decisions, r.DecisionOptions)
+		decisions, err := compileDecisions(name, fmt.Sprintf("rule %d", i), r.Decisions)
 		if err != nil {
 			return nil, err
 		}
@@ -134,7 +143,7 @@ func NewDecisionTable(name string, rules []Rule, opts ...Option) (*DecisionTable
 	var defaults []compiledDecision
 	if len(cfg.defaults) > 0 {
 		var err error
-		defaults, err = compileDecisions(name, "default", cfg.defaults, cfg.defaultsOpts)
+		defaults, err = compileDecisions(name, "default", cfg.defaults)
 		if err != nil {
 			return nil, err
 		}
@@ -150,15 +159,17 @@ func NewDecisionTable(name string, rules []Rule, opts ...Option) (*DecisionTable
 	}, nil
 }
 
-// compileDecisions compiles a key->expression decision set in sorted-key order,
-// wrapping failures in a StageError attributed to where (e.g. "rule 2").
-func compileDecisions(stage, where string, decisions map[string]string, opts []expr.Option) ([]compiledDecision, error) {
+// compileDecisions compiles a key->Decision set in sorted-key order, compiling
+// each decision's expression with that decision's own options, wrapping failures
+// in a StageError attributed to where (e.g. "rule 2").
+func compileDecisions(stage, where string, decisions map[string]Decision) ([]compiledDecision, error) {
 	out := make([]compiledDecision, 0, len(decisions))
 	for _, key := range sortedKeys(decisions) {
 		if key == "" {
 			return nil, &StageError{Stage: stage, Type: TypeDecisionTable, Cause: fmt.Errorf("%s has an empty output key", where)}
 		}
-		fn, err := expr.NewFunction(key, decisions[key], opts...)
+		dec := decisions[key]
+		fn, err := expr.NewFunction(key, dec.Expr, dec.Options...)
 		if err != nil {
 			return nil, &StageError{Stage: stage, Type: TypeDecisionTable, Cause: fmt.Errorf("%s decision %q: %w", where, key, err)}
 		}
@@ -699,7 +710,7 @@ func aggLabel(a CollectAggregation) (string, bool) {
 	}
 }
 
-func sortedKeys(m map[string]string) []string {
+func sortedKeys(m map[string]Decision) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

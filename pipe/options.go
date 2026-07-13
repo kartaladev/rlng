@@ -9,16 +9,15 @@ import "github.com/kartaladev/rlng/expr"
 type Option func(*stageConfig)
 
 type stageConfig struct {
-	deps         []string
-	output       string
-	hasOutput    bool
-	condition    string
-	condOpts     []expr.Option
-	exprOpts     []expr.Option
-	hitPolicy    HitPolicy
-	aggregation  CollectAggregation
-	defaults     map[string]string
-	defaultsOpts []expr.Option
+	deps        []string
+	output      string
+	hasOutput   bool
+	condition   string
+	condOpts    []expr.Option
+	exprOpts    []expr.Option
+	hitPolicy   HitPolicy
+	aggregation CollectAggregation
+	defaults    map[string]Decision
 }
 
 func newStageConfig(opts []Option) *stageConfig {
@@ -62,8 +61,9 @@ func WithCollectAggregation(a CollectAggregation) Option {
 
 // WithDefault sets a DecisionTable's default (else) decisions, applied when no
 // rule matches — so "no match" is an explicit outcome rather than a silent
-// missing output. The map is output key -> value expression, like a rule's
-// Decisions. Ignored by SingleExpr and MultiExpr.
-func WithDefault(decisions map[string]string, opts ...expr.Option) Option {
-	return func(c *stageConfig) { c.defaults = decisions; c.defaultsOpts = opts }
+// missing output. The map is output key -> Decision, like a rule's Decisions, so
+// each default output carries its own fallback/globals/coerce. Ignored by
+// SingleExpr and MultiExpr.
+func WithDefault(decisions map[string]Decision) Option {
+	return func(c *stageConfig) { c.defaults = decisions }
 }

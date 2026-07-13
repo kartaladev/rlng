@@ -53,6 +53,8 @@ isolate in ADR-0008.)
    `type`, missing required field for a type, invalid `hit_policy`, and (to avoid
    silently dropping data) **rejecting per-decision options** on a decision-table
    decision, since `stage.Rule` carries only rule-level `DecisionOptions`.
+   **Superseded in part by ADR-0046 (B5):** decisions now carry per-decision
+   options (`pipe.Decision{Expr, Options}`) and the rejection is removed.
 
 ## Consequences
 

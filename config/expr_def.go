@@ -82,12 +82,6 @@ func (e *ExprDef) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// hasOptions reports whether the object form carries any compile option, without
-// allocating an option slice.
-func (e ExprDef) hasOptions() bool {
-	return e.Fallback != "" || len(e.Globals) > 0 || e.Coerce
-}
-
 // options maps the object form to expr.Option values.
 func (e ExprDef) options() []expr.Option {
 	var opts []expr.Option

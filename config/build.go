@@ -268,28 +268,19 @@ func (sd StageDef) buildTable(base []pipe.Option, constants, schema map[string]a
 		return nil, &ConfigError{Stage: sd.Name, Field: "aggregation", Cause: err}
 	}
 	rules := make([]pipe.Rule, 0, len(sd.Rules))
-	for i, r := range sd.Rules {
-		decisions, err := bareDecisions(sd.Name, fmt.Sprintf("rules[%d].decisions", i), r.Decisions)
-		if err != nil {
-			return nil, err
-		}
+	for _, r := range sd.Rules {
 		rules = append(rules, pipe.Rule{
 			ID:               r.ID,
 			Message:          r.Message,
 			Condition:        r.Condition.Expr,
 			ConditionOptions: withStrictEnv(strict, schema, withConstants(constants, r.Condition.options())),
-			DecisionOptions:  withStrictEnv(strict, schema, withConstants(constants, nil)),
-			Decisions:        decisions,
+			Decisions:        decisionsFrom(constants, schema, strict, r.Decisions),
 		})
 	}
 	opts := append([]pipe.Option{}, base...)
 	opts = append(opts, pipe.WithHitPolicy(hp), pipe.WithCollectAggregation(agg))
 	if len(sd.Default) > 0 {
-		defaults, err := bareDecisions(sd.Name, "default", sd.Default)
-		if err != nil {
-			return nil, err
-		}
-		opts = append(opts, pipe.WithDefault(defaults, withStrictEnv(strict, schema, withConstants(constants, nil))...))
+		opts = append(opts, pipe.WithDefault(decisionsFrom(constants, schema, strict, sd.Default)))
 	}
 	s, err := pipe.NewDecisionTable(sd.Name, rules, opts...)
 	if err != nil {
@@ -355,21 +346,19 @@ func (sd StageDef) buildForEach(base []pipe.Option, constants, schema map[string
 	return s, nil
 }
 
-// bareDecisions converts a key->ExprDef decision set to key->expression,
-// rejecting per-decision options (only bare expressions are supported here).
-func bareDecisions(stage, field string, in map[string]ExprDef) (map[string]string, error) {
-	out := make(map[string]string, len(in))
+// decisionsFrom converts a key->ExprDef decision set to key->pipe.Decision,
+// threading each decision's own options (fallback/globals/coerce) plus the
+// shared constants and strict env — so a per-decision option composes with the
+// pipeline env instead of being rejected.
+func decisionsFrom(constants, schema map[string]any, strict bool, in map[string]ExprDef) map[string]pipe.Decision {
+	out := make(map[string]pipe.Decision, len(in))
 	for key, ed := range in {
-		if ed.hasOptions() {
-			return nil, &ConfigError{
-				Stage: stage,
-				Field: fmt.Sprintf("%s.%s", field, key),
-				Cause: errors.New("per-decision options are not supported; use a bare expression"),
-			}
+		out[key] = pipe.Decision{
+			Expr:    ed.Expr,
+			Options: withStrictEnv(strict, schema, withConstants(constants, ed.options())),
 		}
-		out[key] = ed.Expr
 	}
-	return out, nil
+	return out
 }
 
 func parseAggregation(s string) (pipe.CollectAggregation, error) {

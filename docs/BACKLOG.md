@@ -21,7 +21,7 @@ spec+plan+ADR chain).
 | ~~**B2**~~ | ~~`foreach` per-element scope-copy benchmark~~ | — | — | — | ✅ **Done** (incr 018, ADR-0043) |
 | ~~**B3**~~ | ~~Numeric-coercing Scope getters~~ | — | — | — | ✅ **Done** (incr 019, ADR-0044) |
 | ~~**B4**~~ | ~~`Hash()` rejects non-marshalable hand-built defs~~ | — | — | — | ✅ **Done** (incr 020, ADR-0045) |
-| **B5** | Per-decision options in decision-table config | ADR-0007; Spec 004; `config/build.go:358` | feature-gap | new ADR | **P2** |
+| ~~**B5**~~ | ~~Per-decision options in decision-table config~~ | — | — | — | ✅ **Done** (incr 021, ADR-0046) |
 | **B6** | Precise member-path references in provenance | ADR-0011; Spec 006 non-goal | feature-gap/debuggability | new ADR | **P2** |
 | **B7** | Intra-stage `MultiExpr` local-alias provenance | ADR-0011 ("Known limitations") | tech-debt/debuggability | new ADR | **P3** |
 | **B8** | Per-element lineage beyond firing (`foreach`) | ADR-0040; Spec 015 D5 | feature-gap/debuggability | new ADR | **P3** |
@@ -55,10 +55,13 @@ wrapping the new `ErrUnhashableDef` sentinel, instead of silently stamping the `
 `Hash()`/`MatchesRuleset` signatures unchanged (the direct-`Hash()` fallback is retained + documented);
 parse paths unaffected; existing hashes byte-identical.
 
-**B5 — Per-decision decision-table options.** `stage.Rule` carries one rule-level `DecisionOptions` shared
-across all decisions; config rejects a decision that declares its own `fallback`/`globals`
-(`config/build.go:358`, "per-decision options are not supported; use a bare expression"). Bare-string
-decisions are unaffected. Extending to per-decision options is a contract change.
+**B5 — Per-decision decision-table options. ✅ DONE (increment 021, ADR-0046).** `pipe.Rule.Decisions` is
+now `map[string]pipe.Decision` (`Decision{Expr, Options}`) and the shared `Rule.DecisionOptions` field is
+removed; `WithDefault` takes `map[string]pipe.Decision`. Each decision (rule or default) carries its own
+`fallback`/`globals`/`coerce`, honored end-to-end. Config's `decisionsFrom` threads each `ExprDef`'s
+options through (composing with constants + strict env); the old "per-decision options are not supported"
+rejection is deleted. Breaking pre-1.0 `pipe` API change (Option A); no config-schema or `Hash()` change
+(parsed `PipelineDef` shape untouched — pre-021 rulesets hash byte-identically).
 
 **B6 — Member-path provenance references.** Provenance `Inputs` records top-level identifiers only (`a` for
 `a.b.c`). Precise member-path lineage is a recorded future refinement to reference granularity.
@@ -99,6 +102,7 @@ Deferrals found in the docs but confirmed already implemented — excluded from 
 | `foreach` per-element scope-copy benchmark (B2; ADR-0040) | Increment 018 / ADR-0043 |
 | Numeric-coercing Scope getters (B3; Spec 006 non-goal) | Increment 019 / ADR-0044 |
 | `Hash()` rejects non-marshalable hand-built defs (B4; ADR-0037) | Increment 020 / ADR-0045 |
+| Per-decision decision-table options (B5; ADR-0007 §5 / Spec 004) | Increment 021 / ADR-0046 |
 | Exact decimal money (ADR-0030) | Increment 014 / ADR-0038 + ADR-0039 |
 | `foreach` stage (ADR-0030) | Increment 015 / ADR-0040 |
 | Config-declared output mapping (ADR-0009; Spec 005/008 non-goals) | Increment 010 / ADR-0028 |

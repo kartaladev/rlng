@@ -17,13 +17,13 @@ func ExampleScope_firingRulesFor() {
 			ID:        "CREDIT_MIN_650",
 			Message:   "credit score below minimum",
 			Condition: "score < 650",
-			Decisions: map[string]string{"reason": `"credit score below minimum"`},
+			Decisions: map[string]pipe.Decision{"reason": {Expr: `"credit score below minimum"`}},
 		},
 		{
 			ID:        "DEBT_RATIO_MAX",
 			Message:   "debt-to-income ratio too high",
 			Condition: "debt_ratio > 0.4",
-			Decisions: map[string]string{"reason": `"debt-to-income ratio too high"`},
+			Decisions: map[string]pipe.Decision{"reason": {Expr: `"debt-to-income ratio too high"`}},
 		},
 	}, pipe.WithHitPolicy(pipe.HitPolicyCollect))
 	if err != nil {

@@ -26,8 +26,8 @@ func TestDecisionTableExecute(t *testing.T) {
 			name: "single mode: first match wins",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("tier", []pipe.Rule{
-					{Condition: "amount >= 1000", Decisions: map[string]string{"level": `"gold"`}},
-					{Condition: "amount >= 100", Decisions: map[string]string{"level": `"silver"`}},
+					{Condition: "amount >= 1000", Decisions: map[string]pipe.Decision{"level": {Expr: `"gold"`}}},
+					{Condition: "amount >= 100", Decisions: map[string]pipe.Decision{"level": {Expr: `"silver"`}}},
 				})
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"amount": 5000})
@@ -43,7 +43,7 @@ func TestDecisionTableExecute(t *testing.T) {
 			name: "single mode: no match writes nothing",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("tier", []pipe.Rule{
-					{Condition: "amount >= 1000", Decisions: map[string]string{"level": `"gold"`}},
+					{Condition: "amount >= 1000", Decisions: map[string]pipe.Decision{"level": {Expr: `"gold"`}}},
 				})
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"amount": 5})
@@ -58,8 +58,8 @@ func TestDecisionTableExecute(t *testing.T) {
 			name: "collect mode: accumulates matches in rule order",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("tags", []pipe.Rule{
-					{Condition: "amount >= 100", Decisions: map[string]string{"tag": `"big"`}},
-					{Condition: "amount >= 1000", Decisions: map[string]string{"tag": `"huge"`}},
+					{Condition: "amount >= 100", Decisions: map[string]pipe.Decision{"tag": {Expr: `"big"`}}},
+					{Condition: "amount >= 1000", Decisions: map[string]pipe.Decision{"tag": {Expr: `"huge"`}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyCollect))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"amount": 5000})
@@ -75,7 +75,7 @@ func TestDecisionTableExecute(t *testing.T) {
 			name: "eval error surfaces as StageError",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("t", []pipe.Rule{
-					{Condition: "a % b > 0", Decisions: map[string]string{"x": "1"}},
+					{Condition: "a % b > 0", Decisions: map[string]pipe.Decision{"x": {Expr: "1"}}},
 				})
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"a": 1, "b": 0})
@@ -90,7 +90,7 @@ func TestDecisionTableExecute(t *testing.T) {
 			name: "canceled context short-circuits",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("tier", []pipe.Rule{
-					{Condition: "true", Decisions: map[string]string{"x": "1"}},
+					{Condition: "true", Decisions: map[string]pipe.Decision{"x": {Expr: "1"}}},
 				})
 				require.NoError(t, err)
 				return d, pipe.NewScope(nil)
@@ -108,8 +108,8 @@ func TestDecisionTableExecute(t *testing.T) {
 			name: "provenance on: single mode records the winning rule's derivation",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("tier", []pipe.Rule{
-					{Condition: "amount >= 1000", Decisions: map[string]string{"level": `"gold"`}},
-					{Condition: "amount >= 100", Decisions: map[string]string{"level": `"silver"`}},
+					{Condition: "amount >= 1000", Decisions: map[string]pipe.Decision{"level": {Expr: `"gold"`}}},
+					{Condition: "amount >= 100", Decisions: map[string]pipe.Decision{"level": {Expr: `"silver"`}}},
 				})
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"amount": 5000}, pipe.WithProvenance())
@@ -130,8 +130,8 @@ func TestDecisionTableExecute(t *testing.T) {
 			name: "provenance on: collect mode joins expressions and unions inputs across matched rules",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("tags", []pipe.Rule{
-					{Condition: "amount >= 100", Decisions: map[string]string{"tag": "label1"}},
-					{Condition: "amount >= 1000", Decisions: map[string]string{"tag": "label2"}},
+					{Condition: "amount >= 100", Decisions: map[string]pipe.Decision{"tag": {Expr: "label1"}}},
+					{Condition: "amount >= 1000", Decisions: map[string]pipe.Decision{"tag": {Expr: "label2"}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyCollect))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"amount": 5000, "label1": "big", "label2": "huge"}, pipe.WithProvenance())
@@ -164,7 +164,7 @@ func TestDecisionTableExecute(t *testing.T) {
 				// The scalar seed "tier" collides with the stage namespace, so
 				// Derive's Set("tier.level", …) fails with ErrPathNotMap.
 				d, err := pipe.NewDecisionTable("tier", []pipe.Rule{
-					{Condition: "amount >= 1000", Decisions: map[string]string{"level": `"gold"`}},
+					{Condition: "amount >= 1000", Decisions: map[string]pipe.Decision{"level": {Expr: `"gold"`}}},
 				})
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"tier": 1, "amount": 5000}, pipe.WithProvenance())
@@ -183,7 +183,7 @@ func TestDecisionTableExecute(t *testing.T) {
 				// The scalar seed "tags" collides with the stage namespace, so
 				// Derive's Set("tags.tag", …) fails with ErrPathNotMap.
 				d, err := pipe.NewDecisionTable("tags", []pipe.Rule{
-					{Condition: "amount >= 100", Decisions: map[string]string{"tag": "label1"}},
+					{Condition: "amount >= 100", Decisions: map[string]pipe.Decision{"tag": {Expr: "label1"}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyCollect))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"tags": 1, "amount": 5000, "label1": "big"}, pipe.WithProvenance())
@@ -200,7 +200,7 @@ func TestDecisionTableExecute(t *testing.T) {
 			name: "single mode: decision eval error surfaces as StageError",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("tier", []pipe.Rule{
-					{Condition: "amount >= 100", Decisions: map[string]string{"level": "a % b"}},
+					{Condition: "amount >= 100", Decisions: map[string]pipe.Decision{"level": {Expr: "a % b"}}},
 				})
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"amount": 5000, "a": 1, "b": 0})
@@ -218,7 +218,7 @@ func TestDecisionTableExecute(t *testing.T) {
 				// Scalar seed "tier" collides with the stage namespace, so
 				// Set("tier.level", …) fails with ErrPathNotMap (provenance off).
 				d, err := pipe.NewDecisionTable("tier", []pipe.Rule{
-					{Condition: "amount >= 100", Decisions: map[string]string{"level": `"gold"`}},
+					{Condition: "amount >= 100", Decisions: map[string]pipe.Decision{"level": {Expr: `"gold"`}}},
 				})
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"tier": 1, "amount": 5000})
@@ -234,7 +234,7 @@ func TestDecisionTableExecute(t *testing.T) {
 			name: "collect mode: condition eval error surfaces as StageError",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("tags", []pipe.Rule{
-					{Condition: "a % b == 0", Decisions: map[string]string{"tag": `"x"`}},
+					{Condition: "a % b == 0", Decisions: map[string]pipe.Decision{"tag": {Expr: `"x"`}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyCollect))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"a": 1, "b": 0})
@@ -250,7 +250,7 @@ func TestDecisionTableExecute(t *testing.T) {
 			name: "collect mode: decision eval error surfaces as StageError",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("tags", []pipe.Rule{
-					{Condition: "amount >= 100", Decisions: map[string]string{"tag": "a % b"}},
+					{Condition: "amount >= 100", Decisions: map[string]pipe.Decision{"tag": {Expr: "a % b"}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyCollect))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"amount": 5000, "a": 1, "b": 0})
@@ -268,7 +268,7 @@ func TestDecisionTableExecute(t *testing.T) {
 				// Scalar seed "tags" collides with the stage namespace, so
 				// Set("tags.tag", …) fails with ErrPathNotMap (provenance off).
 				d, err := pipe.NewDecisionTable("tags", []pipe.Rule{
-					{Condition: "amount >= 100", Decisions: map[string]string{"tag": `"big"`}},
+					{Condition: "amount >= 100", Decisions: map[string]pipe.Decision{"tag": {Expr: `"big"`}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyCollect))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"tags": 1, "amount": 5000})
@@ -284,8 +284,8 @@ func TestDecisionTableExecute(t *testing.T) {
 			name: "collect mode: non-matching rule is skipped",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("tags", []pipe.Rule{
-					{Condition: "amount >= 1000", Decisions: map[string]string{"tag": `"big"`}},
-					{Condition: "amount >= 100000", Decisions: map[string]string{"tag": `"huge"`}},
+					{Condition: "amount >= 1000", Decisions: map[string]pipe.Decision{"tag": {Expr: `"big"`}}},
+					{Condition: "amount >= 100000", Decisions: map[string]pipe.Decision{"tag": {Expr: `"huge"`}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyCollect))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"amount": 5000})
@@ -337,7 +337,7 @@ func TestNewDecisionTableValidation(t *testing.T) {
 		{
 			name:      "empty stage name is rejected",
 			stageName: "",
-			rules:     []pipe.Rule{{Condition: "true", Decisions: map[string]string{"y": "1"}}},
+			rules:     []pipe.Rule{{Condition: "true", Decisions: map[string]pipe.Decision{"y": {Expr: "1"}}}},
 			assert: func(t *testing.T, err error) {
 				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
@@ -357,7 +357,7 @@ func TestNewDecisionTableValidation(t *testing.T) {
 		{
 			name:      "bad condition is a compile error",
 			stageName: "t",
-			rules:     []pipe.Rule{{Condition: "x +", Decisions: map[string]string{"y": "1"}}},
+			rules:     []pipe.Rule{{Condition: "x +", Decisions: map[string]pipe.Decision{"y": {Expr: "1"}}}},
 			assert: func(t *testing.T, err error) {
 				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
@@ -366,7 +366,7 @@ func TestNewDecisionTableValidation(t *testing.T) {
 		{
 			name:      "empty output key is rejected",
 			stageName: "t",
-			rules:     []pipe.Rule{{Condition: "true", Decisions: map[string]string{"": "1"}}},
+			rules:     []pipe.Rule{{Condition: "true", Decisions: map[string]pipe.Decision{"": {Expr: "1"}}}},
 			assert: func(t *testing.T, err error) {
 				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
@@ -376,7 +376,7 @@ func TestNewDecisionTableValidation(t *testing.T) {
 		{
 			name:      "bad decision expression is a compile error",
 			stageName: "t",
-			rules:     []pipe.Rule{{Condition: "true", Decisions: map[string]string{"y": "x +"}}},
+			rules:     []pipe.Rule{{Condition: "true", Decisions: map[string]pipe.Decision{"y": {Expr: "x +"}}}},
 			assert: func(t *testing.T, err error) {
 				var se *pipe.StageError
 				require.ErrorAs(t, err, &se)
@@ -600,7 +600,7 @@ func TestDecisionTableCollectAggregationFidelity(t *testing.T) {
 
 			rules := make([]pipe.Rule, len(tc.exprs))
 			for i, e := range tc.exprs {
-				rules[i] = pipe.Rule{Condition: "true", Decisions: map[string]string{"v": e}}
+				rules[i] = pipe.Rule{Condition: "true", Decisions: map[string]pipe.Decision{"v": {Expr: e}}}
 			}
 			d, err := pipe.NewDecisionTable("agg", rules,
 				pipe.WithHitPolicy(pipe.HitPolicyCollect), pipe.WithCollectAggregation(tc.agg))
@@ -618,7 +618,7 @@ func TestDecisionTableAccessors(t *testing.T) {
 	t.Parallel()
 
 	d, err := pipe.NewDecisionTable("tier",
-		[]pipe.Rule{{Condition: "true", Decisions: map[string]string{"level": `"gold"`}}},
+		[]pipe.Rule{{Condition: "true", Decisions: map[string]pipe.Decision{"level": {Expr: `"gold"`}}}},
 		pipe.WithDependsOn("amount"))
 	require.NoError(t, err)
 	assert.Equal(t, "tier", d.Name())

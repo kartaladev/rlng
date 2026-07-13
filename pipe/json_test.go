@@ -126,7 +126,7 @@ func TestScopeJSONRoundTripsRulesetAndFiring(t *testing.T) {
 			name: "ruleset stamp and firing rules round-trip",
 			build: func(t *testing.T) *pipe.Scope {
 				tbl, err := pipe.NewDecisionTable("denial", []pipe.Rule{
-					{ID: "R1", Message: "too low", Condition: "score < 650", Decisions: map[string]string{"deny": "true"}},
+					{ID: "R1", Message: "too low", Condition: "score < 650", Decisions: map[string]pipe.Decision{"deny": {Expr: "true"}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicySingle))
 				require.NoError(t, err)
 				p, err := pipe.NewPipeline(tbl)

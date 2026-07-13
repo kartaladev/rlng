@@ -9,8 +9,8 @@ import (
 
 func ExampleDecisionTable() {
 	d, err := pipe.NewDecisionTable("tier", []pipe.Rule{
-		{Condition: "amount >= 1000", Decisions: map[string]string{"level": `"gold"`}},
-		{Condition: "amount >= 100", Decisions: map[string]string{"level": `"silver"`}},
+		{Condition: "amount >= 1000", Decisions: map[string]pipe.Decision{"level": {Expr: `"gold"`}}},
+		{Condition: "amount >= 100", Decisions: map[string]pipe.Decision{"level": {Expr: `"silver"`}}},
 	})
 	if err != nil {
 		fmt.Println("error:", err)

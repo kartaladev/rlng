@@ -22,8 +22,8 @@ func TestDecisionTablePolicies(t *testing.T) {
 			name: "single: no match applies default",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("tier", []pipe.Rule{
-					{Condition: "score >= 750", Decisions: map[string]string{"tier": `"prime"`}},
-				}, pipe.WithDefault(map[string]string{"tier": `"declined"`}))
+					{Condition: "score >= 750", Decisions: map[string]pipe.Decision{"tier": {Expr: `"prime"`}}},
+				}, pipe.WithDefault(map[string]pipe.Decision{"tier": {Expr: `"declined"`}}))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"score": 500})
 			},
@@ -38,8 +38,8 @@ func TestDecisionTablePolicies(t *testing.T) {
 			name: "unique: exactly one match writes it",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("g", []pipe.Rule{
-					{Condition: "score >= 750", Decisions: map[string]string{"tier": `"prime"`}},
-					{Condition: "score < 600", Decisions: map[string]string{"tier": `"subprime"`}},
+					{Condition: "score >= 750", Decisions: map[string]pipe.Decision{"tier": {Expr: `"prime"`}}},
+					{Condition: "score < 600", Decisions: map[string]pipe.Decision{"tier": {Expr: `"subprime"`}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyUnique))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"score": 800})
@@ -54,8 +54,8 @@ func TestDecisionTablePolicies(t *testing.T) {
 			name: "unique: multiple matches is an error",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("g", []pipe.Rule{
-					{Condition: "score >= 750", Decisions: map[string]string{"tier": `"a"`}},
-					{Condition: "score >= 700", Decisions: map[string]string{"tier": `"b"`}},
+					{Condition: "score >= 750", Decisions: map[string]pipe.Decision{"tier": {Expr: `"a"`}}},
+					{Condition: "score >= 700", Decisions: map[string]pipe.Decision{"tier": {Expr: `"b"`}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyUnique))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"score": 800})
@@ -71,8 +71,8 @@ func TestDecisionTablePolicies(t *testing.T) {
 			name: "any: agreeing matches write the agreed value",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("g", []pipe.Rule{
-					{Condition: "score >= 750", Decisions: map[string]string{"ok": "true"}},
-					{Condition: "income > 50000", Decisions: map[string]string{"ok": "true"}},
+					{Condition: "score >= 750", Decisions: map[string]pipe.Decision{"ok": {Expr: "true"}}},
+					{Condition: "income > 50000", Decisions: map[string]pipe.Decision{"ok": {Expr: "true"}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyAny))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"score": 800, "income": 60000})
@@ -87,8 +87,8 @@ func TestDecisionTablePolicies(t *testing.T) {
 			name: "any: numeric int vs float agree without a false conflict",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("g", []pipe.Rule{
-					{Condition: "true", Decisions: map[string]string{"amt": "10"}},
-					{Condition: "true", Decisions: map[string]string{"amt": "10.0"}},
+					{Condition: "true", Decisions: map[string]pipe.Decision{"amt": {Expr: "10"}}},
+					{Condition: "true", Decisions: map[string]pipe.Decision{"amt": {Expr: "10.0"}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyAny))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{})
@@ -104,8 +104,8 @@ func TestDecisionTablePolicies(t *testing.T) {
 			name: "any: numeric disagreement is still a conflict",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("g", []pipe.Rule{
-					{Condition: "true", Decisions: map[string]string{"amt": "10"}},
-					{Condition: "true", Decisions: map[string]string{"amt": "11"}},
+					{Condition: "true", Decisions: map[string]pipe.Decision{"amt": {Expr: "10"}}},
+					{Condition: "true", Decisions: map[string]pipe.Decision{"amt": {Expr: "11"}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyAny))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{})
@@ -119,8 +119,8 @@ func TestDecisionTablePolicies(t *testing.T) {
 			name: "any: conflicting matches is an error",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("g", []pipe.Rule{
-					{Condition: "score >= 750", Decisions: map[string]string{"tier": `"a"`}},
-					{Condition: "income > 50000", Decisions: map[string]string{"tier": `"b"`}},
+					{Condition: "score >= 750", Decisions: map[string]pipe.Decision{"tier": {Expr: `"a"`}}},
+					{Condition: "income > 50000", Decisions: map[string]pipe.Decision{"tier": {Expr: `"b"`}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyAny))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"score": 800, "income": 60000})
@@ -135,8 +135,8 @@ func TestDecisionTablePolicies(t *testing.T) {
 			name: "any: records firing per agreeing rule",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("decide", []pipe.Rule{
-					{ID: "A", Condition: "x > 0", Decisions: map[string]string{"ok": "true"}},
-					{ID: "B", Condition: "x > 1", Decisions: map[string]string{"ok": "true"}},
+					{ID: "A", Condition: "x > 0", Decisions: map[string]pipe.Decision{"ok": {Expr: "true"}}},
+					{ID: "B", Condition: "x > 1", Decisions: map[string]pipe.Decision{"ok": {Expr: "true"}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyAny))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"x": 2})
@@ -153,8 +153,8 @@ func TestDecisionTablePolicies(t *testing.T) {
 			name: "collect sum aggregates numeric decisions",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("fees", []pipe.Rule{
-					{Condition: "wire", Decisions: map[string]string{"fee": "25"}},
-					{Condition: "rush", Decisions: map[string]string{"fee": "15"}},
+					{Condition: "wire", Decisions: map[string]pipe.Decision{"fee": {Expr: "25"}}},
+					{Condition: "rush", Decisions: map[string]pipe.Decision{"fee": {Expr: "15"}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyCollect), pipe.WithCollectAggregation(pipe.AggregateSum))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"wire": true, "rush": true})
@@ -169,8 +169,8 @@ func TestDecisionTablePolicies(t *testing.T) {
 			name: "collect count aggregates match count",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("flags", []pipe.Rule{
-					{Condition: "score < 650", Decisions: map[string]string{"n": `"low"`}},
-					{Condition: "dti > 0.4", Decisions: map[string]string{"n": `"high"`}},
+					{Condition: "score < 650", Decisions: map[string]pipe.Decision{"n": {Expr: `"low"`}}},
+					{Condition: "dti > 0.4", Decisions: map[string]pipe.Decision{"n": {Expr: `"high"`}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyCollect), pipe.WithCollectAggregation(pipe.AggregateCount))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"score": 600, "dti": 0.5})
@@ -185,8 +185,8 @@ func TestDecisionTablePolicies(t *testing.T) {
 			name: "collect max/min aggregate extremes",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("disc", []pipe.Rule{
-					{Condition: "true", Decisions: map[string]string{"pct": "10"}},
-					{Condition: "loyal", Decisions: map[string]string{"pct": "25"}},
+					{Condition: "true", Decisions: map[string]pipe.Decision{"pct": {Expr: "10"}}},
+					{Condition: "loyal", Decisions: map[string]pipe.Decision{"pct": {Expr: "25"}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyCollect), pipe.WithCollectAggregation(pipe.AggregateMax))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"loyal": true})
@@ -201,8 +201,8 @@ func TestDecisionTablePolicies(t *testing.T) {
 			name: "collect: records firing per match",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("fees", []pipe.Rule{
-					{ID: "BASE", Condition: "true", Decisions: map[string]string{"fee": "10"}},
-					{ID: "SURCHARGE", Condition: "risky", Decisions: map[string]string{"fee": "5"}},
+					{ID: "BASE", Condition: "true", Decisions: map[string]pipe.Decision{"fee": {Expr: "10"}}},
+					{ID: "SURCHARGE", Condition: "risky", Decisions: map[string]pipe.Decision{"fee": {Expr: "5"}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyCollect), pipe.WithCollectAggregation(pipe.AggregateSum))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{"risky": true})
@@ -219,7 +219,7 @@ func TestDecisionTablePolicies(t *testing.T) {
 			name: "collect sum over non-numeric is an error",
 			build: func(t *testing.T) (*pipe.DecisionTable, *pipe.Scope) {
 				d, err := pipe.NewDecisionTable("x", []pipe.Rule{
-					{Condition: "true", Decisions: map[string]string{"v": `"a"`}},
+					{Condition: "true", Decisions: map[string]pipe.Decision{"v": {Expr: `"a"`}}},
 				}, pipe.WithHitPolicy(pipe.HitPolicyCollect), pipe.WithCollectAggregation(pipe.AggregateSum))
 				require.NoError(t, err)
 				return d, pipe.NewScope(map[string]any{})

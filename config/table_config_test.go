@@ -189,17 +189,23 @@ func TestBuildTableConfigBranches(t *testing.T) {
 			},
 		},
 		{
-			name: "default with per-decision options is a config error",
+			name: "default per-decision fallback is honored through config (B5)",
 			def: sd(config.StageDef{
 				Name: "g", Type: "decision-table",
 				Rules: []config.RuleDef{
-					{Condition: config.ExprDef{Expr: "true"}, Decisions: map[string]config.ExprDef{"x": {Expr: "1"}}},
+					{Condition: config.ExprDef{Expr: "false"}, Decisions: map[string]config.ExprDef{"x": {Expr: "1"}}},
 				},
-				Default: map[string]config.ExprDef{"x": {Expr: "1", Fallback: "0"}},
+				// No rule matches, so the default fires; its expression errors and
+				// the per-decision fallback recovers to 7 (previously this def was
+				// rejected at build time).
+				Default: map[string]config.ExprDef{"x": {Expr: "missing.field", Fallback: "7"}},
 			}),
 			assert: func(t *testing.T, p *pipe.Pipeline, err error) {
-				var ce *config.ConfigError
-				require.ErrorAs(t, err, &ce)
+				require.NoError(t, err)
+				sc := pipe.NewScope(map[string]any{})
+				require.NoError(t, p.Run(t.Context(), sc))
+				v, _ := sc.Get("g.x")
+				assert.Equal(t, 7, v)
 			},
 		},
 	}
