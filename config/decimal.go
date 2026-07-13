@@ -11,6 +11,10 @@ import (
 // parse as an exact decimal.
 var ErrDecimalLiteral = errors.New("config: invalid $dec decimal literal")
 
+// decLiteralKey is the reserved sole-key marker of a decimal literal object
+// ({"$dec": "<string>"}), shared by hydration and canonical hashing.
+const decLiteralKey = "$dec"
+
 // hydrateDecimals recursively replaces every {"$dec": "<string>"} object in m
 // with a decimal.Decimal, in place. The object form is used because a YAML
 // !decimal tag collapses to a plain string when decoded into map[string]any.
@@ -33,7 +37,7 @@ func hydrateValue(v any) (any, error) {
 		// unquoted number that YAML/JSON decoded to a float/int) is a malformed
 		// literal — fail loud rather than silently treating it as an ordinary
 		// map, which would mask an author's typo.
-		if raw, hasDec := x["$dec"]; hasDec && len(x) == 1 {
+		if raw, hasDec := x[decLiteralKey]; hasDec && len(x) == 1 {
 			s, ok := raw.(string)
 			if !ok {
 				return nil, fmt.Errorf("%w: $dec value must be a quoted string, got %T (%v)", ErrDecimalLiteral, raw, raw)

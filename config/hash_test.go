@@ -171,3 +171,43 @@ func TestPipelineDefMatchesRuleset(t *testing.T) {
 		})
 	}
 }
+
+// TestHashStableAcrossBuildDecimal guards against Build mutating the def such
+// that Hash() diverges before vs after Build for a $dec ruleset, which silently
+// breaks MatchesRuleset on reload (the replay-safety check). Regression for the
+// audit finding: hydrateConstants rewrote {"$dec":…} → decimal.Decimal in place
+// before hashCanonical, so the stamped hash never matched a freshly-parsed
+// reload.
+func TestHashStableAcrossBuildDecimal(t *testing.T) {
+	const decYAML = `
+constants:
+  rate: { $dec: "0.0725" }
+  pad:  { $dec: "1.50" }
+stages:
+  - name: total
+    type: single-expr
+    expr: amount * rate
+`
+	def, err := config.Parse(t.Context(), config.FromYAMLString(decYAML))
+	require.NoError(t, err)
+
+	before := def.Hash()
+	p, err := def.Build()
+	require.NoError(t, err)
+	require.NotNil(t, p)
+	after := def.Hash()
+
+	// Build must not perturb the content hash (it hydrates $dec literals for
+	// compilation; that must not leak into the fingerprint).
+	assert.Equal(t, before, after, "Hash() must be stable across Build for a $dec ruleset")
+
+	// The replay-safety path: a freshly-parsed reload of the identical document
+	// must hash identically to the built def, so MatchesRuleset holds. Build
+	// stamps the pipeline with exactly def.Hash(), so comparing hashes captures
+	// the stamped-identity match without running the pipeline.
+	reloaded, err := config.Parse(t.Context(), config.FromYAMLString(decYAML))
+	require.NoError(t, err)
+	assert.Equal(t, before, reloaded.Hash(), "reloaded $dec ruleset must hash identically to the stamped identity")
+	assert.True(t, reloaded.MatchesRuleset(pipe.RulesetIdentity{Hash: after}),
+		"reloaded $dec ruleset must MatchesRuleset the stamped identity")
+}
