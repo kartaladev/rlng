@@ -77,3 +77,6 @@ production hot path: most evaluations don't need a trace, and the engine is
   `<stage>.<name>` path when recording `Inputs`, which changes the documented
   "`Inputs` is keyed by referenced identifier" contract — deferred as a
   follow-up so it can be decided deliberately rather than bundled here.
+  **Resolved by ADR-0048 (B7):** a `MultiExpr` local-alias reference is now keyed
+  by its `stage.<name>` scope path, so `Lineage`/`Explain` trace the intra-stage
+  subtree.

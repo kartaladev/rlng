@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/kartaladev/rlng/expr"
 )
@@ -86,28 +87,52 @@ func (m *MultiExpr) Execute(ctx context.Context, sc *Scope) error {
 
 	env := sc.Snapshot()
 	tracking := sc.TracksProvenance()
+	var locals map[string]struct{}
+	if tracking {
+		locals = make(map[string]struct{}, len(m.exprs))
+	}
 	for _, e := range m.exprs {
 		v, err := e.fn.Apply(env)
 		if err != nil {
 			return &StageError{Stage: m.name, Type: TypeMultiExpr, Cause: err}
 		}
-		env[e.name] = v // visible to later expressions within this stage
 		if tracking {
 			d := Derivation{
 				Stage:      m.name,
 				StageType:  TypeMultiExpr,
 				Operation:  "expr:" + e.name,
 				Expression: e.fn.Source(),
-				Inputs:     snapshotRefs(env, e.fn.References()),
+				Inputs:     snapshotRefsKeyed(env, e.fn.References(), m.qualifyLocal(locals)),
 			}
 			if err := sc.Derive(m.name+"."+e.name, v, d); err != nil {
 				return &StageError{Stage: m.name, Type: TypeMultiExpr, Cause: err}
 			}
-			continue
-		}
-		if err := sc.Set(m.name+"."+e.name, v); err != nil {
+			locals[e.name] = struct{}{} // an earlier local alias for later expressions
+		} else if err := sc.Set(m.name+"."+e.name, v); err != nil {
 			return &StageError{Stage: m.name, Type: TypeMultiExpr, Cause: err}
 		}
+		env[e.name] = v // visible to later expressions within this stage
 	}
 	return nil
+}
+
+// qualifyLocal returns a key transform for snapshotRefsKeyed: a reference whose
+// first path segment names an earlier expression in this stage (a local alias) is
+// keyed under its scope path (stage.<ref>), so Lineage/Explain reconcile it to
+// that expression's derivation; seed and cross-stage references keep their key. It
+// returns nil when there are no earlier locals yet (nothing to qualify).
+func (m *MultiExpr) qualifyLocal(locals map[string]struct{}) func(string) string {
+	if len(locals) == 0 {
+		return nil
+	}
+	return func(ref string) string {
+		seg := ref
+		if i := strings.IndexByte(ref, '.'); i >= 0 {
+			seg = ref[:i]
+		}
+		if _, ok := locals[seg]; ok {
+			return m.name + "." + ref
+		}
+		return ref
+	}
 }

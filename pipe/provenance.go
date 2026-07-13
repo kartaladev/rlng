@@ -218,14 +218,29 @@ func sortedInputs(inputs map[string]any) []string {
 // ref stays a direct lookup; an unresolvable ref is omitted. It returns nil when
 // refs is empty so a no-input derivation carries a nil (not empty) Inputs map.
 func snapshotRefs(env map[string]any, refs []string) map[string]any {
+	return snapshotRefsKeyed(env, refs, nil)
+}
+
+// snapshotRefsKeyed is snapshotRefs with an optional key transform: each ref is
+// resolved from env by its own path, but recorded under keyOf(ref) when keyOf is
+// non-nil. MultiExpr uses it to key an intra-stage local alias ("base") under its
+// scope path ("calc.base") while still reading the value by the bare name, so
+// Lineage/Explain can reconcile it to the earlier expression's derivation.
+func snapshotRefsKeyed(env map[string]any, refs []string, keyOf func(string) string) map[string]any {
 	if len(refs) == 0 {
 		return nil
 	}
 	out := make(map[string]any, len(refs))
 	for _, r := range refs {
-		if v, ok := lookupPath(env, r); ok {
-			out[r] = v
+		v, ok := lookupPath(env, r)
+		if !ok {
+			continue
 		}
+		key := r
+		if keyOf != nil {
+			key = keyOf(r)
+		}
+		out[key] = v
 	}
 	return out
 }

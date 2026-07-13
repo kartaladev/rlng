@@ -23,7 +23,7 @@ spec+plan+ADR chain).
 | ~~**B4**~~ | ~~`Hash()` rejects non-marshalable hand-built defs~~ | — | — | — | ✅ **Done** (incr 020, ADR-0045) |
 | ~~**B5**~~ | ~~Per-decision options in decision-table config~~ | — | — | — | ✅ **Done** (incr 021, ADR-0046) |
 | ~~**B6**~~ | ~~Precise member-path references in provenance~~ | — | — | — | ✅ **Done** (incr 022, ADR-0047) |
-| **B7** | Intra-stage `MultiExpr` local-alias provenance | ADR-0011 ("Known limitations") | tech-debt/debuggability | new ADR | **P3** |
+| ~~**B7**~~ | ~~Intra-stage `MultiExpr` local-alias provenance~~ | — | — | — | ✅ **Done** (incr 023, ADR-0048) |
 | **B8** | Per-element lineage beyond firing (`foreach`) | ADR-0040; Spec 015 D5 | feature-gap/debuggability | new ADR | **P3** |
 | **B9** | Nested `foreach` support | Spec 015 D7; ADR-0040; `config/build.go:20` (`ErrNestedForEach`) | feature-gap | new ADR | **P3** |
 | **B10** | Convenience constructors (`NewFromYAML`/nested `Pipeline` as `Stage`) | ADR-0009; ADR-0005 | ergonomics (YAGNI) | additive | **P3** |
@@ -70,11 +70,12 @@ nearest-ancestor fallback (exact → descendants → ancestor) so a member-path 
 seed. `Explain`/`Lineage` no longer fan out to unread sibling outputs. `References()` signature unchanged
 (provenance-only consumer, semantics-only change); no `Hash()`/config change.
 
-**B7 — Intra-stage `MultiExpr` alias provenance.** Within a `MultiExpr`, a later expression reading an
-earlier one by bare local name (`b = "a + 1"`) keys `Inputs` by the local name (`a`) while the value lives
-at `<stage>.a`; prefix reconciliation links by path, not alias, so `Lineage`/`Explain` silently omit such
-intra-stage subtrees. Cross-stage refs reconcile correctly. Fixing it changes the documented "`Inputs` is
-keyed by referenced identifier" contract.
+**B7 — Intra-stage `MultiExpr` alias provenance. ✅ DONE (increment 023, ADR-0048).** A `MultiExpr`
+local-alias reference (first path segment names an earlier expr in the stage) is now keyed by its
+`<stage>.<name>` scope path when recording `Inputs`, so B6's exact/ancestor reconciliation traces the
+intra-stage subtree (`calc.taxed` → `calc.base` → seeds). Localized to `pipe/multi.go` via a keyed
+`snapshotRefs`; `single`/`table` and seed/cross-stage keys unchanged. Contract change (MultiExpr local
+`Inputs` keyed by path, not bare name); no signature/`Hash()`/config change.
 
 **B8 — Per-element lineage.** Per-element firing is recorded under `<stage>[i]`, but each element's full
 derivation graph (when the outer scope tracks provenance) is discarded — only the data `Snapshot()` survives
@@ -108,6 +109,7 @@ Deferrals found in the docs but confirmed already implemented — excluded from 
 | `Hash()` rejects non-marshalable hand-built defs (B4; ADR-0037) | Increment 020 / ADR-0045 |
 | Per-decision decision-table options (B5; ADR-0007 §5 / Spec 004) | Increment 021 / ADR-0046 |
 | Member-path provenance references (B6; ADR-0011 point 4) | Increment 022 / ADR-0047 |
+| Intra-stage MultiExpr local-alias provenance (B7; ADR-0011 known limitation) | Increment 023 / ADR-0048 |
 | Exact decimal money (ADR-0030) | Increment 014 / ADR-0038 + ADR-0039 |
 | `foreach` stage (ADR-0030) | Increment 015 / ADR-0040 |
 | Config-declared output mapping (ADR-0009; Spec 005/008 non-goals) | Increment 010 / ADR-0028 |

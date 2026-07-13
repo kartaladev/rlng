@@ -120,7 +120,69 @@ func TestMultiExprExecute(t *testing.T) {
 				require.True(t, ok)
 				assert.Equal(t, "expr:taxed", taxed.Operation)
 				assert.Equal(t, "base * 1.1", taxed.Expression)
-				assert.Equal(t, map[string]any{"base": 20.0}, taxed.Inputs)
+				// B7: an intra-stage local ref is keyed by its scope path, not the
+				// bare local name, so Lineage/Explain can reconcile it.
+				assert.Equal(t, map[string]any{"calc.base": 20.0}, taxed.Inputs)
+			},
+		},
+		{
+			name: "intra-stage local ref traces to its producer's lineage",
+			build: func(t *testing.T) (*pipe.MultiExpr, *pipe.Scope) {
+				m, err := pipe.NewMultiExpr("calc", []pipe.NamedExpr{
+					{Name: "base", Expression: "price * qty", Priority: 0},
+					{Name: "taxed", Expression: "base * 1.1", Priority: 1},
+				})
+				require.NoError(t, err)
+				return m, pipe.NewScope(map[string]any{"price": 10.0, "qty": 2.0}, pipe.WithProvenance())
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				require.NoError(t, err)
+				lin := sc.Lineage("calc.taxed")
+				paths := make([]string, len(lin))
+				for i, d := range lin {
+					paths[i] = d.Path
+				}
+				// Seeds-first, and the intra-stage producer calc.base now appears.
+				assert.Equal(t, []string{"price", "qty", "calc.base", "calc.taxed"}, paths)
+				assert.Contains(t, sc.Explain("calc.taxed"), "calc.base =")
+			},
+		},
+		{
+			name: "D2 shadowing: first x reads seed (unqualified), later x reads local (qualified)",
+			build: func(t *testing.T) (*pipe.MultiExpr, *pipe.Scope) {
+				m, err := pipe.NewMultiExpr("calc", []pipe.NamedExpr{
+					{Name: "x", Expression: "x + 1", Priority: 0}, // reads seed x
+					{Name: "y", Expression: "x", Priority: 1},     // reads local x
+				})
+				require.NoError(t, err)
+				return m, pipe.NewScope(map[string]any{"x": 10}, pipe.WithProvenance())
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				require.NoError(t, err)
+				dx, ok := sc.Derivation("calc.x")
+				require.True(t, ok)
+				assert.Equal(t, map[string]any{"x": 10}, dx.Inputs) // seed key, unqualified
+				dy, ok := sc.Derivation("calc.y")
+				require.True(t, ok)
+				assert.Equal(t, map[string]any{"calc.x": 11}, dy.Inputs) // local, qualified
+			},
+		},
+		{
+			name: "member local alias reconciles to its producer via ancestor",
+			build: func(t *testing.T) (*pipe.MultiExpr, *pipe.Scope) {
+				m, err := pipe.NewMultiExpr("calc", []pipe.NamedExpr{
+					{Name: "base", Expression: `{"k": price}`, Priority: 0}, // map-valued local
+					{Name: "t", Expression: "base.k", Priority: 1},          // member read of local
+				})
+				require.NoError(t, err)
+				return m, pipe.NewScope(map[string]any{"price": 7}, pipe.WithProvenance())
+			},
+			assert: func(t *testing.T, sc *pipe.Scope, err error) {
+				require.NoError(t, err)
+				dt, ok := sc.Derivation("calc.t")
+				require.True(t, ok)
+				assert.Equal(t, map[string]any{"calc.base.k": 7}, dt.Inputs) // qualified member path
+				assert.Contains(t, sc.Explain("calc.t"), "calc.base =")      // ancestor link
 			},
 		},
 		{
