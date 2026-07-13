@@ -8,8 +8,12 @@
 >
 > Nothing below is a bug or a blocker. Every item is a deliberate deferral, YAGNI non-goal, or watch-item;
 > all current contracts fail loud (rejected with a typed error) rather than silently misbehaving.
+>
+> **✅ PROGRAM COMPLETE (2026-07-13): B1–B12 all resolved.** Every tracked backlog item has been executed
+> (or closed as a documented non-goal). No open items remain; the table below is retained as the historical
+> record. New work starts a fresh backlog sweep.
 
-## Open items
+## Open items (all resolved)
 
 Stable IDs are `B<n>`. "Altitude" = how deep a change it is: **additive** (non-breaking new surface),
 **contained** (localized change, no contract break), or **new ADR** (contract/behaviour change needing a
@@ -28,7 +32,7 @@ spec+plan+ADR chain).
 | ~~**B9**~~ | ~~Nested `foreach` support~~ | — | — | — | ✅ **Done** (incr 025, ADR-0050) |
 | ~~**B10**~~ | ~~Convenience constructors~~ (constructors ✅; Pipeline-as-Stage re-deferred) | ADR-0009; ADR-0005 | ergonomics | additive | ✅ **Done** (incr 026, ADR-0051) — constructors; Pipeline-as-Stage still deferred |
 | ~~**B11**~~ | ~~Parallel execution of independent DAG stages~~ | ADR-0006; ADR-0005 | perf/feature-gap | new superseding ADR | ✅ **Done** (incr 027, ADR-0052) |
-| **B12** | Strict env / host functions declarable in YAML | ADR-0028 ("Deferred within config") | feature-gap (likely permanent non-goal) | new ADR | **P4** |
+| ~~**B12**~~ | ~~Strict env / host functions declarable in YAML~~ | ADR-0028 | — | — | ✅ **Done** (incr 028, ADR-0053) — env half already shipped (ADR-0031); host functions closed as non-goal |
 
 ### Details
 
@@ -111,9 +115,16 @@ isolation; `-race` clean). Sequential remains the default. `NewPipeline` was con
 `(stages []Stage, opts ...PipelineOption)` and `WithRuleset` moved from a fluent method to an option (pre-1.0
 breaking). ADR-0052 supersedes ADR-0006; the deferral is resolved.
 
-**B12 — YAML-declared env / host functions.** `WithEnv` (typed env schema) and `WithFunction` (host
-functions) stay programmatic — an env schema needs Go types and functions are Go values. Recorded as a
-deliberate omission; likely a permanent non-goal.
+**B12 — YAML-declared env / host functions. ✅ DONE (increment 028, ADR-0053).** Split into its two halves:
+the **strict-typed-env half was already delivered** by ADR-0031 (increment 011) — the top-level `schema`
+block makes strict env declarable in YAML, so a field typo fails at `Build`. The **host-function half is
+closed as a deliberate non-goal**: arbitrary Go functions cannot (and should not) be serialized into YAML
+without a plugin/interpreter that would break pure-Go debuggability and the minimal-safe-surface constraint;
+the two feasible variants (expression-bodied functions; host-registered allowlist selection) are YAGNI /
+marginal and are recorded in ADR-0053 as considered-and-rejected re-entry points. `WithFunction` stays
+programmatic. No runtime code change; no `Hash()`/schema/API impact. Spec 028, ADR-0053 (supersedes the
+"Deferred within config" bullet of ADR-0028). **This was the last open item — the B1–B12 program is
+complete.**
 
 ## Recently resolved deferrals (provenance of this sweep's dedup)
 
@@ -132,6 +143,7 @@ Deferrals found in the docs but confirmed already implemented — excluded from 
 | Nested foreach (B9; ADR-0040 D7 / Spec 015 D7) | Increment 025 / ADR-0050 |
 | rlng.NewFromYAML convenience (B10; ADR-0009 deferral) | Increment 026 / ADR-0051 |
 | Parallel stage execution (B11; ADR-0006 deferral) | Increment 027 / ADR-0052 |
+| YAML-declared env / host functions (B12; ADR-0028 deferral) | env half: incr 011 / ADR-0031; functions: non-goal, incr 028 / ADR-0053 |
 | Exact decimal money (ADR-0030) | Increment 014 / ADR-0038 + ADR-0039 |
 | `foreach` stage (ADR-0030) | Increment 015 / ADR-0040 |
 | Config-declared output mapping (ADR-0009; Spec 005/008 non-goals) | Increment 010 / ADR-0028 |

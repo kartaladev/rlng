@@ -38,6 +38,12 @@ Extend the schema:
   They stay programmatic (applied when the consumer builds the engine), which is
   where their inputs naturally live. Recorded here so the omission is deliberate.
 
+  > **Update (2026-07-13, ADR-0031 + ADR-0053):** this bullet is now resolved and
+  > partly obsolete. The **env-schema half was delivered** by ADR-0031 — the
+  > top-level `schema` block makes strict typed env declarable in YAML. **Host
+  > functions in YAML remain a deliberate non-goal**, closed by ADR-0053 (which
+  > supersedes this bullet). See B12 in `docs/BACKLOG.md` (Resolved).
+
 ## Consequences
 
 - A decision service — constants, staged rules with policies/aggregation/defaults,
