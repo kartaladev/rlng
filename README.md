@@ -64,191 +64,107 @@ and [`examples/`](./examples) for runnable end-to-end examples.
 ## Usage
 
 `rlng` exposes a typed facade (root `rlng` package) plus the building blocks
-(`expr`, `pipe`, `config`) used directly. The snippets below are distilled from
-the runnable [`examples/`](./examples) and the package `Example` tests.
+(`expr`, `pipe`, `config`) used directly. Each subsection below mirrors one
+stop on the runnable, numbered tour in [`examples/`](./examples) — start
+simple (a single expression) and build up to a full typed engine. The
+snippets are illustrative distillations, not verbatim copies; run
+`go test ./examples/ -v` for the real, working code.
 
-### Declarative pipeline → typed result
+### 1. One-off expressions — `expr`
 
-Declare a pipeline as config, build it, and evaluate a typed input into a typed result:
-
-```go
-package main
-
-import (
-	"context"
-	"fmt"
-
-	"github.com/kartaladev/rlng"
-	"github.com/kartaladev/rlng/config"
-)
-
-type Input struct {
-	Price float64 `mapstructure:"price"`
-	Qty   int     `mapstructure:"qty"`
-}
-
-type Quote struct {
-	Total float64 `mapstructure:"total"`
-}
-
-const rules = `
-stages:
-  - name: base
-    type: single-expr
-    expr: price * qty
-  - name: taxed
-    type: single-expr
-    expr: base * 1.1
-    depends_on: [base]
-`
-
-func main() {
-	def, _ := config.Parse(context.Background(), config.FromYAMLString(rules)) // parse declarative rules
-	pipeline, _ := def.Build()                                                 // compile + topo-sort (cycle-checked)
-
-	mapper, _ := rlng.NewMapper[Quote](rlng.MappingTemplate{"total": "taxed"})
-	engine, _ := rlng.NewTypedEngine[Input, Quote](pipeline, mapper)
-
-	q, err := engine.Evaluate(context.Background(), Input{Price: 10, Qty: 2})
-	if err != nil {
-		panic(err)
-	}
-	fmt.Printf("%.1f\n", q.Total) // 22.0
-}
-```
-
-### Build a pipeline in Go (no config)
-
-Skip config and wire stages directly; `depends_on` still orders the DAG:
+Compile a predicate or value expression once and evaluate it against any env — no pipeline needed for a single rule:
 
 ```go
-base, _ := pipe.NewSingleExpr("base", "price * qty")
-taxed, _ := pipe.NewSingleExpr("taxed", "base * 1.1", pipe.WithDependsOn("base"))
-pipeline, _ := pipe.NewPipeline([]pipe.Stage{base, taxed})
+gate, _ := expr.NewPredicate("age >= 18 && verified")
+ok, _ := gate.Test(map[string]any{"age": 34, "verified": true}) // true
 
-mapper, _ := rlng.NewMapper[Quote](rlng.MappingTemplate{"total": "taxed"})
-engine, _ := rlng.NewTypedEngine[Input, Quote](pipeline, mapper)
-
-q, _ := engine.Evaluate(context.Background(), Input{Price: 10, Qty: 2})
-fmt.Printf("%.1f\n", q.Total) // 22.0
+total, _ := expr.NewFunction("total", "price * qty")
+v, _ := total.Apply(map[string]any{"price": 10, "qty": 3}) // 30
 ```
 
-### Raw `map[string]any` output — `Engine`
+Quirk: a predicate that evaluates to a non-bool value fails loudly (`*expr.EvalError` wrapping
+`expr.ErrNotBool`) instead of silently coercing; opt into lenient truthiness with `expr.WithCoerce()`.
+See [`examples/01_expr_predicates_test.go`](./examples/01_expr_predicates_test.go) and
+[`examples/02_expr_functions_test.go`](./examples/02_expr_functions_test.go).
 
-When you don't need a typed result, `Engine` returns the accumulated map:
+### 2. Variable defaults & strict typing
+
+`WithGlobals`/`WithLocals` compile in `x ?? <default>` fallbacks that runtime input always
+overrides; `WithEnv` turns on strict type-checking so a field typo fails at compile time:
 
 ```go
-pipeline, _ := def.Build() // from config, or built in Go
-engine, _ := rlng.New(pipeline)
+gate, _ := expr.NewPredicate("score >= minScore", expr.WithGlobals(map[string]any{"minScore": 650}))
+ok, _ := gate.Test(map[string]any{"score": 680}) // true — no override needed
 
-out, _ := engine.Evaluate(context.Background(), map[string]any{"price": 10, "qty": 2})
-fmt.Printf("base=%v taxed=%.1f\n", out["base"], out["taxed"]) // base=20 taxed=22.0
+_, err := expr.NewPredicate("scoer >= 650", expr.WithEnv(map[string]any{"score": 0}))
+// err is a *expr.CompileError: "scoer" isn't in the declared env
 ```
 
-### Multi-expression stage, typed getters, timing & JSON
+Quirk: locals win over globals; without `WithEnv`, an undefined name is tolerated as always-nil forever.
+See [`examples/03_expr_variables_env_test.go`](./examples/03_expr_variables_env_test.go).
 
-A `multi-expr` stage computes several named results. The `Scope` offers typed
-getters, evaluation timing, and a round-trippable JSON codec (e.g. a `jsonb` column):
+### 3. Exact-decimal money
+
+Every compiled expression has a `decimal(x)` constructor, decimal-aware arithmetic operators, and
+`round`/`roundBank` builtins always available, so `$250,000 × 7.25%` is exactly `$18,125.00`:
 
 ```go
-base, _ := pipe.NewSingleExpr("base", "price * qty")
-calc, _ := pipe.NewMultiExpr("calc", []pipe.NamedExpr{
-	{Name: "taxed", Expression: "base * 1.1"},
-	{Name: "discounted", Expression: "base * 0.9"},
-}, pipe.WithDependsOn("base"))
-p, _ := pipe.NewPipeline([]pipe.Stage{base, calc})
-
-sc := pipe.NewScope(map[string]any{"price": 10, "qty": 2})
-_ = p.Run(context.Background(), sc)
-
-taxed, _ := sc.GetFloat64("calc.taxed") // 22.0
-dur, _ := sc.Duration()                 // evaluation duration
-blob, _ := json.Marshal(sc)             // persist; json.Unmarshal restores it losslessly
+fee, _ := expr.NewFunction("fee", "roundBank(decimal(principal) * decimal(rate), 2)")
+v, _ := fee.Apply(map[string]any{"principal": 250_000, "rate": "0.0725"})
+fmt.Println(v) // 18125.00 — not 18124.999999999996
 ```
 
-The JSON codec is **kind-preserving** (`"v":2` type tagging): an `int64`, `decimal`, `time`,
-`float64`, etc. reloads as the same Go type, so a persisted decision reproduces the same
-result on replay. Legacy (pre-tagging) blobs still load.
+Quirk: `decimal(...)`-wrapped operands are exact in any mode; a *bare* `decimal.Decimal` variable
+(`principal * rate` with no wrapper) needs `expr.WithEnv` so the compiler can see it's decimal.
+See [`examples/04_expr_decimal_test.go`](./examples/04_expr_decimal_test.go).
 
-### Exact-decimal money
+### 4. Pipe stages & scope
 
-Money and rate math is exact end to end. Declare the rate once as a decimal constant, seed the
-principal as a decimal, keep the arithmetic decimal via `decimal(...)`, and round deterministically
-with `roundBank` — the fee survives a JSON round-trip and maps into a typed result unchanged:
+A `Scope` is the `map[string]any` accumulator threaded through stage evaluation; `SingleExpr`/
+`MultiExpr` stages read and write it by dot path, and typed getters come in strict and coercing flavors:
 
 ```go
-const rules = `
-constants:
-  rate: {$dec: "0.0725"}
-stages:
-  - name: loan
-    type: single-expr
-    expr: roundBank(decimal(principal) * decimal(rate), 2)
-`
-def, _ := config.Parse(context.Background(), config.FromYAMLString(rules))
-pipeline, _ := def.Build()
-engine, _ := rlng.New(pipeline)
+loyalty, _ := pipe.NewSingleExpr("loyaltyDiscount", "0.10",
+	pipe.WithCondition(`tier == "gold"`), pipe.WithOutput("pricing.discountRate"))
+pipeline, _ := pipe.NewPipeline([]pipe.Stage{loyalty})
 
-scope, _ := engine.EvaluateScope(context.Background(), map[string]any{
-	"principal": decimal.NewFromInt(250000),
-})
-fee, _ := pipe.GetAs[decimal.Decimal](scope, "loan")
-fmt.Println(fee.StringFixed(2)) // 18125.00 — exact, not 18124.999999999996
+sc := pipe.NewScope(map[string]any{"tier": "gold"})
+_ = pipeline.Run(context.Background(), sc)
+rate, _ := sc.GetFloat64("pricing.discountRate") // 0.1
 ```
 
-Bare-variable decimal arithmetic (`principal * rate` without `decimal(...)`) resolves only under
-strict-env mode (`expr.WithEnv`), where the type-checker knows the operands are decimals; the
-`decimal(...)`-wrapped form above works everywhere. See
-[`examples/decimal_money_test.go`](./examples/decimal_money_test.go) for the full seed → evaluate →
-JSON round-trip → map flow.
+Quirk: a false `WithCondition` is a no-op — the output path is left absent, not written as `false`/`0`.
+See [`examples/05_pipe_scope_getters_test.go`](./examples/05_pipe_scope_getters_test.go) and
+[`examples/06_pipe_stages_test.go`](./examples/06_pipe_stages_test.go).
 
-### Decision tables & provenance
+### 5. Decision tables
 
-Ordered `condition → decisions` rules, first match wins. With `WithProvenance`,
-`Explain` traces a result back through the expressions to its seed inputs:
+An ordered set of `condition → decisions` rules: `HitPolicySingle` (default) takes the first
+match, `HitPolicyCollect` accumulates every match with an aggregation, and `WithDefault` makes
+"no match" an explicit outcome:
 
 ```go
 grade, _ := pipe.NewDecisionTable("grade", []pipe.Rule{
-	{Condition: "score >= 750", Decisions: map[string]pipe.Decision{"tier": {Expr: `"prime"`}, "limit": {Expr: "score * 100"}}},
-	{Condition: "score >= 650", Decisions: map[string]pipe.Decision{"tier": {Expr: `"near_prime"`}, "limit": {Expr: "score * 50"}}},
-	{Condition: "true", Decisions: map[string]pipe.Decision{"tier": {Expr: `"subprime"`}, "limit": {Expr: "score * 10"}}},
-})
+	{ID: "PRIME", Condition: "score >= 750", Decisions: map[string]pipe.Decision{
+		"tier": {Expr: `"prime"`}, "limit": {Expr: "score * 100"},
+	}},
+}, pipe.WithDefault(map[string]pipe.Decision{"tier": {Expr: `"declined"`}, "limit": {Expr: "0"}}))
 p, _ := pipe.NewPipeline([]pipe.Stage{grade})
 
-sc := pipe.NewScope(map[string]any{"score": 700}, pipe.WithProvenance())
+sc := pipe.NewScope(map[string]any{"score": 780})
 _ = p.Run(context.Background(), sc)
-
-tier, _ := sc.GetString("grade.tier") // near_prime
-fmt.Print(sc.Explain("grade.limit"))
-// grade.limit = 35000 [grade decision-table] expr: score * 50
-//   score = 700 [seed]
+tier, _ := sc.GetString("grade.tier") // prime
+fr, _ := sc.FiringRule("grade")       // fr.RuleID == "PRIME"
 ```
 
-Each `Decision` carries its own options, so one output can declare a `fallback`
-(or `globals`/`coerce`) that a sibling output does not — e.g.
-`{"limit": {Expr: "score * f", Options: []expr.Option{expr.WithFallback("0")}}}`
-recovers `limit` to `0` on a value error while a fallback-less `tier` still fails.
+Quirk: `HitPolicyUnique`/`HitPolicyAny` guard against silently picking a winner — overlapping
+matches surface as `ErrMultipleMatches`/`ErrConflictingMatches` instead of the first match winning.
+See [`examples/07_pipe_decision_table_test.go`](./examples/07_pipe_decision_table_test.go).
 
-`WithHitPolicy(pipe.HitPolicyCollect)` accumulates every matching rule's decisions into a slice:
+### 6. Line-item adjudication (`foreach`)
 
-```go
-checks, _ := pipe.NewDecisionTable("checks", []pipe.Rule{
-	{Condition: "score < 650", Decisions: map[string]pipe.Decision{"flag": {Expr: `"low_score"`}}},
-	{Condition: "dti > 0.4", Decisions: map[string]pipe.Decision{"flag": {Expr: `"high_dti"`}}},
-}, pipe.WithHitPolicy(pipe.HitPolicyCollect))
-// ...run over {"score": 600, "dti": 0.5}...
-flags, _ := sc.GetSlice("checks.flag") // [low_score high_dti]
-```
-
-### Line-item adjudication (`foreach`)
-
-A `foreach` stage runs an inner pipeline once per element of a collection,
-each against its own per-element scope (the element bound under `as`, default
-`item`). It writes structured per-element output to `<stage>.items`,
-optionally rolls a per-element key up into a header value (`rollups:`, same
-decimal/int64-faithful aggregations as decision-table `collect`), and records
-each element's firing rules under `<stage>[i]` — so "line 3 was denied by rule
-LTV_MAX_80" is answerable directly:
+A `foreach` stage runs an inner pipeline once per collection element, then optionally rolls a
+per-element field up into a header value via `rollups:`:
 
 ```yaml
 stages:
@@ -265,33 +181,120 @@ stages:
             decisions: {status: '"denied"'}
         default: {status: '"approved"'}
     rollups:
-      - key: approved
-        agg: sum
-        as: totalApproved
+      - {key: approved, agg: sum, as: totalApproved}
 ```
 
 ```go
-firings := sc.FiringRulesFor("lines[2]") // rule that decided line 3
+firings := sc.FiringRulesFor("lines[2].check") // which rule decided line 3
 ```
 
-Nested `foreach` (a `foreach` inside a `foreach`'s inner `stages:`) is
-rejected at build time — see `examples/foreach_lineitem_test.go` for a
-full runnable adjudication.
+Quirk: rolling up an empty collection leaves a `sum`/`min`/`max` rollup key absent (no defined
+answer), while `count` still writes an explicit `0`. Nesting composes (`foreach` inside `foreach`).
+See [`examples/09_pipe_foreach_test.go`](./examples/09_pipe_foreach_test.go).
 
-### One-off expressions — `expr`
+### 7. Provenance / explainability
 
-Compile and evaluate a single value expression or boolean predicate directly:
+`pipe.WithProvenance()` makes a `Scope` record a `Derivation` for every seed input and stage
+write, so `Explain`/`Lineage` can trace a result back to the inputs that produced it:
 
 ```go
-f, _ := expr.NewFunction("total", "price * qty")
-v, _ := f.Apply(map[string]any{"price": 10, "qty": 3}) // 30
-
-p, _ := expr.NewPredicate("amount > threshold", expr.WithGlobals(map[string]any{"threshold": 100}))
-ok, _ := p.Test(map[string]any{"amount": 150}) // true
+sc := pipe.NewScope(map[string]any{"applicant": map[string]any{"score": 700}}, pipe.WithProvenance())
+_ = pipeline.Run(context.Background(), sc)
+fmt.Print(sc.Explain("grade.limit"))
+// grade.limit = 35000 [grade decision-table] expr: applicant.score * 50
+//   applicant = map[score:700] [seed]
 ```
 
-Runnable versions of every snippet live in [`examples/`](./examples) and the
-package `Example` tests — run them with `go test ./...`.
+Quirk: `WithClock` + `pipe.NowFunc` inject a fixed clock as an expr `now()` host function, so a
+temporal rule and `Scope.Duration`/`StageTimings` stay deterministic under test.
+See [`examples/10_pipe_provenance_clock_test.go`](./examples/10_pipe_provenance_clock_test.go).
+
+### 8. Declarative config rulesets
+
+Everything above can be authored as one YAML or JSON document and turned into a `*pipe.Pipeline`
+via `config.Parse` + `PipelineDef.Build` — the shape a rule actually ships in:
+
+```go
+def, _ := config.Parse(context.Background(), config.FromYAMLString(`
+schema:
+  principal: 0
+constants:
+  aprRate: {$dec: "0.0725"}
+stages:
+  - name: interest
+    type: single-expr
+    expr: decimal(principal) * decimal(aprRate)
+`))
+pipeline, _ := def.Build()
+```
+
+Quirk: a top-level `schema:` block auto-enables strict compilation for every stage (a field typo
+becomes a `*config.ConfigError` at `Build`); `Lint()`/`WithLintErrors()` catch missing-default and
+unreachable-rule smells.
+See [`examples/11_config_rulesets_test.go`](./examples/11_config_rulesets_test.go).
+
+### 9. Ruleset identity & replay
+
+`PipelineDef.Hash()` is a deterministic content fingerprint that `Build` stamps onto every
+`Scope` it runs, so a persisted decision carries proof of exactly which ruleset produced it:
+
+```go
+sc := pipe.NewScope(map[string]any{"claimsScore": 85})
+_ = pipeline.Run(context.Background(), sc)
+b, _ := json.Marshal(sc) // persist; json.Unmarshal restores it losslessly
+
+reloaded := &pipe.Scope{}
+_ = json.Unmarshal(b, reloaded)
+id, _ := reloaded.Ruleset()
+def.MatchesRuleset(id) // true iff def is still the ruleset that produced this decision
+```
+
+Quirk: `Hash()` deliberately excludes the author's `version:` label — relabeling a release with
+no rule change leaves the hash unchanged.
+See [`examples/12_config_replay_test.go`](./examples/12_config_replay_test.go).
+
+### 10. Untyped engine — `Engine`
+
+`rlng.Engine` wraps a built `*pipe.Pipeline` and owns the per-call boilerplate — seed a `Scope`,
+`Run`, hand back a result:
+
+```go
+engine, _ := rlng.New(pipeline, rlng.WithScopeOptions(pipe.WithProvenance()))
+out, _ := engine.Evaluate(context.Background(), map[string]any{"score": 720, "balance": 1200, "limit": 5000})
+// out["offer"].(map[string]any)["apr"]
+
+engine2, _ := rlng.NewFromYAML(context.Background(), yamlDoc) // parse + build + New, one call
+```
+
+Quirk: `Evaluate` returns the plain map; `EvaluateScope` returns the live `*pipe.Scope` for when
+you need timing, JSON persistence, or `Explain`.
+See [`examples/13_engine_untyped_test.go`](./examples/13_engine_untyped_test.go).
+
+### 11. Typed engine → typed result
+
+`rlng.TypedEngine[I, R]` pairs an `Engine` with a `Mapper[R]`, so `Evaluate` takes a typed struct
+in and returns a typed struct out — a `decimal.Decimal` field survives both boundaries exactly:
+
+```go
+mapper, _ := rlng.NewMapper[LoanQuote](rlng.MappingTemplate{"fee": "fee"})
+engine, _ := rlng.NewTypedEngine[LoanApplication, LoanQuote](pipeline, mapper)
+
+quote, _ := engine.Evaluate(context.Background(), LoanApplication{
+	Principal: decimal.NewFromInt(1_000),
+	Rate:      decimal.RequireFromString("0.0725"),
+})
+fmt.Println(quote.Fee.StringFixed(2)) // 72.50
+```
+
+Quirk: mapping a fractional decimal into an `int` result field is refused, not truncated
+(`*rlng.MappingError` wrapping `rlng.ErrLossyResultNarrowing`); `rlng.WithConcurrency()` only
+works via the config-driven constructors (`NewFromYAML`/`NewFromProvider`) since concurrency is
+baked in at `Build` time, not at `rlng.New`.
+See [`examples/14_engine_typed_test.go`](./examples/14_engine_typed_test.go).
+
+Runnable versions of every snippet live in [`examples/`](./examples) (start at
+[`examples/doc.go`](./examples/doc.go) for the full index) and the package `Example` tests —
+run them with `go test ./...`.
 
 ## Installation
 
