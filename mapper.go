@@ -100,8 +100,7 @@ func decimalNarrowHook(from, to reflect.Type, data any) (any, error) {
 		return data, nil
 	}
 	switch to.Kind() {
-	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
-		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		if !d.IsInteger() {
 			return nil, fmt.Errorf("%w: %s", ErrLossyResultNarrowing, d.String())
 		}
@@ -112,6 +111,18 @@ func decimalNarrowHook(from, to reflect.Type, data any) (any, error) {
 			return nil, fmt.Errorf("%w: %s exceeds int64 range", ErrLossyResultNarrowing, d.String())
 		}
 		return bi.Int64(), nil
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		if !d.IsInteger() {
+			return nil, fmt.Errorf("%w: %s", ErrLossyResultNarrowing, d.String())
+		}
+		// Unsigned targets accept the full uint64 range (a value above int64 range
+		// still fits); a negative decimal has no uint64 representation. Guard with
+		// the unsigned bound rather than reusing the signed IsInt64 check.
+		bi := d.BigInt()
+		if !bi.IsUint64() {
+			return nil, fmt.Errorf("%w: %s exceeds uint64 range", ErrLossyResultNarrowing, d.String())
+		}
+		return bi.Uint64(), nil
 	case reflect.Float32, reflect.Float64:
 		return d.InexactFloat64(), nil
 	case reflect.String:

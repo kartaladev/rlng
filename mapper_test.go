@@ -286,3 +286,27 @@ func TestMapperDecimalOverflowNarrowing(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, rlng.ErrLossyResultNarrowing)
 }
+
+// TestMapperDecimalNarrowUint64AboveInt64 guards against a false rejection: an
+// integer decimal in (MaxInt64, MaxUint64] fits a uint64 result field exactly,
+// so it must decode, not error. Regression for the audit finding (unsigned
+// kinds shared the signed IsInt64 guard).
+func TestMapperDecimalNarrowUint64AboveInt64(t *testing.T) {
+	t.Parallel()
+
+	type result struct {
+		N uint64 `mapstructure:"n"`
+	}
+	mapper, err := rlng.NewMapper[result](rlng.MappingTemplate{"n": "big"})
+	require.NoError(t, err)
+
+	// 2^63 = MaxInt64 + 1: above int64 range, exactly representable as uint64.
+	got, err := mapper.Map(map[string]any{"big": decimal.RequireFromString("9223372036854775808")})
+	require.NoError(t, err)
+	assert.Equal(t, uint64(9223372036854775808), got.N)
+
+	// A negative decimal has no uint64 representation and must still fail loud.
+	_, err = mapper.Map(map[string]any{"big": decimal.RequireFromString("-5")})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, rlng.ErrLossyResultNarrowing)
+}
