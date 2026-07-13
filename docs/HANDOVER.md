@@ -1,66 +1,63 @@
-# HANDOVER — rlng (updated 2026-07-13)
+# HANDOVER — rlng (updated 2026-07-14)
 
-> **To the next session (READ FIRST, trust these over any memory):** `CLAUDE.md`, then `docs/BACKLOG.md`
-> (now fully resolved), then `git log` on `main`. Trust the repo (code + git history + `docs/`) over any
-> recollection.
+> **To the next session (READ FIRST, trust these over any memory):** `CLAUDE.md`, then `docs/BACKLOG.md`,
+> then `git log` on `main`. For the autonomous program in flight, also read `.superpowers/sdd/progress.md`
+> (the SDD ledger) and the project memory `rlng-refactor-and-examples-030`. Trust the repo (code + git
+> history + `docs/`) over any recollection.
 
 ## Objective & roadmap position
 
 `rlng` is a pure-Go rule + calculation engine on `expr-lang/expr` (debuggability-first, no cgo, typed
-wrapping errors). Increments 011–016 merged & pushed.
+wrapping errors). The B1–B12 backlog program is complete (increments 017–028). The whole-codebase audit
+(increment 029 label, merged `main@a333841`) fixed 8 bugs and recorded the **post-audit refactor backlog
+R1–R11** in `docs/BACKLOG.md`.
 
-**✅ The B1–B12 backlog-execution program is COMPLETE.** All 12 tracked backlog items from
-`docs/BACKLOG.md` have been executed as their own increments (or closed as a documented non-goal), each
-merged & pushed to `main`:
+**Active autonomous session (user AFK, reviews `origin/main` in the morning).** Explicit user authorization
+this session for **merge to main + push to origin/main + branch delete** (NOT release tags).
 
-- **B1** incr 017 `f10a8be` ADR-0042 · **B2** incr 018 `934f1b5` ADR-0043 · **B3** incr 019 `2af21f2` ADR-0044
-- **B4** incr 020 `4b3089e` ADR-0045 · **B5** incr 021 `89b1d57` ADR-0046 · **B6** incr 022 `56b243d` ADR-0047
-- **B7** incr 023 `9569ecc` ADR-0048 · **B8** incr 024 `e6ed96e` ADR-0049 · **B9** incr 025 `1a50653` ADR-0050
-- **B10** incr 026 `b05ce72` ADR-0051 (constructors; Pipeline-as-Stage re-deferred) · **B11** incr 027
-  `007ea7a` ADR-0052 (parallel stage execution + delivery-gate race fix) · **B12** incr 028 ADR-0053
-  (closed as non-goal; env half already shipped by ADR-0031)
+## What's DONE this session — refactor batch 029 (R1–R9, R11)
 
-## What's DONE this session
-- **B11 / increment 027 (`main@007ea7a`, merged+pushed):** opt-in parallel execution of independent DAG
-  stages (`pipe.WithConcurrency()` / `WithMaxParallel(n)` + config + convenience-constructor options).
-  Wave-based level-barrier scheduling; deterministic on the success path. **A data race the original design
-  missed was caught by the whole-branch `/code-review` and fixed before merge** — stages evaluated against
-  `sc.Snapshot()`'s live nested references while an independent same-level stage mutated a shared nested map
-  in place (production `fatal: concurrent map read and map write`). Fixed with per-stage read isolation:
-  under real parallelism (`p.wide`), `Snapshot` deep-copies the map spine. ADR-0052 §5 amended; regression
-  guard `TestPipelineConcurrencyNoSharedNestedMapRace`.
-- **B12 / increment 028 (docs-only closure):** feasibility-brainstormed and closed. The strict-typed-env
-  half of B12 was **already delivered** by ADR-0031 (the YAML `schema` block). Host functions in YAML are
-  **closed as a deliberate non-goal**: arbitrary Go can't be serialized to YAML without a plugin/interpreter
-  that breaks pure-Go debuggability + the minimal-safe-surface constraint; the two feasible variants
-  (expression-bodied functions; host-registered allowlist) are YAGNI/marginal, recorded in ADR-0053 as
-  considered-and-rejected re-entry points. No runtime code. Spec 028, ADR-0053 (supersedes the "Deferred
-  within config" bullet of ADR-0028, which is annotated in place); BACKLOG B12 → Resolved, program banner
-  added.
+Ten behavior-preserving, quality-only refactors, executed via subagent-driven development (fresh implementer
++ per-task spec/quality review each), on branch `claude/refactor-batch-029`:
 
-## Next actions
-- **No open backlog items.** The program is complete. New work should start with a **fresh backlog sweep**
-  (re-audit the code + docs for deferrals/watch-items) and, if anything surfaces, a new `docs/specs/*` →
-  `docs/plans/*` → `docs/adrs/*` chain per CLAUDE.md.
-- **Optional, still gated on explicit user approval:** cut a release tag. Nothing has been tagged; per
-  CLAUDE.md the standing auto-merge authorization does **not** extend to release tags — ask first. Consider
-  whether the accumulated pre-1.0 breaking changes (e.g. `NewPipeline` signature, `WithRuleset` option,
-  decision-table `map[string]pipe.Decision`, nested-foreach firing keys) warrant a version-planning ADR
-  before a `v0.x` tag.
+- **R1** `fb5bd0a` (ADR-0054) unify numeric coercion onto one overflow-checked kernel `pipe/numeric.go` ·
+  **R2** `6e4c516` `Scope.deriveOrSet` · **R7** `31c0e43` gate `p.wide` on `maxParallel!=1` ·
+  **R8** `cc95f9f` shared `prefixKey`/`mergePrefixed` · **R3** `6842a55` fold `truthy` heads ·
+  **R4** `c365f08` table-drive decimal ops · **R9** `4e077bc` collapse `copyMap`→`mergeInto` ·
+  **R6** `e36ffd6` `knownExprDefFields` var + `exprEnvOpts` · **R11** `acf9624` memoize Build hash ·
+  **R5** `908eeab` `newEngineConfig`+`parseAndBuild`. Spec/plan `docs/{specs,plans}/029-*`.
+
+**Whole-branch gate PASSED:** `go build/vet ./...` clean, `gofmt -l .` empty, `go test ./... -race` green
+(all 5 packages); coverage rlng 97.6 / config 99.6 / expr 94.9 / pipe 99.2%; whole-branch `/code-review`
+(opus) = ready-to-merge (no Critical/Important); `/security-review` = clean; no exported-API change. Five
+cosmetic/doc Minors deferred to `docs/BACKLOG.md` ("R-cleanup"). **R10 remains open** (additive feature).
+
+## Next actions (this autonomous session, in order)
+
+1. **Merge 029 → main, push origin/main, delete branch** (authorized this session).
+2. **Follow-on increment — examples restructure** (own branch off main): renumber/reorder `examples/*_test.go`
+   and per-package `*_example_test.go` from **simplest → most complex, starting with the `expr` package**.
+   Expose ALL library capabilities; each component's Example must include its **variances/quirks**.
+   **Pedagogical**: elaborate doc comments that teach each feature in detail. **Real-world** scenarios
+   (deliberately designed, not toy), **2–3 samples per topic**, with **prettified, readable** sample code.
+   Runnable `Example…` with `// Output:`.
+3. **README.md `Usage` section**: explain the examples — not too verbose, gradually increasing usage
+   complexity, cross-referencing related examples.
+4. Run the same delivery gate on the follow-on, then merge + push to origin/main.
 
 ## Exact state
-- **On branch `claude/close-b12-nongoal-028`** at handover time, about to merge B12 (docs-only) to `main`.
-  Once merged: `main` carries all of B1–B12.
-- Docs-only increment: `go build ./...` + `go test ./... -race` unchanged and green (no code touched);
-  `/code-review` + `/security-review` trivially clean (no code delta).
-- Standing program cadence (AUTO merge+push per green increment) applies; release tags still need explicit
-  approval.
+
+- Branch `claude/refactor-batch-029`, at HEAD `908eeab` (all R-tasks committed + gate passed); a trailing
+  `docs:` commit for BACKLOG/HANDOVER precedes the merge. Working tree otherwise clean (SDD scratch under
+  `.superpowers/sdd/` is gitignored).
+- Artifact numbering (continuous): specs/plans at **029**; ADRs at **0054**. The examples/README follow-on
+  is a docs/test increment — author a spec/plan/ADR only if a real decision arises.
 
 ## Gotchas / environment
-- `govulncheck`/`golangci-lint` are NOT installed locally — CI runs them on push.
-- `.superpowers/sdd/*` are gitignored scratch; track program history via `docs/BACKLOG.md` + git log.
-- Artifact numbering (continuous): specs/plans at **028** (028 is a spec-only closure, no plan by design —
-  see the spec's deviation note); ADRs at **0053** done. Next work continues from 029 / 0054.
+
+- `govulncheck`/`golangci-lint`/`apidiff`/`gorelease` are NOT installed locally — CI runs them on push; the
+  no-exported-API-change claim was verified by whole-branch review (all new symbols unexported), not apidiff.
+- `.superpowers/sdd/*` are gitignored scratch (SDD ledger, briefs, reports, review packages).
 - The concurrency read-isolation invariant lives in `pipe/scope.go` (`Snapshot` deep-copy when `concurrent`)
-  + `pipe/pipeline.go` (`p.wide` gate + `markConcurrent`); regression guard
+  + `pipe/pipeline.go` (`p.wide` gate — R7 now suppresses it for `maxParallel==1`); regression guard
   `TestPipelineConcurrencyNoSharedNestedMapRace` must stay `-race` clean.

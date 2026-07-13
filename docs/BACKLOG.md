@@ -17,10 +17,26 @@
 > quality-only (no behavior change) and are deferred to be revisited after the bug fixes land. See the
 > "Post-audit refactor items" section below.
 
-## Post-audit refactor items (R1–R10)
+## Post-audit refactor items (R1–R11)
 
 Quality-only; each is a behavior-preserving refactor (or a small additive guard). Stable IDs `R<n>`. Priority
 is a rough ordering, not a commitment.
+
+> **✅ RESOLVED — R1–R9 and R11 (increment 029, merged 2026-07-14).** All ten contained refactors landed as
+> one increment (spec/plan `029`, ADR-0054 for R1's numeric kernel), each a green per-task commit, cleared
+> by per-task review + a whole-branch `/code-review` (ready-to-merge, no Critical/Important) and
+> `/security-review` (clean). No public-API, error-identity, `Hash()`, or schema change; coverage on every
+> changed package stayed ≥94%. **R10 remains open** (it is an additive collision-detection feature, not a
+> behavior-preserving refactor — needs its own design + ADR). The R1–R9/R11 rows below are kept as the
+> historical record.
+>
+> **Deferred cosmetic follow-ups (from the 029 reviews — "R-cleanup", low priority, no rush):** (a) R2
+> redundant `e := e` loop capture in `pipe/multi.go` (dead under Go 1.22+); (b) R7's two-branch
+> `computeLevels` in `pipe/pipeline.go` could collapse to one call before the `wide` check; (c) a one-line
+> doc note on `mergePrefixed`/`recordElementDerivations` that `src` is keyed by each derivation's own `Path`
+> (R8 invariant, currently implicit); (d) R3 stray blank line in `expr/predicate.go`; (e) R1 `table_test.go`
+> uint64→decimal row overlaps a pre-existing regression test. All behavior-neutral; fold into the next time
+> those files are touched.
 
 | ID | Title | Source (audit finding) | Where | Priority |
 |----|-------|------------------------|-------|----------|
