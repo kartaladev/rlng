@@ -38,6 +38,19 @@ is a rough ordering, not a commitment.
 > uint64→decimal row overlaps a pre-existing regression test. All behavior-neutral; fold into the next time
 > those files are touched.
 
+## Watch items (observations — not yet triaged to a spec/plan)
+
+- **W1 — strict-env (`WithEnv`) does not reject an undefined-identifier typo used as a `decimal(...)` call
+  argument** (only bare identifiers, e.g. in a `condition:`, are caught). Surfaced while authoring the
+  guided-tour examples (increment 030). Root cause (per review): the `exprlang.Operator(...)` overload
+  registrations in `expr/decimal.go` (mixed decimal/int operators) suppress the expr type-checker's
+  identifier-resolution error for names appearing as call arguments in the same compile — so `decimal(scoer)`
+  under a strict `schema:` compiles instead of failing. **Not yet fixed** — needs an audit of whether the
+  operator-overload registration can be narrowed so strict-env still resolves call-argument identifiers, or
+  whether this is an upstream expr-lang limitation. Low urgency (config is a trusted-authoring surface), but
+  it weakens the strict-schema "catch every typo" guarantee. Guided-tour example 11 works around it by placing
+  the demo typo in a `condition:` field (where it IS caught).
+
 | ID | Title | Source (audit finding) | Where | Priority |
 |----|-------|------------------------|-------|----------|
 | **R1** | Unify numeric coercion into one overflow-checked core | pipe #3 / #2 + review C2 | `pipe/table.go` (`toInt64`/`toFloat64`/`asDecimal`/`classify`) vs `pipe/get.go` (`coerceToInt64`/`coerceToFloat64`) | P2 |
