@@ -61,6 +61,17 @@ func TestFunctionReferences(t *testing.T) {
 			},
 		},
 		{
+			// A bracket key that itself contains a dot cannot be faithfully
+			// represented as a dot-path (it would collide with genuine nesting
+			// a.b.c), so the chain degrades to the base identifier rather than
+			// reporting a misleading "a.b.c".
+			name: "bracket key containing a dot degrades to the base identifier",
+			expr: `a["b.c"]`,
+			assert: func(t *testing.T, refs []string) {
+				assert.Equal(t, []string{"a"}, refs)
+			},
+		},
+		{
 			name: "literal only has no refs",
 			expr: "1 + 2",
 			assert: func(t *testing.T, refs []string) {
@@ -110,4 +121,18 @@ func BenchmarkFunctionReferences(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_ = f.References()
 	}
+}
+
+// TestFunctionReferencesNameUsedAsRefAndCallee guards against dropping a data
+// reference whose name is ALSO used as a call target in the same expression: the
+// callee exclusion must remove only the call-target occurrence, not the value
+// read. Regression for the audit finding (callees were excluded by name, so a
+// name in both positions vanished entirely).
+func TestFunctionReferencesNameUsedAsRefAndCallee(t *testing.T) {
+	t.Parallel()
+
+	// `rate` is read as a value AND called as a function; `amount` is a plain ref.
+	f, err := expr.NewFunction("f", "amount * rate + rate(amount)")
+	require.NoError(t, err)
+	assert.Equal(t, []string{"amount", "rate"}, f.References())
 }

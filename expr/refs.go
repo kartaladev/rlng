@@ -18,20 +18,23 @@ func references(src string) []string {
 	if err != nil {
 		return nil
 	}
-	v := &refVisitor{paths: map[string]struct{}{}, callees: map[string]struct{}{}}
 	node := tree.Node
+	// First pass: record the exact identifier/member nodes sitting in call-target
+	// position (function names supplied by the env, not data fields). Excluding by
+	// node identity — not by name — keeps a value read of a name that is ALSO used
+	// as a call target elsewhere in the same expression.
+	cv := &calleeVisitor{callees: map[*ast.Node]struct{}{}}
+	ast.Walk(&node, cv)
+
+	v := &refVisitor{paths: map[string]struct{}{}, callees: cv.callees}
 	ast.Walk(&node, v)
 	if len(v.paths) == 0 {
 		return nil
 	}
-	// Exclude call callees (function names supplied by the env, not data fields)
-	// and any path that is a strict prefix (proper ancestor) of another collected
+	// Drop any path that is a strict prefix (proper ancestor) of another collected
 	// path — the deepest static path wins ("a", "a.b" drop out for "a.b.c").
 	all := make([]string, 0, len(v.paths))
 	for p := range v.paths {
-		if _, isCallee := v.callees[p]; isCallee {
-			continue
-		}
 		all = append(all, p)
 	}
 	refs := make([]string, 0, len(all))
@@ -48,27 +51,38 @@ func references(src string) []string {
 	return refs
 }
 
+// calleeVisitor collects the node addresses that sit in call-target position, so
+// the reference pass can exclude exactly those occurrences (by identity) rather
+// than every occurrence of the callee's name.
+type calleeVisitor struct {
+	callees map[*ast.Node]struct{}
+}
+
+func (c *calleeVisitor) Visit(node *ast.Node) {
+	if n, ok := (*node).(*ast.CallNode); ok {
+		// &n.Callee is the exact *ast.Node ast.Walk passes when it later visits
+		// the callee, so the reference pass can match it by identity.
+		c.callees[&n.Callee] = struct{}{}
+	}
+}
+
 type refVisitor struct {
 	paths   map[string]struct{}
-	callees map[string]struct{}
+	callees map[*ast.Node]struct{}
 }
 
 func (r *refVisitor) Visit(node *ast.Node) {
-	switch n := (*node).(type) {
+	if _, isCallee := r.callees[node]; isCallee {
+		// This occurrence is a function name (call target), not a data field.
+		// A same-named value read elsewhere is a different node and still counts.
+		return
+	}
+	switch (*node).(type) {
 	case *ast.IdentifierNode:
-		r.paths[n.Value] = struct{}{}
+		r.paths[(*node).(*ast.IdentifierNode).Value] = struct{}{}
 	case *ast.MemberNode:
 		if p, ok := staticPath(*node); ok {
 			r.paths[p] = struct{}{}
-		}
-	case *ast.CallNode:
-		// A call callee (e.g. `discount` in `discount(x)`) is a function name
-		// supplied by the env, not a data field; exclude it. Method-call members
-		// (`foo.bar()`, MemberNode.Method) are never recorded as a path by
-		// staticPath, so only the receiver identifier survives. (Builtins like len
-		// are BuiltinNode, already not IdentifierNodes.)
-		if id, ok := n.Callee.(*ast.IdentifierNode); ok {
-			r.callees[id.Value] = struct{}{}
 		}
 	}
 }
@@ -88,6 +102,12 @@ func staticPath(n ast.Node) (string, bool) {
 		}
 		prop, ok := t.Property.(*ast.StringNode)
 		if !ok {
+			return "", false
+		}
+		// A key that itself contains "." cannot be represented as a dot-path
+		// without colliding with genuine nesting (a["b.c"] vs a.b.c), so the chain
+		// is not statically resolvable: fall back to the base identifier.
+		if strings.Contains(prop.Value, ".") {
 			return "", false
 		}
 		base, ok := staticPath(t.Node)
