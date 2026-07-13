@@ -11,7 +11,8 @@
 wrapping errors). Increments 011–016 merged & pushed. **Increment 016 (config `Provider`) complete.**
 
 **Active program: execute ALL 12 backlog items (B1–B12) from `docs/BACKLOG.md`,** each as its own
-increment. **B1 DONE (incr 017, `main@f10a8be`); B2 DONE (incr 018, `main@934f1b5`).** Next up: **B3.**
+increment. **B1 DONE (incr 017, `f10a8be`); B2 DONE (incr 018, `934f1b5`); B3 DONE (incr 019, `2af21f2`).**
+Next up: **B4.**
 
 ## Standing decisions for this program (do NOT re-ask)
 - **Scope = all 12**, including the two deliberate non-goals **B11** (parallel exec; write a superseding
@@ -28,36 +29,40 @@ increment. **B1 DONE (incr 017, `main@f10a8be`); B2 DONE (incr 018, `main@934f1b
   (See memory `rlng-backlog-execution-program` for the full authorization record.)
 
 ## What's DONE this session
-- **B1 / increment 017** (`main@f10a8be`): `foreach` `Rollup.Key` dot-path-aware via shared `lookupPath`;
-  spec/plan 017, ADR-0042. B1 → `docs/BACKLOG.md` Resolved. (Prior session.)
-- **B2 / increment 018 shipped** (`main@934f1b5`): a benchmark-only increment — `BenchmarkForEachScopeCopy`
-  (`pipe/foreach_bench_test.go`, blackbox) measures `ForEach.Execute`'s per-element scope-copy cost over a
-  `scope{flat8,flat64,nested} × elements{1,10,100,1000}` grid, empty inner pipeline, no rollups, provenance
-  off. Result: **linear in both axes, sub-ms for typical counts** (flat64×100 = 548µs), ~5ms only at the
-  1000×64 extreme; `nested` +6 allocs/element pinpoints `cloneValue`'s per-node deep copy. **Decision:
-  accepted, no optimization** (the copy is the price of the per-element isolation invariant, ADR-0040 D2).
-  **No production-code change.** Spec/plan 018, ADR-0043; ADR-0040 watch-item + BACKLOG B2 → resolved.
-  Commits `ca3f10e`(spec)→`934f1b5`(test). Code-review found one methodology-comment inaccuracy (fixed,
-  amended in); security-review clean.
+- **B2 / increment 018** (`main@934f1b5`): benchmark-only — `BenchmarkForEachScopeCopy` measures
+  `ForEach.Execute`'s per-element scope-copy cost (linear both axes, sub-ms typical, ~5ms at 1000×64);
+  **accepted, no optimization** (ADR-0043). No production-code change.
+- **B3 / increment 019 shipped** (`main@2af21f2`): added opt-in coercing numeric getters
+  `GetIntCoerce`/`GetInt64Coerce`/`GetFloat64Coerce` (`pipe/get.go`) beside the strict getters. Accept a
+  wider type set — any integer kind (overflow-checked), integral finite floats, `json.Number`, base-10
+  numeric strings — converted safely/honestly per **ADR-0035**: no silent truncation/wrap, never
+  manufacture `NaN`/`±Inf` from text (string OR `json.Number`; a value already stored as a float passes
+  through), fail loud with `*ScopeTypeError`. Two shared helpers `coerceToInt64`/`coerceToFloat64` (stdlib
+  only). **Additive, no SemVer break; strict getters unchanged.** Spec/plan 019, ADR-0044; BACKLOG B3 →
+  resolved. Commits `28defd9`(spec)→`2af21f2`(feat). Code-review found one inconsistency (`json.Number`
+  non-finite handling — fixed, covered, amended in); security-review clean.
 
-## Next action — B3 (increment 019)
-**B3 = Numeric-coercing Scope getters** (`docs/BACKLOG.md` B3; source Spec 006 non-goal, `pipe/get.go`).
-**Additive, autonomous** (design + implement autonomously, surface design via the committed spec; no live
-approval pause — it is in the B1–B4/B10 autonomous set). Today typed getters (`GetInt`/`GetFloat64`/… in
-`pipe/get.go`) are **strict**: a `float64` at an int path or a numeric string is a `*ScopeTypeError`. Add a
-**coercing variant** (e.g. `GetIntCoerce`/… or an option) without breaking the strict API. Start:
-`git checkout -b claude/coercing-scope-getters-019 main`, read `pipe/get.go` + `get_test.go` +
-`cc-skills-golang:golang-safety` (numeric conversion overflow), brainstorm → spec/plan 019 → ADR-0044 →
-TDD (cover every coercion/error branch — hot path) → gate → auto merge+push.
+## Next action — B4 (increment 020)
+**B4 = `Hash()` rejects non-marshalable hand-built defs** (`docs/BACKLOG.md` B4; source ADR-0037).
+**Contained edge case, autonomous** (B1–B4/B10 autonomous set — surface design via the committed spec, no
+live approval pause). A hand-built `config.PipelineDef` carrying a non-JSON-marshalable value (`chan`/`func`)
+currently falls back to a stable placeholder hash and **silently loses change-detection**. Parse paths can
+never produce such values, so this affects only defs built by hand in Go. Design: have `Hash()` (or its
+construction path) **validate/reject** the non-marshalable case with a typed error instead of the silent
+placeholder. Start: `git checkout -b claude/hash-nonmarshalable-020 main`, read the `Hash()` impl + ADR-0037
++ the `config` hashing code and tests, brainstorm → spec/plan 020 → ADR-0045 → TDD (cover the reject branch
++ the existing marshalable path stays green) → gate → auto merge+push. **Note:** confirm whether changing
+the silent-fallback to a hard error is a behavior/contract change worth calling out (it changes `Hash()`'s
+error surface); if it adds/returns a new error, document it and keep it additive where possible.
 
 ## Exact state
-- On `main`, clean, synced with `origin/main` at `934f1b5`. `git status --short` = empty.
-- Full gate green as of B2 merge: `go build ./...`, `go test ./... -race`, `go vet`, `gofmt -l .`,
-  `CGO_ENABLED=0 go build`, `go mod tidy`(no-op)/`verify` all clean. `benchstat` now installed at
-  `$(go env GOPATH)/bin/benchstat`.
+- On `main`, clean, synced with `origin/main` at `2af21f2`. `git status --short` = empty.
+- Full gate green as of B3 merge: `go build ./...`, `go test ./... -race`, `go vet`, `gofmt -l .`,
+  `CGO_ENABLED=0 go build`, `go mod tidy`(no-op)/`verify` all clean. `pipe` coverage 99.0%.
+  `benchstat` installed at `$(go env GOPATH)/bin/benchstat`.
 
 ## Gotchas / environment
 - `govulncheck`/`golangci-lint` are NOT installed locally — CI runs them on push.
 - `.superpowers/sdd/*` are gitignored scratch (016's ledger); not used for the 017+ program — track via
   `docs/BACKLOG.md` + git log instead.
-- Artifact numbering is continuous: specs/plans at 018 done, ADRs at 0043 done. **B3 = spec/plan 019, ADR-0044.**
+- Artifact numbering is continuous: specs/plans at 019 done, ADRs at 0044 done. **B4 = spec/plan 020, ADR-0045.**
