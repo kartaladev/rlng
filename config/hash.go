@@ -18,8 +18,8 @@ import (
 // signature (see ADR-0037). Hash assumes every field value is JSON-marshalable;
 // a hand-built PipelineDef carrying a non-marshalable value (e.g. a chan or
 // func) falls back to a stable placeholder hash and loses change-detection —
-// the parse paths (ParseYAML/ParseJSON) can never produce such values, so this
-// only affects definitions constructed by hand.
+// the Parse path (any Provider) can never produce such values, so this only
+// affects definitions constructed by hand.
 func (d *PipelineDef) Hash() string {
 	// Hash a copy with Version cleared so the label never affects the content
 	// fingerprint. The copy shares the definition's maps/slices but does not

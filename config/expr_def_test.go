@@ -156,10 +156,10 @@ func TestExprDefOptionsWiring(t *testing.T) {
 	assert.Equal(t, 42, got, "Globals default + Fallback must be wired through Build")
 }
 
-// TestExprDefObjectFormRejectsUnknownKeyYAML is the sole ParseYAML case for
+// TestExprDefObjectFormRejectsUnknownKeyYAML is the sole YAML-decode case for
 // this scenario in this file, so it stands alone per the table-test skill's
 // single-case exception. It also asserts that the inner ConfigError's Field
-// ("expr") survives ParseYAML's outer error wrap — see ParseYAML's re-wrap
+// ("expr") survives Parse's outer error wrap — see the decodeYAML re-wrap
 // guard in parse.go.
 func TestExprDefObjectFormRejectsUnknownKeyYAML(t *testing.T) {
 	doc := []byte(`
@@ -170,19 +170,19 @@ stages:
       expr: "1"
       fallbck: "2"
 `)
-	_, err := config.ParseYAML(doc)
+	_, err := config.Parse(t.Context(), config.FromYAMLBytes(doc))
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "fallbck")
 
 	var ce *config.ConfigError
 	require.ErrorAs(t, err, &ce)
-	assert.Equal(t, "expr", ce.Field, "inner ConfigError.Field must not be masked by ParseYAML's outer wrap")
+	assert.Equal(t, "expr", ce.Field, "inner ConfigError.Field must not be masked by Parse's outer wrap")
 }
 
 // TestExprDefObjectFormParseJSON folds the object-form unknown-key-rejected
 // and valid-keys-parse cases into a single assert-closure table, since both
-// exercise config.ParseJSON with varying input and expected outcome (per the
-// table-test skill).
+// exercise config.Parse over a JSON provider with varying input and expected
+// outcome (per the table-test skill).
 func TestExprDefObjectFormParseJSON(t *testing.T) {
 	t.Parallel()
 
@@ -202,7 +202,7 @@ func TestExprDefObjectFormParseJSON(t *testing.T) {
 
 				var ce *config.ConfigError
 				require.ErrorAs(t, err, &ce)
-				assert.Equal(t, "expr", ce.Field, "inner ConfigError.Field must not be masked by ParseJSON's outer wrap")
+				assert.Equal(t, "expr", ce.Field, "inner ConfigError.Field must not be masked by Parse's outer wrap")
 			},
 		},
 		{
@@ -221,7 +221,7 @@ func TestExprDefObjectFormParseJSON(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			d, err := config.ParseJSON([]byte(tc.json))
+			d, err := config.Parse(t.Context(), config.FromJSONString(tc.json))
 			tc.assert(t, d, err)
 		})
 	}

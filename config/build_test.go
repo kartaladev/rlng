@@ -247,7 +247,7 @@ func TestBuildSingleExprAttributeErrors(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			d, err := config.ParseJSON(tc.doc)
+			d, err := config.Parse(t.Context(), config.FromJSONBytes(tc.doc))
 			require.NoError(t, err)
 			_, err = d.Build()
 			tc.assert(t, err)
@@ -265,7 +265,7 @@ func assertConfigErr(t *testing.T, p *pipe.Pipeline, err error) {
 func TestBuildStampsRulesetIdentity(t *testing.T) {
 	t.Parallel()
 
-	d, err := config.ParseYAML([]byte(hashYAML + "version: v1.0.0\n"))
+	d, err := config.Parse(t.Context(), config.FromYAMLString(hashYAML+"version: v1.0.0\n"))
 	require.NoError(t, err)
 
 	tests := []struct {

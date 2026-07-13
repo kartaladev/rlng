@@ -31,7 +31,7 @@ stages:
       tier: '"declined"'
       limit: '0'
 `
-	def, err := config.ParseYAML([]byte(rules))
+	def, err := config.Parse(context.Background(), config.FromYAMLString(rules))
 	if err != nil {
 		panic(err)
 	}
@@ -78,7 +78,7 @@ stages:
       - condition: international
         decisions: {fee: '30'}
 `
-	def, _ := config.ParseYAML([]byte(rules))
+	def, _ := config.Parse(context.Background(), config.FromYAMLString(rules))
 	pipeline, _ := def.Build()
 
 	sc := pipe.NewScope(map[string]any{"wire": true, "rush": false, "international": true})

@@ -5,8 +5,9 @@
 // (single-expr, multi-expr, or decision-table), its dependencies, and its
 // type-specific fields. Expression fields accept either a bare string (the
 // expression) or an object with compile options (expr, fallback, globals,
-// coerce). Parse with ParseYAML, ParseJSON, or LoadFile, then call Build to
-// compile the definition into a *pipe.Pipeline.
+// coerce). Parse with a Provider — e.g. FromYAMLBytes, FromJSONString,
+// FromFile, or FromYAMLURL — then call Build to compile the definition into a
+// *pipe.Pipeline.
 //
 // Strict mode & schema: A definition may declare a top-level schema block
 // (field name -> representative value giving its type) to enable strict

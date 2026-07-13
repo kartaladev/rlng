@@ -563,15 +563,17 @@ The atomic breaking cut. Remove the three functions, migrate every caller to `Pa
 - Within the `config` package's own tests, the calls are unqualified (`ParseYAML(...)` → `Parse(ctx, FromYAMLBytes(...))`).
 - `ctx`: in `_test.go` use `t.Context()`; in `examples/*_test.go` use `context.Background()` (examples already import `context` for `pipeline.Run`).
 
-- [ ] **Step 1: Remove the three functions** from `config/parse.go` (delete `ParseYAML`, `ParseJSON`, `LoadFile` and their now-unused imports if any — `os`/`path/filepath`/`strings` moved to `providers.go` in Task 2, so parse.go may no longer need them; run `goimports`/`gofmt` and let the compiler flag unused imports).
+- [x] **Step 1: Remove the three functions** from `config/parse.go` — deleted `ParseYAML`/`ParseJSON`/`LoadFile` and dropped the now-unused `bytes`/`os`/`path/filepath`/`strings` imports (owned by `providers.go` since Task 2).
 
-- [ ] **Step 2: Run the build to see every break** — `go build ./... 2>&1` and `go vet ./... 2>&1`; the compiler lists every call site to migrate. Also `grep -rn 'ParseYAML\|ParseJSON\|LoadFile' --include='*.go'` for a complete list (ignore matches inside godoc comments you are rewriting).
+- [x] **Step 2: Run the build to see every break** — build + grep enumerated 60 hits across 17 files.
 
-- [ ] **Step 3: Migrate every call site** per the mapping table above. Touch each failing `_test.go` and `examples/*_test.go`. For a table test whose cases build a def, thread `t.Context()` into the `config.Parse` call. Keep each test's assertions unchanged — only the parse construction changes.
+- [x] **Step 3: Migrate every call site** per the mapping table above (13 `config/*_test.go` + 4 `examples/*_test.go`; `t.Context()` in tests, `context.Background()` in examples). Assertions unchanged.
 
-- [ ] **Step 4: Update docs** — `config/doc.go`: replace the `ParseYAML, ParseJSON, or LoadFile` sentence with `Parse with a Provider (e.g. FromYAMLBytes, FromFile, FromYAMLURL)`. `README.md`: update the config usage snippets (the `### Declarative pipeline → typed result` section and any `LoadFile` mention) to `config.Parse(context.Background(), config.FromYAMLString(...))`. Also fix the `config/hash.go` godoc sentence referencing `ParseYAML/ParseJSON`.
+- [x] **Step 4: Update docs** — `config/doc.go`, `config/hash.go` godoc, and both `README.md` snippets migrated.
 
-- [ ] **Step 5: Verify green** — `go build ./...`, `go test ./... -race`, `go vet ./...`, `gofmt -l .` (empty), `CGO_ENABLED=0 go build ./...`, `go mod tidy` (no-op — no new dep), `go mod verify`. Confirm `grep -rn 'ParseYAML\|ParseJSON\|LoadFile' --include='*.go'` returns nothing (no stragglers, no stale godoc).
+- [x] **Step 5: Verify green** — build/vet/`gofmt`/`CGO_ENABLED=0`/`go mod tidy` (no-op)/`go mod verify` all clean; `-race` suite green; grep returns only the `TestExprDefObjectFormParseJSON` test-name/comment (a scenario label, not a call). `config` 99.5%, `parse.go` 100%.
+
+**Deviation (test organization):** The plan said "rewrite" the dedicated `TestParseYAML`/`TestParseJSON`/`TestLoadFile`/`TestLoadFileMissing`. But `source_test.go` (`TestParse`) and `providers_test.go` (`TestProviders`) — added in Tasks 1–2 — already cover the full `Parse`/provider matrix through the public API, so rewriting them to `Parse(ctx, From…)` would have produced pure duplicates (violating DRY / the table-test skill's "fold, don't duplicate"). Instead I **deleted** the four redundant tests + their `sampleYAML` fixture and closed the three resulting coverage gaps at their proper homes: the fake-`Provider` raw-error test (the [T1] carried finding) now lives alone in `parse_test.go`; empty-JSON-document and malformed-JSON cases were folded into `TestParse`'s table. Net: same branch coverage, no duplication. ADR-0041 unaffected.
 
 - [ ] **Step 6: Commit** — `feat(config)!: remove ParseYAML/ParseJSON/LoadFile for Parse(ctx, Provider)`; body notes the breaking change and points to ADR-0041; trailers `Spec: 016`, `Plan: 016`, `ADR: 0041`.
 

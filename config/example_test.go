@@ -8,7 +8,7 @@ import (
 	"github.com/kartaladev/rlng/pipe"
 )
 
-func ExampleParseYAML() {
+func ExampleParse() {
 	const src = `
 stages:
   - name: base
@@ -19,7 +19,7 @@ stages:
     expr: base * 1.1
     depends_on: [base]
 `
-	def, err := config.ParseYAML([]byte(src))
+	def, err := config.Parse(context.Background(), config.FromYAMLString(src))
 	if err != nil {
 		fmt.Println("parse:", err)
 		return
@@ -50,7 +50,7 @@ stages:
     expr: "score >= 650"
     output: eligible
 `)
-	d, _ := config.ParseYAML(doc)
+	d, _ := config.Parse(context.Background(), config.FromYAMLBytes(doc))
 	_, err := d.Build(config.WithStrict())
 	fmt.Println(err)
 	// Output: <nil>

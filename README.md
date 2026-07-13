@@ -103,8 +103,8 @@ stages:
 `
 
 func main() {
-	def, _ := config.ParseYAML([]byte(rules)) // parse declarative rules
-	pipeline, _ := def.Build()                // compile + topo-sort (cycle-checked)
+	def, _ := config.Parse(context.Background(), config.FromYAMLString(rules)) // parse declarative rules
+	pipeline, _ := def.Build()                                                 // compile + topo-sort (cycle-checked)
 
 	mapper, _ := rlng.NewMapper[Quote](rlng.MappingTemplate{"total": "taxed"})
 	engine, _ := rlng.NewTypedEngine[Input, Quote](pipeline, mapper)
@@ -185,7 +185,7 @@ stages:
     type: single-expr
     expr: roundBank(decimal(principal) * decimal(rate), 2)
 `
-def, _ := config.ParseYAML([]byte(rules))
+def, _ := config.Parse(context.Background(), config.FromYAMLString(rules))
 pipeline, _ := def.Build()
 engine, _ := rlng.New(pipeline)
 

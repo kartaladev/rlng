@@ -34,7 +34,7 @@ stages:
     type: single-expr
     expr: "scoer >= 650"
 `)
-				d, err := config.ParseYAML(doc)
+				d, err := config.Parse(t.Context(), config.FromYAMLBytes(doc))
 				require.NoError(t, err)
 				return d
 			},
@@ -55,7 +55,7 @@ stages:
     type: single-expr
     expr: "score >= 650"
 `)
-				d, err := config.ParseYAML(doc)
+				d, err := config.Parse(t.Context(), config.FromYAMLBytes(doc))
 				require.NoError(t, err)
 				return d
 			},
@@ -68,7 +68,7 @@ stages:
 			parse: func(t *testing.T) *config.PipelineDef {
 				t.Helper()
 				doc := []byte(`{"stages":[{"name":"gate","type":"single-expr","expr":"scoer >= 650"}]}`)
-				d, err := config.ParseJSON(doc)
+				d, err := config.Parse(t.Context(), config.FromJSONBytes(doc))
 				require.NoError(t, err)
 				return d
 			},
@@ -81,7 +81,7 @@ stages:
 			parse: func(t *testing.T) *config.PipelineDef {
 				t.Helper()
 				doc := []byte(`{"stages":[{"name":"gate","type":"single-expr","expr":"score >= 650"}]}`)
-				d, err := config.ParseJSON(doc)
+				d, err := config.Parse(t.Context(), config.FromJSONBytes(doc))
 				require.NoError(t, err)
 				return d
 			},
@@ -97,7 +97,7 @@ stages:
 			parse: func(t *testing.T) *config.PipelineDef {
 				t.Helper()
 				doc := []byte(`{"stages":[{"name":"gate","type":"single-expr","expr":"scoer >= 650"}]}`)
-				d, err := config.ParseJSON(doc)
+				d, err := config.Parse(t.Context(), config.FromJSONBytes(doc))
 				require.NoError(t, err)
 				return d
 			},

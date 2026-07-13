@@ -90,7 +90,7 @@ mapping:
   total: base * (1 + taxRate)
   label: "'quote'"
 `
-	def, err := config.ParseYAML([]byte(yaml))
+	def, err := config.Parse(t.Context(), config.FromYAMLString(yaml))
 	require.NoError(t, err)
 	assert.Equal(t, "base * (1 + taxRate)", def.Mapping["total"])
 	assert.Equal(t, "'quote'", def.Mapping["label"])

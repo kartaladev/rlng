@@ -48,7 +48,7 @@ func TestBuildLintOptions(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			d, err := config.ParseJSON(doc)
+			d, err := config.Parse(t.Context(), config.FromJSONBytes(doc))
 			require.NoError(t, err)
 
 			_, err = d.Build(tc.opts...)

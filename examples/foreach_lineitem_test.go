@@ -55,7 +55,7 @@ stages:
         agg: sum
         as: totalApproved
 `
-	def, err := config.ParseYAML([]byte(rules))
+	def, err := config.Parse(context.Background(), config.FromYAMLString(rules))
 	if err != nil {
 		panic(err)
 	}

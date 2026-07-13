@@ -97,8 +97,25 @@ func TestParse(t *testing.T) {
 			},
 		},
 		{
-			name:     "empty document is an empty def, no error",
+			name:     "malformed JSON is a ConfigError",
+			provider: config.FromJSONBytes([]byte(`{"stages": [`)),
+			assert: func(t *testing.T, d *config.PipelineDef, err error) {
+				var ce *config.ConfigError
+				require.ErrorAs(t, err, &ce, "a JSON syntax error must surface as a ConfigError")
+			},
+		},
+		{
+			name:     "empty YAML document is an empty def, no error",
 			provider: config.FromYAMLBytes([]byte("")),
+			assert: func(t *testing.T, d *config.PipelineDef, err error) {
+				require.NoError(t, err)
+				require.NotNil(t, d)
+				assert.Empty(t, d.Stages)
+			},
+		},
+		{
+			name:     "empty JSON document is an empty def, no error",
+			provider: config.FromJSONBytes([]byte("")),
 			assert: func(t *testing.T, d *config.PipelineDef, err error) {
 				require.NoError(t, err)
 				require.NotNil(t, d)

@@ -11,7 +11,7 @@ import (
 // Example_configEngine loads a pipeline from a JSON definition and runs it
 // through an Engine, which returns the raw accumulated map[string]any.
 func Example_configEngine() {
-	def, err := config.ParseJSON([]byte(`{
+	def, err := config.Parse(context.Background(), config.FromJSONString(`{
 		"stages": [
 			{"name": "base", "type": "single-expr", "expr": "price * qty"},
 			{"name": "taxed", "type": "single-expr", "expr": "base * 1.1", "depends_on": ["base"]}
@@ -47,7 +47,7 @@ func Example_configEngine() {
 // definition (stage expressions use the scalar-shorthand string form) and
 // runs it through an Engine.
 func Example_configEngine_yaml() {
-	def, err := config.ParseYAML([]byte(`
+	def, err := config.Parse(context.Background(), config.FromYAMLString(`
 stages:
   - name: base
     type: single-expr

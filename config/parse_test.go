@@ -1,8 +1,8 @@
 package config_test
 
 import (
-	"os"
-	"path/filepath"
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/kartaladev/rlng/config"
@@ -10,194 +10,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const sampleYAML = `
-stages:
-  - name: base
-    type: single-expr
-    expr: price * qty
-  - name: taxed
-    type: single-expr
-    expr: base * 1.1
-    depends_on: [base]
-`
+// errProvider is a test-only Provider whose Source fails with a plain error
+// (not a *ConfigError). No in-repo provider does this — bytes/file/URL all
+// pre-wrap their failures in *ConfigError — so it is the only way to exercise
+// Parse's raw-error-wrap fallback branch.
+type errProvider struct{ err error }
 
-func TestParseYAML(t *testing.T) {
+func (p errProvider) Source(context.Context) (config.Source, error) { return nil, p.err }
+
+// TestParseProviderRawError covers Parse's fallback for a Provider.Source that
+// returns a non-*ConfigError: Parse must wrap it in a *ConfigError while
+// preserving the original cause. (The *ConfigError-preserving branch is already
+// covered by the FromFile-missing-path case in TestProviders.)
+func TestParseProviderRawError(t *testing.T) {
 	t.Parallel()
 
-	type testCase struct {
-		name   string
-		yaml   string
-		assert func(t *testing.T, d *config.PipelineDef, err error)
-	}
+	raw := errors.New("provider exploded")
+	d, err := config.Parse(t.Context(), errProvider{err: raw})
 
-	cases := []testCase{
-		{
-			name: "valid preserves order and shorthand",
-			yaml: sampleYAML,
-			assert: func(t *testing.T, d *config.PipelineDef, err error) {
-				require.NoError(t, err)
-				require.Len(t, d.Stages, 2)
-				assert.Equal(t, "base", d.Stages[0].Name)
-				require.NotNil(t, d.Stages[0].Expr)
-				assert.Equal(t, "price * qty", d.Stages[0].Expr.Expr)
-				assert.Equal(t, []string{"base"}, d.Stages[1].DependsOn)
-			},
-		},
-		{
-			name: "malformed yaml errors",
-			yaml: "stages: [unclosed",
-			assert: func(t *testing.T, d *config.PipelineDef, err error) {
-				var ce *config.ConfigError
-				require.ErrorAs(t, err, &ce)
-			},
-		},
-		{
-			name: "unknown key is rejected",
-			yaml: "stages:\n  - name: x\n    type: single-expr\n    expr: \"1\"\n    hitpolicy: collect\n",
-			assert: func(t *testing.T, d *config.PipelineDef, err error) {
-				var ce *config.ConfigError
-				require.ErrorAs(t, err, &ce, "a misspelled key must be a clear error, not silently dropped")
-			},
-		},
-		{
-			name: "empty document is an empty def (Build rejects it)",
-			yaml: "",
-			assert: func(t *testing.T, d *config.PipelineDef, err error) {
-				require.NoError(t, err)
-				require.NotNil(t, d)
-				assert.Empty(t, d.Stages)
-			},
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			d, err := config.ParseYAML([]byte(tc.yaml))
-			tc.assert(t, d, err)
-		})
-	}
-}
-
-func TestParseJSON(t *testing.T) {
-	t.Parallel()
-
-	type testCase struct {
-		name   string
-		json   string
-		assert func(t *testing.T, d *config.PipelineDef, err error)
-	}
-
-	cases := []testCase{
-		{
-			name: "valid",
-			json: `{"stages":[{"name":"base","type":"single-expr","expr":"price * qty"}]}`,
-			assert: func(t *testing.T, d *config.PipelineDef, err error) {
-				require.NoError(t, err)
-				require.Len(t, d.Stages, 1)
-				require.NotNil(t, d.Stages[0].Expr)
-				assert.Equal(t, "price * qty", d.Stages[0].Expr.Expr)
-			},
-		},
-		{
-			name: "malformed",
-			json: `{"stages": [`,
-			assert: func(t *testing.T, d *config.PipelineDef, err error) {
-				var ce *config.ConfigError
-				require.ErrorAs(t, err, &ce)
-			},
-		},
-		{
-			name: "unknown key is rejected",
-			json: `{"stages":[{"name":"x","type":"single-expr","expr":"1","hitpolicy":"collect"}]}`,
-			assert: func(t *testing.T, d *config.PipelineDef, err error) {
-				var ce *config.ConfigError
-				require.ErrorAs(t, err, &ce, "a misspelled key must be a clear error, not silently dropped")
-			},
-		},
-		{
-			name: "empty document is an empty def (Build rejects it)",
-			json: "",
-			assert: func(t *testing.T, d *config.PipelineDef, err error) {
-				require.NoError(t, err)
-				require.NotNil(t, d)
-				assert.Empty(t, d.Stages)
-			},
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			d, err := config.ParseJSON([]byte(tc.json))
-			tc.assert(t, d, err)
-		})
-	}
-}
-
-func TestLoadFile(t *testing.T) {
-	t.Parallel()
-
-	type testCase struct {
-		name    string
-		file    string // basename; contents chosen by ext
-		content string
-		assert  func(t *testing.T, d *config.PipelineDef, err error)
-	}
-
-	cases := []testCase{
-		{
-			name:    "yaml extension",
-			file:    "p.yaml",
-			content: sampleYAML,
-			assert: func(t *testing.T, d *config.PipelineDef, err error) {
-				require.NoError(t, err)
-				require.Len(t, d.Stages, 2)
-			},
-		},
-		{
-			name:    "yml extension",
-			file:    "p.yml",
-			content: sampleYAML,
-			assert: func(t *testing.T, d *config.PipelineDef, err error) {
-				require.NoError(t, err)
-				require.Len(t, d.Stages, 2)
-			},
-		},
-		{
-			name:    "json extension",
-			file:    "p.json",
-			content: `{"stages":[{"name":"a","type":"single-expr","expr":"1"}]}`,
-			assert: func(t *testing.T, d *config.PipelineDef, err error) {
-				require.NoError(t, err)
-				require.Len(t, d.Stages, 1)
-			},
-		},
-		{
-			name:    "unknown extension",
-			file:    "p.txt",
-			content: sampleYAML,
-			assert: func(t *testing.T, d *config.PipelineDef, err error) {
-				var ce *config.ConfigError
-				require.ErrorAs(t, err, &ce)
-			},
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			path := filepath.Join(t.TempDir(), tc.file)
-			require.NoError(t, os.WriteFile(path, []byte(tc.content), 0o600))
-			d, err := config.LoadFile(path)
-			tc.assert(t, d, err)
-		})
-	}
-}
-
-func TestLoadFileMissing(t *testing.T) {
-	t.Parallel()
-	_, err := config.LoadFile(filepath.Join(t.TempDir(), "nope.yaml"))
+	assert.Nil(t, d)
 	var ce *config.ConfigError
-	require.ErrorAs(t, err, &ce)
+	require.ErrorAs(t, err, &ce, "a raw provider error must be wrapped in *ConfigError")
+	assert.ErrorIs(t, err, raw, "the original cause must be preserved for unwrapping")
 }

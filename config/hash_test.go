@@ -52,9 +52,9 @@ func TestPipelineDefHash(t *testing.T) {
 		{
 			name: "YAML and equivalent JSON hash identically",
 			build: func(t *testing.T) (string, string) {
-				y, err := config.ParseYAML([]byte(hashYAML))
+				y, err := config.Parse(t.Context(), config.FromYAMLString(hashYAML))
 				require.NoError(t, err)
-				j, err := config.ParseJSON([]byte(hashJSON))
+				j, err := config.Parse(t.Context(), config.FromJSONString(hashJSON))
 				require.NoError(t, err)
 				return y.Hash(), j.Hash()
 			},
@@ -66,9 +66,9 @@ func TestPipelineDefHash(t *testing.T) {
 		{
 			name: "version does not affect the content hash",
 			build: func(t *testing.T) (string, string) {
-				d1, err := config.ParseYAML([]byte(hashYAML))
+				d1, err := config.Parse(t.Context(), config.FromYAMLString(hashYAML))
 				require.NoError(t, err)
-				d2, err := config.ParseYAML([]byte(hashYAML + "version: v9.9.9\n"))
+				d2, err := config.Parse(t.Context(), config.FromYAMLString(hashYAML+"version: v9.9.9\n"))
 				require.NoError(t, err)
 				return d1.Hash(), d2.Hash()
 			},
@@ -77,7 +77,7 @@ func TestPipelineDefHash(t *testing.T) {
 		{
 			name: "foreach schema fields do not perturb a pre-015 ruleset's hash (cross-version replay stability)",
 			build: func(t *testing.T) (string, string) {
-				d, err := config.ParseYAML([]byte(pre015HashYAML))
+				d, err := config.Parse(t.Context(), config.FromYAMLString(pre015HashYAML))
 				require.NoError(t, err)
 				return d.Hash(), pre015Golden
 			},
@@ -86,9 +86,9 @@ func TestPipelineDefHash(t *testing.T) {
 		{
 			name: "a changed expression changes the hash",
 			build: func(t *testing.T) (string, string) {
-				d1, err := config.ParseYAML([]byte(hashYAML))
+				d1, err := config.Parse(t.Context(), config.FromYAMLString(hashYAML))
 				require.NoError(t, err)
-				d2, err := config.ParseYAML([]byte("stages:\n  - name: base\n    type: single-expr\n    expr: price * qty * 2\n"))
+				d2, err := config.Parse(t.Context(), config.FromYAMLString("stages:\n  - name: base\n    type: single-expr\n    expr: price * qty * 2\n"))
 				require.NoError(t, err)
 				return d1.Hash(), d2.Hash()
 			},
@@ -104,7 +104,7 @@ func TestPipelineDefHash(t *testing.T) {
 }
 
 func TestPipelineDefMatchesRuleset(t *testing.T) {
-	d, err := config.ParseYAML([]byte(hashYAML))
+	d, err := config.Parse(t.Context(), config.FromYAMLString(hashYAML))
 	require.NoError(t, err)
 
 	tests := []struct {

@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestBuildForEach drives config.ParseYAML(...).Build() (the public API) for
+// TestBuildForEach drives config.Parse(...).Build() (the public API) for
 // the foreach stage type end-to-end: valid configs are parsed, built, and run
 // against a pipe.Scope to verify the resulting Scope state; invalid configs
 // are checked for the specific error each must produce (strict decode error,
@@ -373,7 +373,7 @@ stages:
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			d, err := config.ParseYAML([]byte(tc.yaml))
+			d, err := config.Parse(t.Context(), config.FromYAMLString(tc.yaml))
 			tc.assert(t, d, err)
 		})
 	}

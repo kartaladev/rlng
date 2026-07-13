@@ -23,7 +23,7 @@ import (
 // a Scope JSON round-trip (audit persistence) reloading as the same decimal;
 // and it maps into a typed result preserving the exact decimal.
 func Example_decimalMoney() {
-	def, err := config.ParseYAML([]byte(`
+	def, err := config.Parse(context.Background(), config.FromYAMLString(`
 constants:
   rate: {$dec: "0.0725"}
 stages:

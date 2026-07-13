@@ -49,7 +49,7 @@ stages:
     default:
       label: '"bronze"'
 `
-	def, err := config.ParseYAML([]byte(rulesV1))
+	def, err := config.Parse(context.Background(), config.FromYAMLString(rulesV1))
 	if err != nil {
 		fmt.Println("parse:", err)
 		return
@@ -59,7 +59,7 @@ stages:
 
 	// Re-labelling the version (v1.0.0 -> v2.0.0) does not change the content
 	// hash: Version is excluded from what Hash() fingerprints.
-	d2, err := config.ParseYAML([]byte(rulesV2))
+	d2, err := config.Parse(context.Background(), config.FromYAMLString(rulesV2))
 	if err != nil {
 		fmt.Println("parse:", err)
 		return
