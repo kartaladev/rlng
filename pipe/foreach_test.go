@@ -2,6 +2,7 @@ package pipe_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/kartaladev/rlng/pipe"
@@ -34,6 +35,31 @@ func (c *cancelAfterFirst) Execute(_ context.Context, _ *pipe.Scope) error {
 	c.calls++
 	if c.calls == 1 {
 		c.holder.cancel()
+	}
+	return nil
+}
+
+// errInjectedInner is the sentinel cause returned by errAfterFirst, so tests
+// can assert errors.Is on the failure that propagates up through nested
+// foreach wrapping.
+var errInjectedInner = errors.New("injected inner failure")
+
+// errAfterFirst is a test-only Stage that succeeds the first time it runs and
+// fails with errInjectedInner every call after, so it can be placed as the
+// sole stage of an inner-most pipeline to fail a chosen per-element iteration
+// (e.g. the second inner element) deterministically.
+type errAfterFirst struct {
+	calls int
+}
+
+func (e *errAfterFirst) Name() string        { return "err-probe" }
+func (e *errAfterFirst) Type() string        { return "err-probe" }
+func (e *errAfterFirst) DependsOn() []string { return nil }
+
+func (e *errAfterFirst) Execute(_ context.Context, _ *pipe.Scope) error {
+	e.calls++
+	if e.calls > 1 {
+		return errInjectedInner
 	}
 	return nil
 }
@@ -128,6 +154,111 @@ func midIterationCancelCase() forEachExecuteCase {
 
 			_, ok := sc.Get("lines.items")
 			assert.False(t, ok, "no items should be written on a mid-iteration cancel")
+		},
+	}
+}
+
+// nestedMidIterationCancelCase builds the case exercising spec 025 success
+// criterion #8: cancellation observed WHILE the inner foreach is iterating
+// (not before the outer ForEach.Execute even starts). The cancel-probe stage
+// sits inside the inner-most pipeline run by the "taxes" ForEach, so it fires
+// once the outer has already entered element 0 and the inner loop is
+// underway; the next per-element ctx.Err() check inside "taxes" (before its
+// second element) is what actually trips. It is a function (not a plain
+// literal) because the cancelHolder must be shared, by closure, between this
+// case's build and ctx fields.
+func nestedMidIterationCancelCase() forEachExecuteCase {
+	holder := &cancelHolder{}
+	return forEachExecuteCase{
+		name: "context canceled mid-inner-iteration stops a nested foreach with a StageError, no output",
+		build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
+			probe := &cancelAfterFirst{holder: holder}
+			taxPipe, err := pipe.NewPipeline(probe)
+			require.NoError(t, err)
+			taxes, err := pipe.NewForEach("taxes", "line.taxes", taxPipe, pipe.WithForEachAs("tax"))
+			require.NoError(t, err)
+			linesPipe, err := pipe.NewPipeline(taxes)
+			require.NoError(t, err)
+			lines, err := pipe.NewForEach("lines", "orders", linesPipe, pipe.WithForEachAs("line"))
+			require.NoError(t, err)
+
+			// At least two inner elements, so there is a genuine "next
+			// element" boundary for the cancel-probe to trip at.
+			sc := pipe.NewScope(map[string]any{
+				"orders": []any{
+					map[string]any{"taxes": []any{
+						map[string]any{"rate": int64(1)},
+						map[string]any{"rate": int64(2)},
+					}},
+				},
+			})
+			return lines, sc
+		},
+		ctx: func(ctx context.Context) context.Context {
+			cctx, cancel := context.WithCancel(ctx)
+			holder.cancel = cancel
+			return cctx
+		},
+		assert: func(t *testing.T, sc *pipe.Scope, err error) {
+			var se *pipe.StageError
+			require.ErrorAs(t, err, &se)
+			assert.Equal(t, "lines", se.Stage) // outermost stage owns the returned error
+			assert.Equal(t, pipe.TypeForEach, se.Type)
+			assert.ErrorIs(t, err, context.Canceled)
+
+			assert.Contains(t, err.Error(), "element 0", "outer element index")
+			assert.Contains(t, err.Error(), "element 1", "inner boundary where cancellation is observed")
+
+			_, ok := sc.Get("lines.items")
+			assert.False(t, ok, "no output should be written on a mid-inner-iteration cancel")
+		},
+	}
+}
+
+// nestedInnerErrorCase builds the case exercising spec 025 success
+// criterion #9: an error during an inner PER-ELEMENT iteration names both the
+// outer element index and the inner element index, and surfaces the inner
+// stage's own name and cause. errAfterFirst fails on the inner-most
+// pipeline's second call (inner element 1), so the failure is a genuine
+// per-element error rather than a collection-type check that never reaches
+// the inner loop.
+func nestedInnerErrorCase() forEachExecuteCase {
+	return forEachExecuteCase{
+		name: "nested inner error names both the outer and inner element index",
+		build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
+			probe := &errAfterFirst{}
+			taxPipe, err := pipe.NewPipeline(probe)
+			require.NoError(t, err)
+			taxes, err := pipe.NewForEach("taxes", "line.taxes", taxPipe, pipe.WithForEachAs("tax"))
+			require.NoError(t, err)
+			linesPipe, err := pipe.NewPipeline(taxes)
+			require.NoError(t, err)
+			lines, err := pipe.NewForEach("lines", "orders", linesPipe, pipe.WithForEachAs("line"))
+			require.NoError(t, err)
+
+			sc := pipe.NewScope(map[string]any{
+				"orders": []any{
+					map[string]any{"taxes": []any{
+						map[string]any{"rate": int64(1)}, // inner element 0: probe succeeds
+						map[string]any{"rate": int64(2)}, // inner element 1: probe fails
+					}},
+				},
+			})
+			return lines, sc
+		},
+		assert: func(t *testing.T, sc *pipe.Scope, err error) {
+			var se *pipe.StageError
+			require.ErrorAs(t, err, &se)
+			assert.Equal(t, "lines", se.Stage) // outermost stage owns the returned error
+			assert.Equal(t, pipe.TypeForEach, se.Type)
+			assert.ErrorIs(t, err, errInjectedInner)
+
+			assert.Contains(t, err.Error(), "element 0", "outer element index")
+			assert.Contains(t, err.Error(), "element 1", "failing inner element index")
+			assert.Contains(t, err.Error(), "taxes", "inner stage name surfaces in the wrapped cause")
+
+			_, ok := sc.Get("lines.items")
+			assert.False(t, ok, "no output should be written when an inner element fails")
 		},
 	}
 }
@@ -996,40 +1127,10 @@ func TestForEachExecute(t *testing.T) {
 				assert.Contains(t, err.Error(), "element 0") // the outer element index is named
 			},
 		},
-		{
-			name: "canceled context stops a nested foreach with a StageError, no output",
-			ctx: func(ctx context.Context) context.Context {
-				cctx, cancel := context.WithCancel(ctx)
-				cancel()
-				return cctx
-			},
-			build: func(t *testing.T) (*pipe.ForEach, *pipe.Scope) {
-				vat, err := pipe.NewSingleExpr("amt", "tax.rate")
-				require.NoError(t, err)
-				vatPipe, err := pipe.NewPipeline(vat)
-				require.NoError(t, err)
-				taxes, err := pipe.NewForEach("taxes", "line.taxes", vatPipe, pipe.WithForEachAs("tax"))
-				require.NoError(t, err)
-				linesPipe, err := pipe.NewPipeline(taxes)
-				require.NoError(t, err)
-				lines, err := pipe.NewForEach("lines", "orders", linesPipe, pipe.WithForEachAs("line"))
-				require.NoError(t, err)
-				sc := pipe.NewScope(map[string]any{
-					"orders": []any{map[string]any{"taxes": []any{map[string]any{"rate": int64(1)}}}},
-				})
-				return lines, sc
-			},
-			assert: func(t *testing.T, sc *pipe.Scope, err error) {
-				var se *pipe.StageError
-				require.ErrorAs(t, err, &se)
-				assert.Equal(t, "lines", se.Stage)
-				assert.ErrorIs(t, err, context.Canceled)
-				_, ok := sc.Get("lines.items")
-				assert.False(t, ok, "no output written when canceled before iteration")
-			},
-		},
 		provenancePropagationCase(),
 		midIterationCancelCase(),
+		nestedMidIterationCancelCase(),
+		nestedInnerErrorCase(),
 	}
 
 	for _, tc := range cases {
