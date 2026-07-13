@@ -149,6 +149,29 @@ func (s *Scope) Set(path string, v any) error {
 	return setPath(s.data, path, v, s.strict)
 }
 
+// lookupPath resolves a dot-separated path by walking map[string]any levels of
+// m, returning the value and true, or (nil, false) if the path is empty, a
+// segment is missing, or an intermediate node is not a map[string]any. It is
+// the shared read-traversal behind Scope.Get and foreach roll-up key
+// resolution (the read counterpart of setPath).
+func lookupPath(m map[string]any, path string) (any, bool) {
+	if path == "" {
+		return nil, false
+	}
+	var cur any = m
+	for _, k := range strings.Split(path, ".") {
+		mm, ok := cur.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		cur, ok = mm[k]
+		if !ok {
+			return nil, false
+		}
+	}
+	return cur, true
+}
+
 // Get returns the value at the dot-separated path and whether it was present.
 //
 // For map or slice values the returned value is a live reference into the
@@ -156,26 +179,9 @@ func (s *Scope) Set(path string, v any) error {
 // concurrently with Set without external synchronization. Use Snapshot for a
 // decoupled evaluation environment.
 func (s *Scope) Get(path string) (any, bool) {
-	if path == "" {
-		return nil, false
-	}
-	keys := strings.Split(path, ".")
-
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-
-	var cur any = s.data
-	for _, k := range keys {
-		m, ok := cur.(map[string]any)
-		if !ok {
-			return nil, false
-		}
-		cur, ok = m[k]
-		if !ok {
-			return nil, false
-		}
-	}
-	return cur, true
+	return lookupPath(s.data, path)
 }
 
 // Snapshot returns a shallow top-level copy of the accumulated data, suitable as
