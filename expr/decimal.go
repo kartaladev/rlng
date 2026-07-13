@@ -48,30 +48,33 @@ func decimalExprOptions() []exprlang.Option {
 			return f(a, b), nil
 		}
 	}
-	return []exprlang.Option{
+	opts := []exprlang.Option{
 		exprlang.Function("decimal", func(p ...any) (any, error) { return toDecimal(p[0]) },
 			new(func(string) decimal.Decimal),
 			new(func(int) decimal.Decimal),
 			new(func(float64) decimal.Decimal),
 			new(func(decimal.Decimal) decimal.Decimal)),
+	}
 
-		// + - * / for decimal×decimal, decimal×int, int×decimal.
-		exprlang.Function("addDecimal", dd(decimal.Decimal.Add),
+	// + - * / for decimal×decimal, decimal×int, int×decimal. Registered from a
+	// table since the four differ only in name and the wrapped decimal method.
+	arith := []struct {
+		name string
+		op   func(a, b decimal.Decimal) decimal.Decimal
+	}{
+		{"addDecimal", decimal.Decimal.Add},
+		{"subDecimal", decimal.Decimal.Sub},
+		{"mulDecimal", decimal.Decimal.Mul},
+		{"divDecimal", decimal.Decimal.Div},
+	}
+	for _, a := range arith {
+		opts = append(opts, exprlang.Function(a.name, dd(a.op),
 			new(func(decimal.Decimal, decimal.Decimal) decimal.Decimal),
 			new(func(decimal.Decimal, int) decimal.Decimal),
-			new(func(int, decimal.Decimal) decimal.Decimal)),
-		exprlang.Function("subDecimal", dd(decimal.Decimal.Sub),
-			new(func(decimal.Decimal, decimal.Decimal) decimal.Decimal),
-			new(func(decimal.Decimal, int) decimal.Decimal),
-			new(func(int, decimal.Decimal) decimal.Decimal)),
-		exprlang.Function("mulDecimal", dd(decimal.Decimal.Mul),
-			new(func(decimal.Decimal, decimal.Decimal) decimal.Decimal),
-			new(func(decimal.Decimal, int) decimal.Decimal),
-			new(func(int, decimal.Decimal) decimal.Decimal)),
-		exprlang.Function("divDecimal", dd(decimal.Decimal.Div),
-			new(func(decimal.Decimal, decimal.Decimal) decimal.Decimal),
-			new(func(decimal.Decimal, int) decimal.Decimal),
-			new(func(int, decimal.Decimal) decimal.Decimal)),
+			new(func(int, decimal.Decimal) decimal.Decimal)))
+	}
+
+	opts = append(opts,
 		exprlang.Operator("+", "addDecimal"),
 		exprlang.Operator("-", "subDecimal"),
 		exprlang.Operator("*", "mulDecimal"),
@@ -92,5 +95,6 @@ func decimalExprOptions() []exprlang.Option {
 			}
 			return d.RoundBank(int32(p[1].(int))), nil
 		}, new(func(decimal.Decimal, int) decimal.Decimal)),
-	}
+	)
+	return opts
 }

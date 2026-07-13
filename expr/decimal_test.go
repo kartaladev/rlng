@@ -39,6 +39,22 @@ func TestDecimalArithmetic(t *testing.T) {
 			},
 		},
 		{
+			name: "mixed decimal plus int literal",
+			src:  `decimal("100") + 3`,
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				assert.True(t, decimal.RequireFromString("103").Equal(got.(decimal.Decimal)))
+			},
+		},
+		{
+			name: "mixed int literal plus decimal (operand order)",
+			src:  `3 + decimal("100")`,
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				assert.True(t, decimal.RequireFromString("103").Equal(got.(decimal.Decimal)))
+			},
+		},
+		{
 			name: "principal times rate is exact (wrapped operands)",
 			src:  `decimal("250000") * decimal("0.0725")`,
 			assert: func(t *testing.T, got any, err error) {
@@ -71,8 +87,40 @@ func TestDecimalArithmetic(t *testing.T) {
 			},
 		},
 		{
+			name: "mixed decimal minus int literal",
+			src:  `decimal("5") - 2`,
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				assert.True(t, decimal.RequireFromString("3").Equal(got.(decimal.Decimal)))
+			},
+		},
+		{
+			name: "mixed int literal minus decimal (operand order)",
+			src:  `5 - decimal("2")`,
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				assert.True(t, decimal.RequireFromString("3").Equal(got.(decimal.Decimal)))
+			},
+		},
+		{
 			name: "decimal divided by decimal (divDecimal operator)",
 			src:  `decimal("10") / decimal("4")`,
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				assert.True(t, decimal.RequireFromString("2.5").Equal(got.(decimal.Decimal)))
+			},
+		},
+		{
+			name: "mixed decimal divided by int literal",
+			src:  `decimal("10") / 4`,
+			assert: func(t *testing.T, got any, err error) {
+				require.NoError(t, err)
+				assert.True(t, decimal.RequireFromString("2.5").Equal(got.(decimal.Decimal)))
+			},
+		},
+		{
+			name: "mixed int literal divided by decimal (operand order)",
+			src:  `10 / decimal("4")`,
 			assert: func(t *testing.T, got any, err error) {
 				require.NoError(t, err)
 				assert.True(t, decimal.RequireFromString("2.5").Equal(got.(decimal.Decimal)))
