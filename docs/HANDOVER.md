@@ -12,8 +12,9 @@ wrapping errors). Increments 011–016 merged & pushed. **Increment 016 (config 
 
 **Active program: execute ALL 12 backlog items (B1–B12) from `docs/BACKLOG.md`,** each as its own
 increment. **B1 (incr 017, `f10a8be`); B2 (incr 018, `934f1b5`); B3 (incr 019, `2af21f2`); B4 (incr 020,
-`4b3089e`); B5 (incr 021 — this branch, feat commit; merge SHA in `git log` after merge).** B1–B5 complete.
-**B6 is next** (a design-checkpoint item — pause for the user's design approval before implementing).
+`4b3089e`); B5 (incr 021, `89b1d57`); B6 (incr 022 — this branch, feat commit; merge SHA in `git log`
+after merge).** B1–B6 complete. **B7 is next** (a design-checkpoint item — pause for the user's design
+approval before implementing).
 
 ## Standing decisions for this program (do NOT re-ask)
 - **Scope = all 12**, including the two deliberate non-goals **B11** (parallel exec; write a superseding
@@ -30,37 +31,48 @@ increment. **B1 (incr 017, `f10a8be`); B2 (incr 018, `934f1b5`); B3 (incr 019, `
   (See memory `rlng-backlog-execution-program` for the full authorization record.)
 
 ## What's DONE this session
-- **B5 / increment 021 (this branch `claude/per-decision-options-021`):** per-decision options in decision
-  tables (Option A). `pipe.Rule.Decisions` is now `map[string]pipe.Decision` (new exported
-  `Decision{Expr, Options}`); the shared `Rule.DecisionOptions` field is **removed**; `WithDefault` takes
-  `map[string]pipe.Decision`; `compileDecisions` compiles each decision with its own options. `config`'s
-  `bareDecisions` (which rejected per-decision options) is replaced by `decisionsFrom`, threading each
-  `ExprDef`'s options + the shared constants/strict env. **Breaking pre-1.0 `pipe` API change** (flagged
-  `feat(pipe)!`, `apidiff` note in the commit body); **no config-schema or `Hash()` change** — parsed
-  `PipelineDef` shape untouched, `TestPipelineDefHash` golden test byte-identical. All ~8 pipe/config/example
-  test files migrated; new behavior tests `pipe/table_options_test.go` + `config/table_options_test.go`;
-  README updated. Spec/plan 021, ADR-0046 (supersedes ADR-0007 §5 in part). BACKLOG B5 → resolved.
-  Full gate green; code-review: 1 finding (stale README API) fixed; security-review: no findings.
+- **B5 / increment 021 (`main@89b1d57`, merged+pushed):** per-decision options in decision tables (Option A).
+  `pipe.Rule.Decisions` → `map[string]pipe.Decision` (new exported `Decision{Expr, Options}`); shared
+  `Rule.DecisionOptions` removed; `WithDefault(map[string]pipe.Decision)`; config `decisionsFrom` threads
+  each `ExprDef`'s options. Breaking pre-1.0 `pipe` API; no config-schema/`Hash()` change. Spec/plan 021,
+  ADR-0046. Code-review: 1 finding (stale README) fixed; security-review: clean.
+- **B6 / increment 022 (this branch `claude/member-path-provenance-022`):** precise member-path provenance
+  references. `expr.References()` now returns the deepest static member path per reference (`grade.tier`,
+  not top-level `grade`); `snapshotRefs` resolves via `lookupPath`; `derivationsFor` gained a
+  nearest-ancestor fallback (exact → descendants → ancestor) linking a member-path input to the top-level
+  seed. `Explain`/`Lineage` no longer fan out to unread sibling outputs. `References()` **signature
+  unchanged** (provenance-only consumer, semantics-only change); no `Hash()`/config change. Landed as two
+  green commits: `d699892` (pipe path-aware reconciliation, behavior-preserving prep) + the feat commit
+  (expr member-path extraction + ADR-0047 + docs). Spec 022 committed standalone (`38cb419`). BACKLOG B6 →
+  resolved.
 
-## Next action — B6 (increment 022): DESIGN CHECKPOINT (pause for user approval)
-**B6 — Precise member-path references in provenance** (ADR-0011; Spec 006 non-goal; P2). Provenance `Inputs`
-records top-level identifiers only (`a` for `a.b.c`); precise member-path lineage is the recorded
-refinement. **This is a design-checkpoint item** — brainstorm → write spec `docs/specs/022-*` → **PAUSE and
-get the user's design approval before implementing** (per the standing design-gating decision above). Then
-plan 022 + ADR-0047 ride with the feat commit; full gate → auto merge+push.
+## Next action — B7 (increment 023): DESIGN CHECKPOINT (pause for user approval)
+**B7 — Intra-stage `MultiExpr` local-alias provenance** (ADR-0011 "Known limitations"; tech-debt/
+debuggability; P3). Within a `MultiExpr`, a later expression reading an earlier one by its **bare local
+name** (`b = "a + 1"`) keys `Inputs` by the local name (`a`) while the value lives at `<stage>.a`; prefix
+reconciliation links by path, not alias, so `Lineage`/`Explain` silently omit such intra-stage subtrees.
+Fixing it means qualifying local aliases to their `<stage>.<name>` path when recording `Inputs`, which
+changes the documented "`Inputs` is keyed by referenced identifier" contract. **This is a design-checkpoint
+item** — brainstorm → write spec `docs/specs/023-*` → **PAUSE for the user's design approval before
+implementing** (standing design-gating decision above). Then plan 023 + ADR-0048 ride with the feat commit;
+full gate → auto merge+push. Note: B6's member-path work is adjacent — a cross-stage ref like `stage.field`
+already reconciles; B7 is specifically the same-stage local alias.
 
-Start: `git checkout -b <branch> main` (after this B5 branch is merged), brainstorm, author the spec.
+Start: `git checkout -b <branch> main` (after this B6 branch is merged), brainstorm, author the spec.
 
 ## Exact state
-- On branch `claude/per-decision-options-021` off `main@32978f7`. **B5 implementation complete and green**,
-  about to commit the single feat increment (this handover rides in that commit). After commit: whole-branch
-  gate already run (clean) → auto merge+push + delete branch (standing authorization).
+- On branch `claude/member-path-provenance-022` off `main@89b1d57`. **B6 implementation complete and
+  green**; spec 022 committed standalone (`38cb419`), Task 1 committed (`d699892`), about to commit the
+  final feat (Task 2: expr change + ADR-0047 + plan/BACKLOG/HANDOVER — this handover rides in it). After
+  commit: whole-branch gate (`/code-review` + `/security-review` over `main..HEAD`) → auto merge+push +
+  delete branch (standing authorization).
 - Full gate green: `go build ./...`, `go test ./... -race` (all packages ok), `go vet`, `gofmt -l .`
-  (empty), `CGO_ENABLED=0 go build`, `go mod tidy`(no-op)/`verify` all clean. `pipe` coverage 99.3%,
-  `config` coverage 99.7%. `benchstat` installed at `$(go env GOPATH)/bin/benchstat`.
+  (empty), `CGO_ENABLED=0 go build`, `go mod tidy`(no-op)/`verify` all clean. `expr` coverage 95.2%,
+  `pipe` coverage 99.3%. `benchstat` installed at `$(go env GOPATH)/bin/benchstat`.
 
 ## Gotchas / environment
 - `govulncheck`/`golangci-lint` are NOT installed locally — CI runs them on push.
 - `.superpowers/sdd/*` are gitignored scratch (016's ledger); not used for the 017+ program — track via
   `docs/BACKLOG.md` + git log instead.
-- Artifact numbering is continuous: **spec 021 DONE**, plans at 020 done, ADRs at 0045 done. **B5 = plan 021 + ADR-0046 next (spec 021 already on main).**
+- Artifact numbering is continuous: specs/plans at **022 done**, ADRs at **0047 done**. **B7 = spec 023 +
+  plan 023 + ADR-0048 next.**

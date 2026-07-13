@@ -54,7 +54,9 @@ production hot path: most evaluations don't need a trace, and the engine is
 - Top-level-identifier granularity keeps AST handling simple and robust; the
   prefix reconciliation makes namespaced (decision-table / multi-expr) outputs
   traceable. Precise member-path references (`a.b.c` as a single input) are a
-  future refinement, recorded as a non-goal.
+  future refinement, recorded as a non-goal. **Refined by ADR-0047 (B6):**
+  `References()` now returns deepest static member paths and reconciliation gains
+  a nearest-ancestor fallback.
 - `expr` takes internal imports of `expr-lang/expr`'s `parser`/`ast` subpackages
   — no new module dependency.
 - If always-on provenance is ever wanted, it is additive (a default flip) and

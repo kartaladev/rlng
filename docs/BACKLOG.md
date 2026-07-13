@@ -22,7 +22,7 @@ spec+plan+ADR chain).
 | ~~**B3**~~ | ~~Numeric-coercing Scope getters~~ | — | — | — | ✅ **Done** (incr 019, ADR-0044) |
 | ~~**B4**~~ | ~~`Hash()` rejects non-marshalable hand-built defs~~ | — | — | — | ✅ **Done** (incr 020, ADR-0045) |
 | ~~**B5**~~ | ~~Per-decision options in decision-table config~~ | — | — | — | ✅ **Done** (incr 021, ADR-0046) |
-| **B6** | Precise member-path references in provenance | ADR-0011; Spec 006 non-goal | feature-gap/debuggability | new ADR | **P2** |
+| ~~**B6**~~ | ~~Precise member-path references in provenance~~ | — | — | — | ✅ **Done** (incr 022, ADR-0047) |
 | **B7** | Intra-stage `MultiExpr` local-alias provenance | ADR-0011 ("Known limitations") | tech-debt/debuggability | new ADR | **P3** |
 | **B8** | Per-element lineage beyond firing (`foreach`) | ADR-0040; Spec 015 D5 | feature-gap/debuggability | new ADR | **P3** |
 | **B9** | Nested `foreach` support | Spec 015 D7; ADR-0040; `config/build.go:20` (`ErrNestedForEach`) | feature-gap | new ADR | **P3** |
@@ -63,8 +63,12 @@ options through (composing with constants + strict env); the old "per-decision o
 rejection is deleted. Breaking pre-1.0 `pipe` API change (Option A); no config-schema or `Hash()` change
 (parsed `PipelineDef` shape untouched — pre-021 rulesets hash byte-identically).
 
-**B6 — Member-path provenance references.** Provenance `Inputs` records top-level identifiers only (`a` for
-`a.b.c`). Precise member-path lineage is a recorded future refinement to reference granularity.
+**B6 — Member-path provenance references. ✅ DONE (increment 022, ADR-0047).** `expr.References()` now
+returns the deepest statically-known member path per reference (`grade.tier`, not top-level `grade`);
+`snapshotRefs` resolves each via `lookupPath` (precise `Inputs` values); `derivationsFor` gained a
+nearest-ancestor fallback (exact → descendants → ancestor) so a member-path input links to the top-level
+seed. `Explain`/`Lineage` no longer fan out to unread sibling outputs. `References()` signature unchanged
+(provenance-only consumer, semantics-only change); no `Hash()`/config change.
 
 **B7 — Intra-stage `MultiExpr` alias provenance.** Within a `MultiExpr`, a later expression reading an
 earlier one by bare local name (`b = "a + 1"`) keys `Inputs` by the local name (`a`) while the value lives
@@ -103,6 +107,7 @@ Deferrals found in the docs but confirmed already implemented — excluded from 
 | Numeric-coercing Scope getters (B3; Spec 006 non-goal) | Increment 019 / ADR-0044 |
 | `Hash()` rejects non-marshalable hand-built defs (B4; ADR-0037) | Increment 020 / ADR-0045 |
 | Per-decision decision-table options (B5; ADR-0007 §5 / Spec 004) | Increment 021 / ADR-0046 |
+| Member-path provenance references (B6; ADR-0011 point 4) | Increment 022 / ADR-0047 |
 | Exact decimal money (ADR-0030) | Increment 014 / ADR-0038 + ADR-0039 |
 | `foreach` stage (ADR-0030) | Increment 015 / ADR-0040 |
 | Config-declared output mapping (ADR-0009; Spec 005/008 non-goals) | Increment 010 / ADR-0028 |

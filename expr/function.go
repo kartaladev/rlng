@@ -95,8 +95,11 @@ func (f *Function) Apply(env any) (any, error) {
 	return result, nil
 }
 
-// References returns the sorted top-level identifiers this Function reads,
-// computed once at compile. The returned slice must not be mutated.
+// References returns the sorted, unique paths this Function reads: the deepest
+// statically-known member path per reference (e.g. "grade.tier"), or the bare
+// identifier when the chain is not statically resolvable (dynamic/index access,
+// method calls). Computed once at compile; used to record provenance inputs. The
+// returned slice must not be mutated.
 func (f *Function) References() []string { return f.refs }
 
 // Source returns the Function's original (untrimmed) expression string.

@@ -26,10 +26,38 @@ func TestFunctionReferences(t *testing.T) {
 			},
 		},
 		{
-			name: "member access uses top-level",
+			name: "member access uses deepest static path",
 			expr: "tiers.tag + base",
 			assert: func(t *testing.T, refs []string) {
-				assert.Equal(t, []string{"base", "tiers"}, refs)
+				assert.Equal(t, []string{"base", "tiers.tag"}, refs)
+			},
+		},
+		{
+			name: "nested member chain drops intermediates",
+			expr: "a.b.c + a.b.d",
+			assert: func(t *testing.T, refs []string) {
+				assert.Equal(t, []string{"a.b.c", "a.b.d"}, refs)
+			},
+		},
+		{
+			name: "dynamic index stops the static chain and keeps the index ref",
+			expr: "items[i].price",
+			assert: func(t *testing.T, refs []string) {
+				assert.Equal(t, []string{"i", "items"}, refs)
+			},
+		},
+		{
+			name: "bracket string access is a static path",
+			expr: `a["b"]`,
+			assert: func(t *testing.T, refs []string) {
+				assert.Equal(t, []string{"a.b"}, refs)
+			},
+		},
+		{
+			name: "method call is not a data path; receiver is",
+			expr: "name.startsWith(prefix)",
+			assert: func(t *testing.T, refs []string) {
+				assert.Equal(t, []string{"name", "prefix"}, refs)
 			},
 		},
 		{
