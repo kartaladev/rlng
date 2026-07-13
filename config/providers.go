@@ -3,7 +3,12 @@ package config
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
 )
 
 // bytesSource is a Source over an in-memory document; Reader returns a fresh
@@ -55,3 +60,60 @@ func (s readerSource) Kind() SourceKind  { return s.kind }
 func FromReader(r io.Reader, kind SourceKind) Provider {
 	return staticProvider{readerSource{nopReader{r}, kind}}
 }
+
+// ErrUnsupportedExtension is the Cause of the ConfigError FromFile's Source
+// returns when a path's extension is neither .yaml/.yml nor .json.
+var ErrUnsupportedExtension = errors.New("config: unsupported file extension")
+
+// fileProvider is a deferred provider that opens path at Parse time.
+type fileProvider struct {
+	path string
+	kind SourceKind // KindUnspecified => infer by extension
+}
+
+// fileSource is a Source backed by an open file; Reader exposes the *os.File
+// itself (rather than hiding it behind nopReader) so Parse's io.Closer
+// assertion succeeds and the handle is released after decoding.
+type fileSource struct {
+	f    *os.File
+	kind SourceKind
+}
+
+func (s fileSource) Reader() io.Reader { return s.f }
+func (s fileSource) Kind() SourceKind  { return s.kind }
+
+func (p fileProvider) Source(context.Context) (Source, error) {
+	kind := p.kind
+	if kind == KindUnspecified {
+		switch strings.ToLower(filepath.Ext(p.path)) {
+		case ".yaml", ".yml":
+			kind = KindYAML
+		case ".json":
+			kind = KindJSON
+		default:
+			return nil, &ConfigError{Cause: fmt.Errorf("%w: %q", ErrUnsupportedExtension, filepath.Ext(p.path))}
+		}
+	}
+	f, err := os.Open(p.path)
+	if err != nil {
+		return nil, &ConfigError{Cause: err}
+	}
+	return fileSource{f, kind}, nil
+}
+
+// FromFile returns a Provider that opens path at Parse time and decodes it by
+// extension: .yaml/.yml as YAML, .json as JSON, else ErrUnsupportedExtension.
+//
+// Trust boundary: path is passed to os.Open as-is (no base-directory
+// confinement, symlink check, or size limit). Pipeline definitions are meant
+// to be developer/operator-authored (trusted); do not pass a path derived
+// from untrusted input.
+func FromFile(path string) Provider { return fileProvider{path, KindUnspecified} }
+
+// FromYAMLFile returns a Provider that opens path at Parse time and decodes
+// it as YAML regardless of extension. Same trust boundary as FromFile.
+func FromYAMLFile(path string) Provider { return fileProvider{path, KindYAML} }
+
+// FromJSONFile returns a Provider that opens path at Parse time and decodes
+// it as JSON regardless of extension. Same trust boundary as FromFile.
+func FromJSONFile(path string) Provider { return fileProvider{path, KindJSON} }

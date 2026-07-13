@@ -2,6 +2,8 @@ package config_test
 
 import (
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -42,6 +44,21 @@ func TestFromReaderDoesNotCloseCallerReader(t *testing.T) {
 func TestProviders(t *testing.T) {
 	t.Parallel()
 
+	dir := t.TempDir()
+	writeTemp := func(name, content string) string {
+		path := filepath.Join(dir, name)
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+		return path
+	}
+	yamlPath := writeTemp("x.yaml", oneStageYAML)
+	ymlPath := writeTemp("x.yml", oneStageYAML)
+	jsonPath := writeTemp("x.json", oneStageJSON)
+	unsupportedExtPath := writeTemp("x.txt", oneStageYAML)
+	forcedYAMLPath := writeTemp("forced.txt", oneStageYAML)
+	forcedJSONPath := writeTemp("forced.yaml", oneStageJSON)
+	twiceParsePath := writeTemp("twice.yaml", oneStageYAML)
+	missingPath := filepath.Join(dir, "nope.yaml")
+
 	cases := []struct {
 		name     string
 		provider func() config.Provider
@@ -63,6 +80,85 @@ func TestProviders(t *testing.T) {
 				require.NoError(t, err)
 				require.Len(t, d.Stages, 1)
 				assert.Equal(t, "base", d.Stages[0].Name)
+			},
+		},
+		{
+			name:     "FromFile infers YAML for .yaml extension",
+			provider: func() config.Provider { return config.FromFile(yamlPath) },
+			assert: func(t *testing.T, d *config.PipelineDef, err error) {
+				require.NoError(t, err)
+				require.Len(t, d.Stages, 1)
+				assert.Equal(t, "base", d.Stages[0].Name)
+			},
+		},
+		{
+			name:     "FromFile infers YAML for .yml extension",
+			provider: func() config.Provider { return config.FromFile(ymlPath) },
+			assert: func(t *testing.T, d *config.PipelineDef, err error) {
+				require.NoError(t, err)
+				require.Len(t, d.Stages, 1)
+				assert.Equal(t, "base", d.Stages[0].Name)
+			},
+		},
+		{
+			name:     "FromFile infers JSON for .json extension",
+			provider: func() config.Provider { return config.FromFile(jsonPath) },
+			assert: func(t *testing.T, d *config.PipelineDef, err error) {
+				require.NoError(t, err)
+				require.Len(t, d.Stages, 1)
+				assert.Equal(t, "base", d.Stages[0].Name)
+			},
+		},
+		{
+			name:     "FromFile unsupported extension is ErrUnsupportedExtension",
+			provider: func() config.Provider { return config.FromFile(unsupportedExtPath) },
+			assert: func(t *testing.T, d *config.PipelineDef, err error) {
+				require.Nil(t, d)
+				require.Error(t, err)
+				var ce *config.ConfigError
+				require.ErrorAs(t, err, &ce)
+				assert.ErrorIs(t, err, config.ErrUnsupportedExtension)
+			},
+		},
+		{
+			name:     "FromYAMLFile decodes as YAML regardless of extension",
+			provider: func() config.Provider { return config.FromYAMLFile(forcedYAMLPath) },
+			assert: func(t *testing.T, d *config.PipelineDef, err error) {
+				require.NoError(t, err)
+				require.Len(t, d.Stages, 1)
+				assert.Equal(t, "base", d.Stages[0].Name)
+			},
+		},
+		{
+			name:     "FromJSONFile decodes as JSON regardless of extension",
+			provider: func() config.Provider { return config.FromJSONFile(forcedJSONPath) },
+			assert: func(t *testing.T, d *config.PipelineDef, err error) {
+				require.NoError(t, err)
+				require.Len(t, d.Stages, 1)
+				assert.Equal(t, "base", d.Stages[0].Name)
+			},
+		},
+		{
+			name:     "FromFile missing path is a ConfigError wrapping os.ErrNotExist",
+			provider: func() config.Provider { return config.FromFile(missingPath) },
+			assert: func(t *testing.T, d *config.PipelineDef, err error) {
+				require.Nil(t, d)
+				require.Error(t, err)
+				var ce *config.ConfigError
+				require.ErrorAs(t, err, &ce)
+				assert.ErrorIs(t, err, os.ErrNotExist)
+			},
+		},
+		{
+			name:     "FromFile parses the same file twice without leaking the handle",
+			provider: func() config.Provider { return config.FromFile(twiceParsePath) },
+			assert: func(t *testing.T, d *config.PipelineDef, err error) {
+				require.NoError(t, err)
+				require.Len(t, d.Stages, 1)
+
+				d2, err2 := config.Parse(t.Context(), config.FromFile(twiceParsePath))
+				require.NoError(t, err2)
+				require.Len(t, d2.Stages, 1)
 			},
 		},
 	}
