@@ -26,7 +26,7 @@ spec+plan+ADR chain).
 | ~~**B7**~~ | ~~Intra-stage `MultiExpr` local-alias provenance~~ | — | — | — | ✅ **Done** (incr 023, ADR-0048) |
 | ~~**B8**~~ | ~~Per-element lineage beyond firing (`foreach`)~~ | — | — | — | ✅ **Done** (incr 024, ADR-0049) |
 | ~~**B9**~~ | ~~Nested `foreach` support~~ | — | — | — | ✅ **Done** (incr 025, ADR-0050) |
-| **B10** | Convenience constructors (`NewFromYAML`/nested `Pipeline` as `Stage`) | ADR-0009; ADR-0005 | ergonomics (YAGNI) | additive | **P3** |
+| ~~**B10**~~ | ~~Convenience constructors~~ (constructors ✅; Pipeline-as-Stage re-deferred) | ADR-0009; ADR-0005 | ergonomics | additive | ✅ **Done** (incr 026, ADR-0051) — constructors; Pipeline-as-Stage still deferred |
 | **B11** | Parallel execution of independent DAG stages | ADR-0006; ADR-0005 | perf/feature-gap | new superseding ADR | **P3** |
 | **B12** | Strict env / host functions declarable in YAML | ADR-0028 ("Deferred within config") | feature-gap (likely permanent non-goal) | new ADR | **P4** |
 
@@ -91,9 +91,15 @@ reconciliation already handles the deeper paths). Each nesting level must bind a
 `as`-chain guard rejects a collision (`config.ErrForEachAsCollision`) at build time rather than allowing a
 silent shadow. The prior D7 deferral is resolved; there is no remaining nesting-depth gate.
 
-**B10 — Convenience constructors.** `rlng.NewFromYAML`/`NewFromProvider` (compose an engine directly from a
-config source) and `Pipeline` implementing `Stage` (nested pipelines) were deferred as YAGNI — additive if
-desired.
+**B10 — Convenience constructors. ✅ PARTIALLY DONE (increment 026, ADR-0051) — constructors shipped;
+Pipeline-as-Stage remains deferred.** `rlng.NewFromProvider`/`NewFromYAML` and typed
+`NewTypedFromProvider[I,R]`/`NewTypedFromYAML[I,R]` now compose `config.Parse -> PipelineDef.Build ->
+New/NewTypedEngine` in one call (`fromconfig.go`), introducing an additive in-module `rlng -> config`
+import (no new external dependency) — the convenience ADR-0009 anticipated. `Pipeline` implementing `Stage`
+(nested pipelines) **remains deferred**: it would reverse ADR-0005, and has marginal value now that
+`foreach` already owns per-element sub-pipelines and a flat nested pipeline is ≈ inlining its stages
+(shared scope + DAG) — it would add naming/shared-scope-bookkeeping/collision semantics for no concrete
+demand. Revisit with a superseding ADR to ADR-0005 if a real composition need appears.
 
 **B11 — Parallel stage execution.** Pipeline execution is sequential & deterministic; parallel execution of
 independent DAG stages is deferred ("stage counts are small"). Scope already carries a mutex partly to guard
@@ -118,6 +124,7 @@ Deferrals found in the docs but confirmed already implemented — excluded from 
 | Intra-stage MultiExpr local-alias provenance (B7; ADR-0011 known limitation) | Increment 023 / ADR-0048 |
 | Per-element foreach lineage (B8; ADR-0040 D5 / Spec 015 D5) | Increment 024 / ADR-0049 |
 | Nested foreach (B9; ADR-0040 D7 / Spec 015 D7) | Increment 025 / ADR-0050 |
+| rlng.NewFromYAML convenience (B10; ADR-0009 deferral) | Increment 026 / ADR-0051 |
 | Exact decimal money (ADR-0030) | Increment 014 / ADR-0038 + ADR-0039 |
 | `foreach` stage (ADR-0030) | Increment 015 / ADR-0040 |
 | Config-declared output mapping (ADR-0009; Spec 005/008 non-goals) | Increment 010 / ADR-0028 |

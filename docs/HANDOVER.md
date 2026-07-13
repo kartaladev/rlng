@@ -13,10 +13,10 @@ wrapping errors). Increments 011–016 merged & pushed. **Increment 016 (config 
 **Active program: execute ALL 12 backlog items (B1–B12) from `docs/BACKLOG.md`,** each as its own
 increment. **B1 (incr 017, `f10a8be`); B2 (incr 018, `934f1b5`); B3 (incr 019, `2af21f2`); B4 (incr 020,
 `4b3089e`); B5 (incr 021, `89b1d57`); B6 (incr 022, `56b243d`); B7 (incr 023, `9569ecc`); B8 (incr 024,
-`e6ed96e`); B9 (incr 025 — this branch, feat commit `612b20b` + docs close-out; merge SHA in `git log`
-after merge).** B1–B9 complete. **B10 is next.** Per the standing design-gating decision, B10 is
-**autonomous** (not a design-checkpoint item) — design + implement without a live approval pause; surface
-the design via the committed spec as usual.
+`e6ed96e`); B9 (incr 025, `612b20b` + docs close-out); B10 (incr 026 — this branch, feat commit next in
+`git log`; constructors done, Pipeline-as-Stage re-deferred, ADR-0051).** B1–B10 complete. **B11 is next.**
+Per the standing design-gating decision, B11 **is a design-checkpoint item** — it reverses a non-goal
+(ADR-0006) and needs a superseding ADR **plus a live approval pause** before implementation.
 
 ## Standing decisions for this program (do NOT re-ask)
 - **Scope = all 12**, including the two deliberate non-goals **B11** (parallel exec; write a superseding
@@ -63,24 +63,35 @@ the design via the committed spec as usual.
   commit) and the `ErrNestedForEach` removal (`!` on the `config` commit). Spec 025 committed standalone
   (`47e77df`); plan 025 + ADR-0050 ride in the feat commits (`d63a05c`, `612b20b`); acceptance example +
   BACKLOG/HANDOVER close-out in this docs commit. BACKLOG B9 → resolved.
+- **B10 / increment 026 (this branch `claude/convenience-constructors-026`):** convenience constructors.
+  `rlng.NewFromProvider`/`NewFromYAML` and typed `NewTypedFromProvider[I,R]`/`NewTypedFromYAML[I,R]`
+  (`fromconfig.go`) compose `config.Parse -> PipelineDef.Build -> New/NewTypedEngine` in one call, ctx-first,
+  default `Build()`, engine `Option`s threaded, errors passed through unwrapped (no new sentinel).
+  Introduces an additive in-module `rlng -> config` import — no new external dependency (`go mod tidy`
+  stays a no-op), acyclic. Pipeline-as-Stage (the other half of B10) is **re-deferred** — reversing
+  ADR-0005 has marginal value now that `foreach` covers per-element sub-pipelines; needs a superseding ADR
+  + concrete use case to revisit. Spec 026 committed standalone (`400b27d`); plan 026 + ADR-0051 ride in
+  the feat commit. BACKLOG B10 → resolved (constructors half).
 
-## Next action — B10 (increment 026): autonomous (no design checkpoint)
-**B10 — Convenience constructors** (`docs/BACKLOG.md`; ADR-0009; ADR-0005; ergonomics/YAGNI; additive;
-P3). `rlng.NewFromYAML`/`NewFromProvider` (compose an engine directly from a config source) and `Pipeline`
-implementing `Stage` (nested pipelines) were deferred as YAGNI in earlier increments — additive if desired.
-Per the standing design-gating decision, **B10 is NOT a design-checkpoint item** — design + implement
-autonomously (brainstorm → spec `docs/specs/026-*` → plan `docs/plans/026-*` + ADR `docs/adrs/0051-*` →
-TDD → gate → auto merge+push, with no live approval pause). Code-review + security-review gates still run
-as usual. Read `rlng.go` (or wherever the top-level engine constructor lives), ADR-0009, ADR-0005, and the
-B10 backlog entry first.
+## Next action — B11 (increment 027): design-checkpoint — PAUSE for approval
+**B11 — Parallel execution of independent DAG stages** (`docs/BACKLOG.md`; ADR-0006; ADR-0005;
+perf/feature-gap; new superseding ADR; P3). Pipeline execution is currently sequential & deterministic
+(ADR-0006); `Scope` already carries a mutex partly to guard this future path. This is **both** a
+design-checkpoint item **and** a non-goal reversal: it requires authoring a **superseding ADR to ADR-0006**
+(concurrency design — worker pool vs errgroup fan-out, error/cancellation semantics across parallel
+branches, whether `Scope` mutation stays safe as-is or needs restructuring) **and**, per the standing
+design-gating decision, a **live approval pause** before implementation — do not implement without the
+user signing off on the design. Read `pipe/pipeline.go` (DAG/topo-sort execution), ADR-0006, ADR-0005, and
+the B11 backlog entry first; brainstorm and author the spec + draft ADR, then stop and ask for approval
+before writing code.
 
-Start: `git checkout -b <branch> main` (after this B9 branch is merged), brainstorm, author the spec.
+Start: `git checkout -b <branch> main` (after this B10 branch is merged), brainstorm, author the spec and
+draft superseding ADR, then PAUSE for approval.
 
 ## Exact state
-- On branch `claude/nested-foreach-025` off `main@e6ed96e`. **B9 implementation complete and green**
-  (`612b20b`); this docs commit adds the acceptance example and closes out BACKLOG/HANDOVER. After commit:
-  whole-branch gate (`/code-review` + `/security-review` over `main..HEAD`) → auto merge+push + delete
-  branch (standing authorization).
+- On branch `claude/convenience-constructors-026` off `main@e6ed96e`. **B10 implementation complete and
+  green** (this commit). After commit: whole-branch gate (`/code-review` + `/security-review` over
+  `main..HEAD`) → auto merge+push + delete branch (standing authorization).
 - Full gate green: `go build ./...`, `go test ./... -race` (all packages ok), `go vet`, `gofmt -l .`
   (empty), `CGO_ENABLED=0 go build`, `go mod tidy`(no-op)/`verify` all clean.
   `benchstat` installed at `$(go env GOPATH)/bin/benchstat`.
@@ -89,5 +100,5 @@ Start: `git checkout -b <branch> main` (after this B9 branch is merged), brainst
 - `govulncheck`/`golangci-lint` are NOT installed locally — CI runs them on push.
 - `.superpowers/sdd/*` are gitignored scratch (016's ledger); not used for the 017+ program — track via
   `docs/BACKLOG.md` + git log instead.
-- Artifact numbering is continuous: specs/plans at **025 done**, ADRs at **0050 done**. **B10 = spec 026 +
-  plan 026 + ADR-0051 next.**
+- Artifact numbering is continuous: specs/plans at **026 done**, ADRs at **0051 done**. **B11 needs a new
+  spec/plan + a superseding ADR to ADR-0006 — and a design-approval pause before implementation.**
