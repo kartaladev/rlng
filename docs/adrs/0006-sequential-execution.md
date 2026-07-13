@@ -1,6 +1,6 @@
 # ADR-0006 — Sequential deterministic pipeline execution (concurrency deferred)
 
-- **Status:** Accepted
+- **Status:** Superseded by ADR-0052
 - **Date:** 2026-07-11
 - **Prompted by:** Spec 003 (docs/specs/003-dag-orchestration.md)
 

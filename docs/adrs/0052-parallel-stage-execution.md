@@ -1,6 +1,6 @@
 # ADR-0052 — Opt-in parallel execution of independent DAG stages
 
-- **Status:** Draft (proposed) — supersedes ADR-0006
+- **Status:** Accepted — supersedes ADR-0006
 - **Date:** 2026-07-13
 - **Prompted by:** Backlog B11 (`docs/BACKLOG.md`); Spec 027 (docs/specs/027-parallel-stage-execution.md)
 - **Supersedes:** ADR-0006 (Sequential deterministic pipeline execution)

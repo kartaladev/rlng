@@ -11,7 +11,13 @@
 // (see the Get/Snapshot docs). Engines give each evaluation its own Scope, so
 // concurrent Engine use is safe.
 //
-// A Pipeline stamped with WithRuleset(RulesetIdentity) records which ruleset
+// A Pipeline runs its stages sequentially in dependency order by default
+// (deterministic and debuggable). The WithConcurrency / WithMaxParallel options
+// opt into running independent stages of each dependency level concurrently;
+// this is a pure speedup — the final Scope, the surfaced error, and the reported
+// stage order are identical to sequential execution (ADR-0052).
+//
+// A Pipeline configured with WithRuleset(RulesetIdentity) records which ruleset
 // produced each Scope it runs (Scope.Ruleset()); combined with the
 // decision-table firing trail (FiringRule/FiringRulesFor), a Scope round-trips
 // through its JSON MarshalJSON/UnmarshalJSON as a self-describing, replayable

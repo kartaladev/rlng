@@ -124,7 +124,7 @@ Skip config and wire stages directly; `depends_on` still orders the DAG:
 ```go
 base, _ := pipe.NewSingleExpr("base", "price * qty")
 taxed, _ := pipe.NewSingleExpr("taxed", "base * 1.1", pipe.WithDependsOn("base"))
-pipeline, _ := pipe.NewPipeline(base, taxed)
+pipeline, _ := pipe.NewPipeline([]pipe.Stage{base, taxed})
 
 mapper, _ := rlng.NewMapper[Quote](rlng.MappingTemplate{"total": "taxed"})
 engine, _ := rlng.NewTypedEngine[Input, Quote](pipeline, mapper)
@@ -156,7 +156,7 @@ calc, _ := pipe.NewMultiExpr("calc", []pipe.NamedExpr{
 	{Name: "taxed", Expression: "base * 1.1"},
 	{Name: "discounted", Expression: "base * 0.9"},
 }, pipe.WithDependsOn("base"))
-p, _ := pipe.NewPipeline(base, calc)
+p, _ := pipe.NewPipeline([]pipe.Stage{base, calc})
 
 sc := pipe.NewScope(map[string]any{"price": 10, "qty": 2})
 _ = p.Run(context.Background(), sc)
@@ -213,7 +213,7 @@ grade, _ := pipe.NewDecisionTable("grade", []pipe.Rule{
 	{Condition: "score >= 650", Decisions: map[string]pipe.Decision{"tier": {Expr: `"near_prime"`}, "limit": {Expr: "score * 50"}}},
 	{Condition: "true", Decisions: map[string]pipe.Decision{"tier": {Expr: `"subprime"`}, "limit": {Expr: "score * 10"}}},
 })
-p, _ := pipe.NewPipeline(grade)
+p, _ := pipe.NewPipeline([]pipe.Stage{grade})
 
 sc := pipe.NewScope(map[string]any{"score": 700}, pipe.WithProvenance())
 _ = p.Run(context.Background(), sc)

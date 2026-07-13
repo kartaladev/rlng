@@ -27,7 +27,7 @@ spec+plan+ADR chain).
 | ~~**B8**~~ | ~~Per-element lineage beyond firing (`foreach`)~~ | — | — | — | ✅ **Done** (incr 024, ADR-0049) |
 | ~~**B9**~~ | ~~Nested `foreach` support~~ | — | — | — | ✅ **Done** (incr 025, ADR-0050) |
 | ~~**B10**~~ | ~~Convenience constructors~~ (constructors ✅; Pipeline-as-Stage re-deferred) | ADR-0009; ADR-0005 | ergonomics | additive | ✅ **Done** (incr 026, ADR-0051) — constructors; Pipeline-as-Stage still deferred |
-| **B11** | Parallel execution of independent DAG stages | ADR-0006; ADR-0005 | perf/feature-gap | new superseding ADR | **P3** |
+| ~~**B11**~~ | ~~Parallel execution of independent DAG stages~~ | ADR-0006; ADR-0005 | perf/feature-gap | new superseding ADR | ✅ **Done** (incr 027, ADR-0052) |
 | **B12** | Strict env / host functions declarable in YAML | ADR-0028 ("Deferred within config") | feature-gap (likely permanent non-goal) | new ADR | **P4** |
 
 ### Details
@@ -101,9 +101,15 @@ import (no new external dependency) — the convenience ADR-0009 anticipated. `P
 (shared scope + DAG) — it would add naming/shared-scope-bookkeeping/collision semantics for no concrete
 demand. Revisit with a superseding ADR to ADR-0005 if a real composition need appears.
 
-**B11 — Parallel stage execution.** Pipeline execution is sequential & deterministic; parallel execution of
-independent DAG stages is deferred ("stage counts are small"). Scope already carries a mutex partly to guard
-this future path. A superseding ADR + concurrency design would be needed.
+**B11 — Parallel stage execution. ✅ DONE (increment 027, ADR-0052).** `Pipeline` gained opt-in parallel
+execution of independent DAG stages via `WithConcurrency()` / `WithMaxParallel(n)` (and the config-path
+`config.WithConcurrency`/`WithMaxParallel` BuildOptions + convenience-constructor `rlng.WithConcurrency`/
+`WithMaxParallel` Options). Wave-based (level-barrier) scheduling runs each dependency level concurrently;
+execution stays fully deterministic — final `Scope`, surfaced error (topo-min selection), and reported stage
+order are identical to sequential. `Scope` needed no structural change (existing mutex + Spec-002 namespace
+isolation; `-race` clean). Sequential remains the default. `NewPipeline` was consolidated onto
+`(stages []Stage, opts ...PipelineOption)` and `WithRuleset` moved from a fluent method to an option (pre-1.0
+breaking). ADR-0052 supersedes ADR-0006; the deferral is resolved.
 
 **B12 — YAML-declared env / host functions.** `WithEnv` (typed env schema) and `WithFunction` (host
 functions) stay programmatic — an env schema needs Go types and functions are Go values. Recorded as a
@@ -125,6 +131,7 @@ Deferrals found in the docs but confirmed already implemented — excluded from 
 | Per-element foreach lineage (B8; ADR-0040 D5 / Spec 015 D5) | Increment 024 / ADR-0049 |
 | Nested foreach (B9; ADR-0040 D7 / Spec 015 D7) | Increment 025 / ADR-0050 |
 | rlng.NewFromYAML convenience (B10; ADR-0009 deferral) | Increment 026 / ADR-0051 |
+| Parallel stage execution (B11; ADR-0006 deferral) | Increment 027 / ADR-0052 |
 | Exact decimal money (ADR-0030) | Increment 014 / ADR-0038 + ADR-0039 |
 | `foreach` stage (ADR-0030) | Increment 015 / ADR-0040 |
 | Config-declared output mapping (ADR-0009; Spec 005/008 non-goals) | Increment 010 / ADR-0028 |

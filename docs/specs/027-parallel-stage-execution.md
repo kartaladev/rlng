@@ -1,6 +1,6 @@
 # Spec 027 — parallel execution of independent DAG stages
 
-- **Status:** Draft
+- **Status:** Accepted
 - **Backlog item:** B11 (`docs/BACKLOG.md`) — graduates the parallel-execution feature deferred as YAGNI in
   ADR-0006 ("Sequential deterministic pipeline execution (concurrency deferred)"). B11 is a **design-checkpoint
   item and a deliberate non-goal reversal**: it requires a **superseding ADR to ADR-0006** and a **live
